@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -g -Wall 
 TARGET = statesimul.out
-OBJS = init.o simul.o main.o misc.o list.o hot.o util.o
+OBJS = init.o simul.o main.o misc.o list.o hot.o util.o IOgen.o
 
 $(TARGET): $(OBJS)
 	$(CC) -o $@ $(OBJS) -lm
@@ -26,7 +26,10 @@ hot.o : hot.c
 
 util.o : util.c
 	$(CC) -c -o util.o util.c
-	
+
+IOgen.o : IOgen.c
+	$(CC) -c -o IOgen.o IOgen.c	
+
 clean:
 	rm -f *.o
 	rm $(OBJECT) $(TARGET)

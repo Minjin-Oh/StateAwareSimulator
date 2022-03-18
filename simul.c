@@ -64,7 +64,7 @@ block* write_simul(rttask task, meta* metadata, int* g_cur,
     return cur;
 }
 
-void read_simul(rttask task, meta* metadata, float* tracker){
+void read_simul(rttask task, meta* metadata, float* tracker, int offset){
     float hot = -1.0;
     int lpa = -1;
     int* target_block = (int*)malloc(sizeof(int)*task.wn);
@@ -75,10 +75,13 @@ void read_simul(rttask task, meta* metadata, float* tracker){
         //generate target lpa based on locality.
         hot = (float)(rand()%100)/100.0;
         if (hot < TPLOCAL){
-            lpa = rand()%hotspace;
+            lpa = rand()%hotspace+offset;//offset can be given
         }
         else {
-            lpa = rand()%(logispace-hotspace)+hotspace;
+            lpa = rand()%(logispace);
+            while(lpa <= hotspace+offset && lpa >= offset){
+                lpa = rand()%(logispace);
+            }
         }
         //record the target block to access history
         target_block[i] = metadata->pagemap[lpa]/PPB;
@@ -113,7 +116,7 @@ void gc_simul(rttask task, meta* metadata, bhead* fblist_head,
     int old = get_blockidx_meta(metadata,OLD);
     int yng = get_blockidx_meta(metadata,YOUNG);
 
-    if(*total_fp > 100){//when there's still some margin for write,
+    if(*total_fp > 50){//when there's still some margin for write,
         while(cur!=NULL){
             if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
                (metadata->state[cur->idx] < old)){
@@ -188,14 +191,21 @@ void gc_simul(rttask task, meta* metadata, bhead* fblist_head,
 #ifdef GCDEBUG
     printf("====GC unit function test====\n");
     for(int i=0;i<PPB;i++){
-        printf("[vic]pg %d: rmap %d, inv %d\n",vic_offset+i,metadata->rmap[vic_offset+i],metadata->invmap[vic_offset+i]);
+        printf("[GC][vic]pg %d: rmap %d, inv %d\n",vic_offset+i,metadata->rmap[vic_offset+i],metadata->invmap[vic_offset+i]);
     }
     for(int i=0;i<PPB;i++){
-        printf("[rsv]pg %d: rmap %d, inv %d\n",rsv_offset+i,metadata->rmap[rsv_offset+i],metadata->invmap[rsv_offset+i]);
+        printf("[GC][rsv]pg %d: rmap %d, inv %d\n",rsv_offset+i,metadata->rmap[rsv_offset+i],metadata->invmap[rsv_offset+i]);
     }
-    printf("block meta : vic %d invnum %d state %d rsv %d invnum %d state %d\n",
+    printf("[GC][meta]vic %d invnum %d state %d rsv %d invnum %d state %d\n",
     vic->idx,metadata->invnum[vic->idx],metadata->state[vic->idx],
     rsv->idx,metadata->invnum[rsv->idx],metadata->state[rsv->idx]);
+
+    printf("[GC]moved vnum = %d, vic = %d, rsv = %d\n",vp_count,vic->idx,rsv->idx);
+    printf("[GC]states: ");
+    for(int i=0;i<NOB;i++) printf("%d ",metadata->state[i]);
+    printf("\n");
+    printf("[GC]block tracking: %d,%d,%d\n",fblist_head->blocknum,rsvlist_head->blocknum,full_head->blocknum);
+    printf("====GC unit function ends====\n");
 #endif
     //insert each block to corresponding blocklist
     rsv->fpnum = PPB - vp_count;
@@ -205,15 +215,7 @@ void gc_simul(rttask task, meta* metadata, bhead* fblist_head,
     *total_fp += rsv->fpnum;
     ll_append(fblist_head,rsv);
     ll_append(rsvlist_head,vic);
-  
     *tracker = run_exec / (float)task.gcp;
-#ifdef GCDEBUG
-    printf("[GC]moved vnum = %d, vic = %d, rsv = %d\n",vp_count,vic->idx,rsv->idx);
-    printf("states: ");
-    for(int i=0;i<NOB;i++) printf("%d ",metadata->state[i]);
-    printf("\n");
-    printf("block state tracking, sum : %d,%d,%d\n",fblist_head->blocknum,rsvlist_head->blocknum,full_head->blocknum);
-#endif
 }
 
 void wl_simul(meta* metadata, bhead* fblist_head, bhead* full_head,
@@ -368,7 +370,7 @@ void wl_simul(meta* metadata, bhead* fblist_head, bhead* full_head,
                 a=a->next;
             }
 
-    //update hotcold blocklist(DISABLED NOW)
+    //update hotcold blocklist (DISABLED NOW)
     /*
     btemp = ll_remove(hotlist,vic1);
     btemp2 = ll_remove(coldlist,vic2);

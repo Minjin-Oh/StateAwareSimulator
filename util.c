@@ -120,7 +120,6 @@ int _find_min_period(rttask* task,int tasknum,float _OP){
 float find_worst_util(rttask* task, int tasknum, meta* metadata){
     //calculate worst-case utilization regarding to current block state
     //as a worst case bound, simply assume that each task independantly chooses the block.
-
     //find oldest, freshest block
     int freshest, oldest, sum;
     float std, avg, var;
@@ -304,4 +303,77 @@ float calc_std(meta* metadata){
         var += b;
     }
     return sqrt(var/(float)NOB);
+}
+
+int find_gcctrl(rttask* task, int tasknum, meta* metadata){
+    //find the value for youngest/oldest block
+    int yng = get_blockidx_meta(metadata,YOUNG);
+    int old = get_blockidx_meta(metadata,OLD);
+    int window = old - yng;
+    int res = old;
+    float cur_wcutil_tasks[tasknum];
+    float cur_gcctrl_tasks[tasknum];
+    float cur_wcutil = 0.0;
+    float cur_gcctrl = 0.0;
+    float cur_r,cur_w,cur_gc;
+
+    //find worst util given old/yng value
+    //assume a case when oldest block is changed.
+    for(int i=0;i<tasknum;i++){
+        cur_r = __calc_ru(&(task[i]),old+1);
+        cur_w = __calc_wu(&(task[i]),yng);
+        cur_gc = __calc_gcu(&(task[i]),(int)(OP*PPB),yng,old+1,old+1);
+        printf("[GCCTRL]WCUT : %f, %f, %f\n",cur_r,cur_w,cur_gc);
+        cur_wcutil_tasks[i] = cur_r+cur_w+cur_gc;
+        cur_wcutil += cur_wcutil_tasks[i];
+    }
+    printf("expected wcutil(noctrl):%f\n",cur_wcutil);
+    //!find worst util
+
+    //check utilization of gc-restricted version
+    for(int i=old; i>yng; i--){
+        //reset data
+        cur_gcctrl = 0.0;
+        //scan the metadata and find # of feasible blocks
+        int feasible = NOB;
+        for(int j=0;j<NOB;j++){
+            if(metadata->state[j] >= i){
+                feasible--;
+            }
+        }
+        //!feasible block # found
+
+        //find minimum new reclaimable page for restricted window
+        int worst_invalid = (int)(OP*PPB*NOB) - (NOB-feasible)*PPB;
+        int actual_invalid = 0;
+        for(int j=0;j<NOB;j++){
+            if(metadata->state[j] < i){
+                actual_invalid += metadata->invnum[j];
+            }
+        }
+        int new_minrc = worst_invalid / feasible;
+        printf("minimum reclaimable page : %d, %d\n",new_minrc,actual_invalid/feasible);
+        //!find new minrc
+
+        //calculate gc_restricted version utilization
+        for(int j=0;j<tasknum;j++){
+            cur_r = __calc_ru(&(task[j]),old);
+            cur_w = __calc_wu(&(task[j]),yng);
+            cur_gc = __calc_gcu(&task[j],actual_invalid/feasible,yng,old,old);
+            printf("[GCCTRL]CTRL : %f, %f, %f\n",cur_r,cur_w,cur_gc);
+            cur_gcctrl_tasks[j] = cur_r+cur_w+cur_gc;
+            cur_gcctrl += cur_gcctrl_tasks[j];
+        }
+        //!calculated gc_ctrled utilization
+
+        //compare old block change case & gc restriction case
+        for(int j=0;j<tasknum;j++){
+            printf("[GCCTRL][thres:%d]%f vs %f\n",i,cur_wcutil_tasks[j],cur_gcctrl_tasks[j]);
+        }
+        //find the optimal point for GC restriction.
+        if(cur_gcctrl <= cur_wcutil){
+            res = i;
+        }
+    }
+    return res;
 }

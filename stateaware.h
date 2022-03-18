@@ -27,6 +27,7 @@
 
 //DEBUG and WL option toggle
 //#define GCDEBUG
+#define DOGC
 //#define DORELOCATE
 //#define DOGCCONTROL
 //profiles -- assume linear execution time change
@@ -70,6 +71,9 @@ typedef struct _meta{
     int access_window[NOB];
 }meta;
 
+//IO microbenchmark generating function.
+void IOgen(int tasknum, rttask* task, int runtime, int offset);
+int IOget(FILE* fp);
 //init_array
 void init_metadata(meta* metadata);
 bhead* init_blocklist(int start, int end);
@@ -84,7 +88,7 @@ void free_blocklist(bhead* head);
 block* write_simul(rttask task, meta* metadata, int* g_cur, 
                    bhead* fblist_head, bhead* write_head, bhead* full_head, 
                    block* cur_fb,int* total_fp, float* tracker);
-void read_simul(rttask task, meta* metadata, float* tracker);
+void read_simul(rttask task, meta* metadata, float* tracker, int offset);
 
 void gc_simul(rttask task, meta* metadata, 
               bhead* fblist_head, bhead* full_head, bhead* rsvlist_head,
@@ -98,6 +102,7 @@ void wl_simul(meta* metadata,
 float find_cur_util();
 float find_worst_util(rttask* task, int tasknum, meta* metadata);
 float find_SAworst_util(rttask* task, int tasknum, meta* metadata);
+int find_gcctrl(rttask* task, int tasknum, meta* metadata);
 float calc_std(meta* metadata);
 int util_check_main(); //test function for debugging(not used in simulation)
 
