@@ -2,16 +2,16 @@
 
 block* write_simul(rttask task, meta* metadata, int* g_cur, 
                    bhead* fblist_head, bhead* write_head, bhead* full_head, 
-                   block* cur_fb, int* total_fp, float* tracker){
+                   block* cur_fb, int* total_fp, float* tracker, FILE* fp_w, int write_limit){
     /* FIXME: write_simul must give out current target block (for next write)*/
     //printf("[WSIM]Writing target is %d, fp %d, tot fp %d\n",cur_fb->idx,cur_fb->fpnum,*total_fp);
     float hot = -1.0;
     int lpa = -1;
     block* cur = cur_fb;
-    int* target_block = (int*)malloc(sizeof(int)*task.wn);
+    int* target_block;
     int logispace = (int)(NOP*(1-OP));
     int hotspace = (int)(logispace*SPLOCAL);
-
+    target_block = (int*)malloc(sizeof(int)*task.wn);
     float run_exec = 0.0;
     for (int i=0;i<task.wn;i++){
         //locality based lpa generation
@@ -22,52 +22,71 @@ block* write_simul(rttask task, meta* metadata, int* g_cur,
         else {
             lpa = rand()%(logispace-hotspace)+hotspace;
         }
-
+        //OVERRIDE:: get lpa with given workload file.
+        lpa = IOget(fp_w);
         //invalidate old
         int old_ppa = metadata->pagemap[lpa];
         int old_block = (int)(old_ppa/PPB);
         metadata->invnum[old_block]++;
         metadata->invmap[old_ppa] = 1;
-
-        //get freepage
+        metadata->total_invalid++;
+        //get new free block if necessary
         if(cur->fpnum <= 0){
             if(write_head->head == NULL){
                 printf("oh, why is this null?\n");
                 sleep(1);
                 abort();
             }
+            //append the current block in full block list
             ll_remove(write_head,cur->idx);
             ll_append(full_head,cur);
-            //cur = ll_pop(fblist_head);
-            cur = ll_condremove(metadata,fblist_head,YOUNG);
-            //cur = ll_remove(fblist_head,fblist_head->head->idx);
-            //printf("[WSIM]cur fb %d\n",fblist_head->blocknum);
+
+            //get a new block (if impossible, abort)            
+            if(write_limit == -1){ //write control not necessary
+                cur = ll_condremove(metadata,fblist_head,YOUNG);
+            } else if(write_limit == -2){ //write limit cannot make taskset feasible
+                printf("write limit cannot be enforced\n");
+                sleep(3);
+                abort();
+            } else{ //get a new block w.r.t write_limit
+                cur = ll_condremove(metadata,fblist_head,write_limit);
+                printf("write limit enforced, condition : %d\n",metadata->state[cur->idx]);
+            }
+            //if there's no free block, abort.
+            if(cur==NULL){
+                printf("no free block exist. cur fp : %d\n",*total_fp);
+                sleep(3);
+                abort();
+            }
             ll_append(write_head,cur);
             *g_cur = PPB*cur->idx + (PPB-cur->fpnum);
+            
         }
 
         //validate new page
         target_block[i] = cur->idx;
         metadata->pagemap[lpa] = *g_cur;
         metadata->rmap[*g_cur] = lpa;
-        //printf("lpa %d, ppa %d, old_ppa %d, inv %d\n",
-        //        lpa,*g_cur,old_ppa,metadata->invmap[old_ppa]);
+
+        //move physical pg pointer & update metadata
         *g_cur += 1;
         cur->fpnum -= 1;
+        *total_fp -= 1;
     }
+
+    //profiling
     for (int i=0;i<task.wn;i++){
         run_exec += w_exec(metadata->state[target_block[i]]);
     }
     *tracker = run_exec/(float)task.wp;
-    *total_fp -= task.wn;
     free(target_block);
     return cur;
 }
 
-void read_simul(rttask task, meta* metadata, float* tracker, int offset){
+void read_simul(rttask task, meta* metadata, float* tracker, int offset, FILE* fp_r){
     float hot = -1.0;
     int lpa = -1;
-    int* target_block = (int*)malloc(sizeof(int)*task.wn);
+    int target_block[task.rn];
     int logispace = (int)(NOP*(1-OP));
     int hotspace = (int)(logispace*SPLOCAL);
     float run_exec = 0.0;
@@ -87,18 +106,19 @@ void read_simul(rttask task, meta* metadata, float* tracker, int offset){
         target_block[i] = metadata->pagemap[lpa]/PPB;
         metadata->access_window[target_block[i]]++;
     }
+    //profiling 
     for (int i=0;i<task.rn;i++){
         run_exec += r_exec(metadata->state[target_block[i]]);
     }
     *tracker = run_exec/(float)task.rp;
-    free(target_block);
 }
 
 void gc_simul(rttask task, meta* metadata, bhead* fblist_head, 
-             bhead* full_head, bhead* rsvlist_head, int* total_fp, float* tracker){
+             bhead* full_head, bhead* rsvlist_head, int* total_fp, float* tracker, 
+             int gc_limit, int write_limit, int* targetblockhistory){
     //params
     block* cur = full_head->head;
-    block* vic = cur;
+    block* vic = NULL;
     block* rsv;
     int cur_vic_idx = cur->idx;
     int vic_offset;
@@ -110,26 +130,48 @@ void gc_simul(rttask task, meta* metadata, bhead* fblist_head,
     int tar_state[PPB];
 
     //find victim & rsv
-    
-#ifdef DOGCCONTROL
-    //if state of victim is too large, do not select it.
-    int old = get_blockidx_meta(metadata,OLD);
-    int yng = get_blockidx_meta(metadata,YOUNG);
 
-    if(*total_fp > 50){//when there's still some margin for write,
-        while(cur!=NULL){
-            if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
-               (metadata->state[cur->idx] < old)){
-                //only when state is not oldest & invnum + GC is tolerable, update target. 
+#ifdef DOGCNOTHRES
+    int old = get_blockstate_meta(metadata,OLD);
+    int yng = get_blockstate_meta(metadata,YOUNG);
+    while(cur!=NULL){
+        if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
+            (metadata->state[cur->idx] <= gc_limit) &&
+            (metadata->state[cur->idx] >= write_limit)){
+                //only when state is not oldest & invnum + GC is tolerable, update target.
                 cur_vic_idx = cur->idx;
                 vic = cur;
             }
+        cur = cur->next;
+    }
+    if(vic==NULL){
+        printf("no suitable GC target!!\n");
+        abort();
+    }
+#endif
+#ifdef DOGCCONTROL
+    //DEPRECATED logic
+    //if state of victim is too large, do not select it.
+    int old = get_blockstate_meta(metadata,OLD);
+    int yng = get_blockstate_meta(metadata,YOUNG);
+    
+    if (*total_fp >= 37){
+        while(cur!=NULL){
+            if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
+                (metadata->state[cur->idx] <= gc_limit) &&
+                (metadata->state[cur->idx] >= write_limit)){
+                    //only when state is not oldest & invnum + GC is tolerable, update target.
+                    //ADD another thing; 
+                    cur_vic_idx = cur->idx;
+                    vic = cur;
+                }
             cur = cur->next;
         }
     }
-    else{//go back to original logic.
+    else{
         while(cur != NULL){
-            if(metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]){
+            if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
+               (metadata->state[cur->idx] >= write_limit)){
                 cur_vic_idx = cur->idx;
                 vic = cur;
             }
@@ -137,20 +179,56 @@ void gc_simul(rttask task, meta* metadata, bhead* fblist_head,
         }
     }
 #endif
-#ifndef DOGCCONTROL
+#ifdef FORCEDCONTROL
+    int old = get_blockstate_meta(metadata,OLD);
+    int yng = get_blockstate_meta(metadata,YOUNG);
+    int fallback = -1;
+    while(cur!=NULL){
+        if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
+            (metadata->state[cur->idx] != old) &&
+            (metadata->state[cur->idx] >= write_limit) &&
+            (metadata->invnum[cur->idx] >= MINRC)){
+                //only when state is not oldest & invnum + GC is tolerable, update target.
+                //ADD another thing; 
+                cur_vic_idx = cur->idx;
+                vic = cur;
+            }
+        cur = cur->next;
+    }
+    if(vic == NULL){//if victim is not found, fallback to NORMAL
+        cur = full_head->head;
+        while(cur != NULL){
+            if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
+               (metadata->state[cur->idx] >= write_limit) &&
+               (metadata->invnum[cur->idx] >= MINRC)){
+                cur_vic_idx = cur->idx;
+                vic = cur;
+            }
+            cur = cur->next;
+        }
+    }
+    
+#endif
+#ifdef NORMAL
     while(cur != NULL){
-        if(metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]){
+        if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
+           (metadata->state[cur->idx] >= write_limit)){
             cur_vic_idx = cur->idx;
             vic = cur;
         }
         cur = cur->next;
     }
 #endif
+    printf("[GC]expected target : %d",vic->idx);
+    *targetblockhistory = metadata->state[vic->idx];
+    if(vic == NULL){
+        printf("[GC]no feasible block %d\n");
+        abort();
+    }
     if(metadata->invnum[cur_vic_idx]==0){
         printf("[GC]no fp block\n");
         return;
     }
-    
     //rmv victim from full
     ll_remove(full_head,vic->idx); 
     rsv = ll_pop(rsvlist_head);
@@ -159,35 +237,33 @@ void gc_simul(rttask task, meta* metadata, bhead* fblist_head,
     vic_offset = PPB*(vic->idx);
     rsv_offset = PPB*(rsv->idx);
     vp_count = 0;
-
     for(int i=0;i<PPB;i++){
-        if(metadata->invmap[vic_offset+i] == 0){ //mov valid data
+        if(metadata->invmap[vic_offset+i] == 0){ //if valid data, move to rsv
             int rtv_lpa = metadata->rmap[vic_offset+i];
             metadata->pagemap[rtv_lpa] = rsv_offset+vp_count;
             metadata->rmap[rsv_offset+vp_count] = rtv_lpa;
             metadata->invmap[rsv_offset+vp_count]=0;
-            
-            //add history of accessed blocks
+            //update runtime utilization(copy)
             vic_state[vp_count] = vic->idx;
             tar_state[vp_count] = rsv->idx;
-            //increment valid page count
             run_exec += r_exec(metadata->state[vic->idx])+w_exec(metadata->state[rsv->idx]);
             vp_count++;
         }
-        //reset old page infos
+        //reset old page info
         metadata->rmap[vic_offset+i]= -1;
         metadata->invmap[vic_offset+i]= 0;
     }
+    //set free page info in rsv block
     for(int i=vp_count;i<PPB;i++){
         metadata->rmap[rsv_offset+i] = -1;
         metadata->invmap[rsv_offset+i] = 0;
     }
-    //update victim block state
+    //update victim block metadata
+    metadata->total_invalid -= metadata->invnum[vic->idx];
     metadata->invnum[vic->idx] = 0;
-    run_exec += e_exec(metadata->state[vic->idx]);
     metadata->state[vic->idx]++;
-    //printf("GC exec time %f, GC period %f\n",run_exec,(float)task.gcp);
-
+    //finalize runtime execution
+    run_exec += e_exec(metadata->state[vic->idx]);
 #ifdef GCDEBUG
     printf("====GC unit function test====\n");
     for(int i=0;i<PPB;i++){
@@ -311,6 +387,8 @@ void wl_simul(meta* metadata, bhead* fblist_head, bhead* full_head,
     }
 
     //update block info(metadatas)
+    metadata->total_invalid -= metadata->invnum[vic_1->idx];
+    metadata->total_invalid -= metadata->invnum[vic_2->idx];
     metadata->invnum[vic_1->idx] = 0;
     metadata->invnum[vic_2->idx] = 0;
     metadata->state[vic_1->idx]++;

@@ -6,19 +6,22 @@ bhead* ll_init(){
     head = (bhead*)malloc(sizeof(bhead));
     head->blocknum = 0;
     head->head = NULL;
+    return head;
 }
 
 void ll_free(bhead* head){
+    int freecnt = 0;
+    int component = head->blocknum;
     block* cur = head->head;
     //free linked blocks starting from the head
-    while(cur->next != NULL){
+    block* temp = head->head;
+    while(freecnt != component){
         cur = cur->next;
-        free(cur->prev);
-    }
-    //if cur reaches last block, free it.
-    free(cur);
-    //free head
-    free(head);
+        freecnt++;
+        printf("temp info : %d, %dvs%d\n",temp->idx,freecnt,component);
+        free(temp);
+        temp = cur;
+    }   
 }
 
 block* ll_append(bhead* head, block* new){
@@ -94,6 +97,8 @@ block* ll_remove(bhead* head, int tar){
 
 block* ll_condremove(meta* metadata, bhead* head, int cond){
     //remove certain block, according to condition of block.
+    //if cond == YOUNG, return youngest block
+    //else if cond over 1 is given, return only the block with state >= cond.
     block* cur;
     block* tar;
     cur = head->head;
@@ -103,15 +108,29 @@ block* ll_condremove(meta* metadata, bhead* head, int cond){
             if(metadata->state[cur->idx] <= metadata->state[tar->idx]){
                 tar = cur;
             }
+        } else if (cond > 0){
+            if((metadata->state[cur->idx] <= metadata->state[tar->idx])&&
+               (metadata->state[cur->idx] >= cond)){
+                tar = cur;
+            }
         }
         cur = cur->next;
     }
-    //escape code
+
+    //edge cases
+    //if condition is not YOUNG, check if head is suitable
+    if((cur == head->head)&&(cond!=YOUNG)){
+        if(metadata->state[cur->idx] < cond){
+            printf("[cond]there's no such block!\n");
+            return NULL;
+        }
+    }
     if(tar == NULL){
         printf("there's no such block!\n");
         return NULL;
     }
-    //conditions of target block
+
+    //link other blocks if necessary
     if((tar->next != NULL) && (tar->prev != NULL)){
         tar->prev->next = tar->next;
         tar->next->prev = tar->prev;

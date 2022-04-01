@@ -1,5 +1,90 @@
 #include "stateaware.h"
 
+
+void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
+    int access_avg = 0;
+    int cycle_avg = 0;
+    int high = -1;
+    int low = -1;
+    int cur_high = -1;
+    int cur_low = -1;
+    
+    int temp_high[NOB];
+    int temp_low[NOB];
+    int highcnt=0;
+    int lowcnt=0;
+
+    printf("testing access window : ");
+    for(int i=0;i<NOB;i++){
+        printf("%d(%d), ",i,metadata->access_window[i]);
+        access_avg += metadata->access_window[i];
+        cycle_avg += metadata->state[i];
+    }
+    printf("\n");
+    access_avg = access_avg/NOB;
+    cycle_avg = cycle_avg/NOB;
+
+    //generate temporary block list w.r.t (A.hotness, B.state)
+    for(int i=0;i<NOB;i++){
+        if(metadata->state[i] > cycle_avg){
+            temp_high[highcnt] = i;
+            highcnt++;
+        }
+        else{
+            temp_low[lowcnt] = i;
+            lowcnt++;
+        }
+    }
+    
+    //find the oldest/youngest block in hot/cold block
+    //or, find the hottest/coldest block in old/young block
+    for(int i=0;i<highcnt;i++){
+        //printf("[HI]%d(cnt:%d,cyc:%d\n",temp_high[i],metadata->access_window[temp_high[i]],metadata->state[temp_high[i]]);
+        if(cur_high == -1){
+            if(is_idx_in_list(fblist_head,temp_high[i])||is_idx_in_list(full_head,temp_high[i])){
+                cur_high = metadata->access_window[temp_high[i]];
+                high = temp_high[i];
+                
+            }
+        }
+        else if(metadata->access_window[temp_high[i]] > cur_high){
+            if(is_idx_in_list(fblist_head,temp_high[i])||is_idx_in_list(full_head,temp_high[i])){
+                cur_high = metadata->access_window[temp_high[i]];
+                high = temp_high[i];
+            }
+        } 
+        else{
+            /*do nothing*/
+        }
+    }
+    for(int i=0;i<lowcnt;i++){
+        //printf("[LO]%d(cnt:%d,cyc:%d\n",temp_low[i],metadata->access_window[temp_low[i]],metadata->state[temp_low[i]]);
+        if(cur_low == -1){
+            if(is_idx_in_list(fblist_head,temp_low[i])||is_idx_in_list(full_head,temp_low[i])){
+                cur_low = metadata->access_window[temp_low[i]];
+                low = temp_low[i];
+                
+            }
+        }
+        else if(metadata->access_window[temp_low[i]] < cur_low){
+            if(is_idx_in_list(fblist_head,temp_low[i])||is_idx_in_list(full_head,temp_low[i])){
+                cur_low = metadata->access_window[temp_low[i]];
+                low = temp_low[i];
+            }
+        } 
+        else{
+            /*do nothing*/
+        }
+    }
+    printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",high,metadata->access_window[high],metadata->state[high]);
+    printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",low,metadata->access_window[low],metadata->state[low]);
+
+    //return high/low value.
+    *res1 = high;
+    *res2 = low;
+}
+
+
 void _build_hc_fromlist(bhead* list, meta* metadata, bhead* hotlist, bhead* coldlist,int max){
     block* cur = list->head;
     while(cur != NULL){
@@ -22,6 +107,8 @@ void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist, int max){
     for(int i=0;i<NOB;i++){
         block* new = (block*)malloc(sizeof(block));
         new->idx = i;
+        new->next = NULL;
+        new->prev = NULL;
         if(metadata->state[i]>=max-MARGIN)
             ll_append(hotlist,new);
         else   
@@ -110,7 +197,7 @@ int get_blkidx_byage(meta* metadata, bhead* list,
     return -1;
 }
 
-int get_blockidx_meta(meta* metadata, int param){
+int get_blockstate_meta(meta* metadata, int param){
     // a function to find youngest/oldset block inside whole system
     int ret_state = metadata->state[0];
     if(param == OLD){

@@ -19,17 +19,28 @@
 #define MARGIN 3 
 #define THRESHOLD 10
 #define OLD 0
-#define YOUNG 1
+#define YOUNG -1
 
 //sorting
 #define ASC 0
 #define DES 1
 
-//DEBUG and WL option toggle
-//#define GCDEBUG
+//#define WORKGEN
+
+//GC and GCDEBUG option toggle
 #define DOGC
+#define GCFPLIMIT     // a case where GC is triggered with free page threshold
+//#define GCDEBUG       // DEBUG print option
+
+//scheme option toggle
+
 //#define DORELOCATE
+//#define DOGCNOTHRES
+//#define DOWRCONTROL
 //#define DOGCCONTROL
+#define FORCEDCONTROL
+//#define NORMAL
+
 //profiles -- assume linear execution time change
 #define STARTW 500
 #define ENDW 350
@@ -37,8 +48,8 @@
 #define ENDR 200
 #define STARTE 5000
 #define ENDE 20000
-
-#define STAMP 5
+#define MINRC 35
+#define STAMP 1
 //structure definition
 typedef struct _rttask{
     int idx;
@@ -59,6 +70,7 @@ typedef struct _block{
 
 typedef struct _bhead{
     block* head;
+    block* last;
     int blocknum;
 }bhead;
 
@@ -69,10 +81,12 @@ typedef struct _meta{
     int invmap[NOP];
     int state[NOB];
     int access_window[NOB];
+    int total_invalid;
 }meta;
 
 //IO microbenchmark generating function.
 void IOgen(int tasknum, rttask* task, int runtime, int offset);
+void IOgen_loc(int tasknum, rttask* task, int runtime, int offset);
 int IOget(FILE* fp);
 //init_array
 void init_metadata(meta* metadata);
@@ -87,12 +101,12 @@ void free_blocklist(bhead* head);
 //simulator functions
 block* write_simul(rttask task, meta* metadata, int* g_cur, 
                    bhead* fblist_head, bhead* write_head, bhead* full_head, 
-                   block* cur_fb,int* total_fp, float* tracker);
-void read_simul(rttask task, meta* metadata, float* tracker, int offset);
+                   block* cur_fb,int* total_fp, float* tracker, FILE* fp_w, int write_limit);
+void read_simul(rttask task, meta* metadata, float* tracker, int offset, FILE* fp_r);
 
 void gc_simul(rttask task, meta* metadata, 
               bhead* fblist_head, bhead* full_head, bhead* rsvlist_head,
-              int* total_fp, float* tracker);
+              int* total_fp, float* tracker, int gc_limit, int write_limit, int* targetblockhistory);
 
 void wl_simul(meta* metadata, 
               bhead* fbhead, bhead* fullhead, bhead* hotlist, bhead* coldlist, 
@@ -102,7 +116,8 @@ void wl_simul(meta* metadata,
 float find_cur_util();
 float find_worst_util(rttask* task, int tasknum, meta* metadata);
 float find_SAworst_util(rttask* task, int tasknum, meta* metadata);
-int find_gcctrl(rttask* task, int tasknum, meta* metadata);
+int find_gcctrl(rttask* task, int taskidx,int tasknum, meta* metadata,bhead* full_head);
+int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata);
 float calc_std(meta* metadata);
 int util_check_main(); //test function for debugging(not used in simulation)
 
@@ -110,7 +125,10 @@ int util_check_main(); //test function for debugging(not used in simulation)
 float w_exec(int cycle);
 float r_exec(int cycle);
 float e_exec(int cycle);
-float __calc_gcmult(int wp, int wn, int MINRC);
+float __calc_gcmult(int wp, int wn, int _minrc);
+float __calc_wu(rttask* task, int scale_w);
+float __calc_ru(rttask* task, int scale_r);
+float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e);
 
 //misc
 int* add_checkpoints(int tasknum, rttask* tasks, int runtime, int* cps_size);
@@ -127,6 +145,6 @@ int idx_exist(bhead* head, int tar);
 //hot cold seperation functions.
 void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist, int max);
 int get_blkidx_byage(meta* metadata, bhead* list, bhead* rsvlist_head, bhead* write_head, int param, int any);
-int get_blockidx_meta(meta* metadata, int param);
+int get_blockstate_meta(meta* metadata, int param);
 int is_idx_in_list(bhead* head, int tar);
-
+void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2);

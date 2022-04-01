@@ -31,10 +31,10 @@ int myfloor(float a){
     int b = (int)a;
     return a;
 }
-int _gc_period(rttask* task,int MINRC){
+int _gc_period(rttask* task,int _minrc){
     int mult;
     int gcp, min_reclaim;
-    min_reclaim = MINRC;
+    min_reclaim = _minrc;
     if (min_reclaim >= task->wn){
         mult = myfloor((float)min_reclaim/(float)task->wn);
         return task->wp * mult;
@@ -50,10 +50,10 @@ int _gc_period(rttask* task,int MINRC){
 
 //in init stage, task structure does not have correct data
 //use integers instead of structure to calc gc multiplication.
-float __calc_gcmult(int wp, int wn, int MINRC){
+float __calc_gcmult(int wp, int wn, int _minrc){
     int mult;
     int gcp, min_reclaim;
-    min_reclaim = MINRC;
+    min_reclaim = _minrc;
     if (min_reclaim >= wn){
         mult = myfloor((float)min_reclaim/(float)wn);
         //printf("min_rc,wn,mult : %d %d %d\n",min_reclaim,wn,mult);
@@ -98,8 +98,9 @@ int __get_min(int a, int b, int c){
 int _find_min_period(rttask* task,int tasknum,float _OP){
     int ret = -1;
     int min_each_task = -1;
+    int actual_minrc = (int)(((NOB-tasknum)*PPB - NOB*PPB*(1-_OP))/NOB) - 2;
     for(int i=0;i<tasknum;i++){
-        int temp = _gc_period(&(task[i]),(int)(PPB*_OP));
+        int temp = _gc_period(&(task[i]),(int)(actual_minrc));
         //min btw r,w,gc
         //printf("[internal]comp btw%d %d %d\n",task[i].wp,task[i].rp,temp);
         min_each_task = __get_min(task[i].wp,task[i].rp,temp);
@@ -117,6 +118,23 @@ int _find_min_period(rttask* task,int tasknum,float _OP){
     }
     return ret;
 }
+
+float calc_std(meta* metadata){
+    float std, avg, var;
+    int sum = 0;
+    var = 0.0;
+    for(int i=0;i<NOB;i++){
+        sum += (float)metadata->state[i];
+    }
+    avg = (float)sum/(float)NOB;
+    for(int i=0;i<NOB;i++){
+        float a = (float)metadata->state[i] - avg;
+        float b = a*a;
+        var += b;
+    }
+    return sqrt(var/(float)NOB);
+}
+
 float find_worst_util(rttask* task, int tasknum, meta* metadata){
     //calculate worst-case utilization regarding to current block state
     //as a worst case bound, simply assume that each task independantly chooses the block.
@@ -147,7 +165,8 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
         var += b;
         //printf("dev : %f,dev^2 : %f, cur_var : %f\n",a,b,var);
     }
-    //printf("oldest : %d, freshest : %d, std : %f\n",oldest,freshest,sqrt(var/(float)NOB));
+    int actual_minrc = (int)(((NOB-tasknum)*PPB - NOB*PPB*(1-OP))/NOB) - 2;
+    printf("oldest : %d, freshest : %d, std : %f\n",oldest,freshest,sqrt(var/(float)NOB));
     //with the oldest/freshest, calculate total utilization
     float total_u = 0.0;
     int min_period;
@@ -157,8 +176,8 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
         //read util
         total_u += __calc_ru(&(task[i]),oldest);
         //GC util
-        total_u += __calc_gcu(&(task[i]),(int)(PPB*OP),freshest,oldest,oldest);
-        //printf("[WC]cur_util:%f\n",total_u);
+        total_u += __calc_gcu(&(task[i]),(int)(actual_minrc),freshest,oldest,oldest);
+        printf("[WC]cur_util:%f\n",total_u);
     }
     //add blocking factor
     total_u += (float)e_exec(oldest) / (float)_find_min_period(task,tasknum,OP);
@@ -167,6 +186,124 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
     return total_u;
 }
 
+int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head){
+    //find the value for youngest/oldest block
+    int yng = get_blockstate_meta(metadata,YOUNG);
+    int old = get_blockstate_meta(metadata,OLD);
+    int new_rc = 0;
+    int window = old - yng;
+    int res = old;
+    int expected_idx = -1;
+    int cur_target;
+    float cur_wcutil = 0.0;
+    float cur_gcctrl = 0.0;
+    float cur_minutil = -1.0;
+    float cur_r,cur_w,cur_gc;
+    
+    if(old == yng){//no need to find ctrl
+        return yng;
+    }
+    //find worst util given old/yng value
+    cur_gc = __calc_gcu(&(task[taskidx]),MINRC,yng,old,old);
+    float prev_gc_exec = (PPB-MINRC)*(w_exec(yng)+r_exec(old))+e_exec(old);
+    float prev_gc_period = _gc_period(&(task[taskidx]),MINRC);
+    cur_wcutil = cur_gc;
+    //!find worst util
+
+    //check utilization of gc-restricted version
+    for(int i=old-1; i>yng; i--){
+        //reset data
+        cur_target = -1;
+        new_rc = 0;
+        cur_gcctrl = 0.0;
+
+        //scan the metadata and find # of feasible blocks
+        //we're finding a limit so that we can only GC block with ""cycle <= i""
+        int feasible = 0;
+        block* cur = full_head->head;
+        while(cur != NULL){
+            if(metadata->state[cur->idx] <= i && metadata->invnum[cur->idx] >= MINRC){
+                feasible++;
+                if(new_rc < metadata->invnum[cur->idx]){
+                    new_rc = metadata->invnum[cur->idx];
+                    cur_target = cur->idx;
+                }
+            }
+            cur = cur->next;
+        }
+        if(feasible == 0)
+            continue;
+        //!feasible block & invalid num
+        
+        //calculate cur gc 
+        float gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(i)) + e_exec(i);
+        float gc_period = _gc_period(&(task[taskidx]),(int)(new_rc));
+        cur_gc = gc_exec/gc_period;
+        cur_gcctrl = cur_gc;
+        //!calculated gc_ctrled utilization
+        
+        //find the optimal point for GC restriction.
+        if(cur_gcctrl <= cur_wcutil){
+            if((cur_minutil == -1.0)||(cur_gcctrl <= cur_minutil)){
+                cur_minutil = cur_gcctrl;
+                res = i;
+                expected_idx = cur_target;
+            }
+                //check if min_util can be derived with smaller period than original
+            if(gc_period < prev_gc_period){
+                printf("[prev]GC %f,%f,%f\n",prev_gc_period,prev_gc_exec,cur_wcutil);
+                printf("[new]GC %f,%f,%f\n",gc_period,gc_exec,cur_gcctrl);
+                sleep(5);
+            }
+             else {
+                /* do nothing*/
+            }
+        }
+    }
+    printf("expected target %d, util : %f, state : %d\n",expected_idx,cur_minutil,metadata->state[expected_idx]);
+    return res;
+
+}
+
+int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata){
+    //find a optimized value for worst case utilization
+    //FIXME::current writectrl supports only single task mode. for multiple task, we need LP solver
+    int yng, old, ret;
+    float cur_worst, cur_write, new_write, margin;
+    
+    //find a margin which can be used by write
+    yng = get_blockstate_meta(metadata,YOUNG);
+    old = get_blockstate_meta(metadata,OLD);
+    cur_worst = find_worst_util(task,tasknum,metadata);
+    
+    //if cur worst is below 1.0, do not shrink write.
+    if(cur_worst <= 1.0){
+        return -1;
+    }
+
+    cur_write = __calc_wu(task,yng);
+    margin = 1.0 - (cur_worst - cur_write);
+    printf("cur worst is %f\n",cur_worst);
+    printf("margin for write : %f\n",margin);
+
+    //use that margin to calculate how much should write shrink
+    ret = -1;
+    for(int i=yng;i<=old;i++){
+        new_write = __calc_wu(task,i);
+        if(new_write < margin){
+            printf("write util : %f at %d\n",new_write,i);
+            ret = i;
+            break;
+        }
+    }
+    if(ret == -1){
+        printf("maximum shrink : %f\n",__calc_wu(task,old));
+        printf("write shrink failed!\n");
+        return -2;
+    }
+    else
+        return ret;
+}
 float find_SAworst_util(rttask* task, int tasknum, meta* metadata){
     //Find a bit more optimized value as a worst utilization.
     //check if a system can bound the worst case utilization,
@@ -207,7 +344,7 @@ float find_SAworst_util(rttask* task, int tasknum, meta* metadata){
     float utils[MAXPE-freshest];
     for(int a=0;a<tasknum;a++){
         for(int i=0;i<MAXPE-freshest;i++){
-            feasible = NOB;
+            feasible = NOB-2;
             //check if how many block is feasible
             for(int j=0;j<NOB;j++){
                 if(metadata->state[j] < limit_fresh) feasible--;
@@ -228,7 +365,7 @@ float find_SAworst_util(rttask* task, int tasknum, meta* metadata){
             if(prev_min_reclaim == 0){
                 prev_min_reclaim = min_reclaim;
             }
-            printf("[SA]feasible block : %d, newOP : %f, min_rec : %d\n",feasible,newOP,min_reclaim);
+            //printf("[SA]feasible block : %d, newOP : %f, min_rec : %d\n",feasible,newOP,min_reclaim);
             
             //prev_util vs cur util
             float cur_r = __calc_ru(&(task[a]),oldest);
@@ -239,7 +376,7 @@ float find_SAworst_util(rttask* task, int tasknum, meta* metadata){
                 prev_util = cur_util;
             }
             else{/*do not update prev value, if it already exists*/}
-            printf("[SA][%d] prev util : %f, new util : %f\n",limit_fresh,prev_util,cur_util);
+            //printf("[SA][%d] prev util : %f, new util : %f\n",limit_fresh,prev_util,cur_util);
             int task_minp = __get_min(task[a].wp,task[a].rp,_gc_period(&(task[a]),prev_min_reclaim));
             
             //update minimum period if necessary
@@ -254,7 +391,7 @@ float find_SAworst_util(rttask* task, int tasknum, meta* metadata){
             prev_util = cur_util;
             prev_min_reclaim = min_reclaim;
             limit_fresh++;
-            printf("[SA][%d]%f\n",limit_fresh,utils[i]);
+            //printf("[SA][%d]%f\n",limit_fresh,utils[i]);
             //At this point, update all information for next check next case.
 
         }//single task ended shrink
@@ -286,94 +423,4 @@ int util_check_main(){
     int gc_exec = (PPB-(int)(PPB*OP))*(w_exec(0)+r_exec(0))+e_exec(0);
     int gc_period = _gc_period(&(tasks[0]),(int)(PPB*OP));
     printf("gc util e:%d p:%d u:%f\n",gc_exec,gc_period,__calc_gcu(&(tasks[0]),(int)(PPB*OP),0,20,20));
-    
-}
-
-float calc_std(meta* metadata){
-    float std, avg, var;
-    int sum = 0;
-    var = 0.0;
-    for(int i=0;i<NOB;i++){
-        sum += (float)metadata->state[i];
-    }
-    avg = (float)sum/(float)NOB;
-    for(int i=0;i<NOB;i++){
-        float a = (float)metadata->state[i] - avg;
-        float b = a*a;
-        var += b;
-    }
-    return sqrt(var/(float)NOB);
-}
-
-int find_gcctrl(rttask* task, int tasknum, meta* metadata){
-    //find the value for youngest/oldest block
-    int yng = get_blockidx_meta(metadata,YOUNG);
-    int old = get_blockidx_meta(metadata,OLD);
-    int window = old - yng;
-    int res = old;
-    float cur_wcutil_tasks[tasknum];
-    float cur_gcctrl_tasks[tasknum];
-    float cur_wcutil = 0.0;
-    float cur_gcctrl = 0.0;
-    float cur_r,cur_w,cur_gc;
-
-    //find worst util given old/yng value
-    //assume a case when oldest block is changed.
-    for(int i=0;i<tasknum;i++){
-        cur_r = __calc_ru(&(task[i]),old+1);
-        cur_w = __calc_wu(&(task[i]),yng);
-        cur_gc = __calc_gcu(&(task[i]),(int)(OP*PPB),yng,old+1,old+1);
-        printf("[GCCTRL]WCUT : %f, %f, %f\n",cur_r,cur_w,cur_gc);
-        cur_wcutil_tasks[i] = cur_r+cur_w+cur_gc;
-        cur_wcutil += cur_wcutil_tasks[i];
-    }
-    printf("expected wcutil(noctrl):%f\n",cur_wcutil);
-    //!find worst util
-
-    //check utilization of gc-restricted version
-    for(int i=old; i>yng; i--){
-        //reset data
-        cur_gcctrl = 0.0;
-        //scan the metadata and find # of feasible blocks
-        int feasible = NOB;
-        for(int j=0;j<NOB;j++){
-            if(metadata->state[j] >= i){
-                feasible--;
-            }
-        }
-        //!feasible block # found
-
-        //find minimum new reclaimable page for restricted window
-        int worst_invalid = (int)(OP*PPB*NOB) - (NOB-feasible)*PPB;
-        int actual_invalid = 0;
-        for(int j=0;j<NOB;j++){
-            if(metadata->state[j] < i){
-                actual_invalid += metadata->invnum[j];
-            }
-        }
-        int new_minrc = worst_invalid / feasible;
-        printf("minimum reclaimable page : %d, %d\n",new_minrc,actual_invalid/feasible);
-        //!find new minrc
-
-        //calculate gc_restricted version utilization
-        for(int j=0;j<tasknum;j++){
-            cur_r = __calc_ru(&(task[j]),old);
-            cur_w = __calc_wu(&(task[j]),yng);
-            cur_gc = __calc_gcu(&task[j],actual_invalid/feasible,yng,old,old);
-            printf("[GCCTRL]CTRL : %f, %f, %f\n",cur_r,cur_w,cur_gc);
-            cur_gcctrl_tasks[j] = cur_r+cur_w+cur_gc;
-            cur_gcctrl += cur_gcctrl_tasks[j];
-        }
-        //!calculated gc_ctrled utilization
-
-        //compare old block change case & gc restriction case
-        for(int j=0;j<tasknum;j++){
-            printf("[GCCTRL][thres:%d]%f vs %f\n",i,cur_wcutil_tasks[j],cur_gcctrl_tasks[j]);
-        }
-        //find the optimal point for GC restriction.
-        if(cur_gcctrl <= cur_wcutil){
-            res = i;
-        }
-    }
-    return res;
 }

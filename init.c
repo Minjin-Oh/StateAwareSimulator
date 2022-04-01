@@ -11,6 +11,7 @@ void init_metadata(meta* metadata){
         metadata->state[i] = 0;
         metadata->access_window[i] = 0;
     }
+    metadata->total_invalid = 0;
 }
 
 void free_metadata(meta* metadata){
