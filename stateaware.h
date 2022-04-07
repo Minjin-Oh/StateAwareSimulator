@@ -15,6 +15,7 @@
 #define TPLOCAL 0.95
 
 //lifetime params
+#define MINRC 36
 #define MAXPE 100
 #define MARGIN 3 
 #define THRESHOLD 10
@@ -34,11 +35,12 @@
 
 //scheme option toggle
 
-//#define DORELOCATE
-//#define DOGCNOTHRES
+#define DORELOCATE
 //#define DOWRCONTROL
-//#define DOGCCONTROL
-#define FORCEDCONTROL
+//#define DOGCNOTHRES
+#define DOGCCONTROL
+//#define FORCEDCONTROL
+//#define FORCEDNOTHRES
 //#define NORMAL
 
 //profiles -- assume linear execution time change
@@ -48,7 +50,7 @@
 #define ENDR 200
 #define STARTE 5000
 #define ENDE 20000
-#define MINRC 35
+
 #define STAMP 1
 //structure definition
 typedef struct _rttask{
@@ -82,6 +84,8 @@ typedef struct _meta{
     int state[NOB];
     int access_window[NOB];
     int total_invalid;
+    int* oldblock_tracker;
+    char** access_tracker;
 }meta;
 
 //IO microbenchmark generating function.
@@ -89,7 +93,7 @@ void IOgen(int tasknum, rttask* task, int runtime, int offset);
 void IOgen_loc(int tasknum, rttask* task, int runtime, int offset);
 int IOget(FILE* fp);
 //init_array
-void init_metadata(meta* metadata);
+void init_metadata(meta* metadata, int tasknum);
 bhead* init_blocklist(int start, int end);
 void init_utillist(float* rutils, float* wutils, float* gcutils);
 void init_task(rttask* task,int idx, int wp, int wn, int rp, int rn, int gcp);
@@ -104,11 +108,11 @@ block* write_simul(rttask task, meta* metadata, int* g_cur,
                    block* cur_fb,int* total_fp, float* tracker, FILE* fp_w, int write_limit);
 void read_simul(rttask task, meta* metadata, float* tracker, int offset, FILE* fp_r);
 
-void gc_simul(rttask task, meta* metadata, 
+void gc_simul(rttask task, int tasknum, meta* metadata, 
               bhead* fblist_head, bhead* full_head, bhead* rsvlist_head,
               int* total_fp, float* tracker, int gc_limit, int write_limit, int* targetblockhistory);
 
-void wl_simul(meta* metadata, 
+void wl_simul(meta* metadata, int tasknum,
               bhead* fbhead, bhead* fullhead, bhead* hotlist, bhead* coldlist, 
               int vic1, int vic2, int* total_fp);
 
@@ -148,3 +152,6 @@ int get_blkidx_byage(meta* metadata, bhead* list, bhead* rsvlist_head, bhead* wr
 int get_blockstate_meta(meta* metadata, int param);
 int is_idx_in_list(bhead* head, int tar);
 void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2);
+
+//lpsolver
+int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,int low, int high);

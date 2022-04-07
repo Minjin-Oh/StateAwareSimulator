@@ -18,22 +18,15 @@ int main(int argc, char* argv[]){
     int g_cur = 0;                  //pointer for current writing page
     int tasknum = 3;                //number of task
     int cur_cp = 0;                 //current checkpoint time
-    int wl_mult = 5;                //period of wl. computed as wl_mult*gcp
+    int wl_mult = 10;               //period of wl. computed as wl_mult*gcp
     int total_fp = NOP-PPB*tasknum; //tracks number of free page = (physical space - reserved area)
     int cps_size = 0;               //number of checkpoints
-    
     int wl_init = 0;                //flag for wear-leveling initiation
     int wl_count = 0;               //a count for how many wl occured
-    
     int gc_count = 0;               //a profiles for how many gc occured
     int gc_ctrl = 0;
     int gc_nonworst = 0;
-    int gc_type1 = 0;
-    int gc_type2 = 0;
-    int gc_type3 = 0;
-    int gc_type4 = 0;
     int fstamp = 0;                 //a period for profile recording.
-    
     float w_util[tasknum];          //runtime utilization tracker
     float r_util[tasknum];
     float g_util[tasknum];
@@ -42,11 +35,10 @@ int main(int argc, char* argv[]){
     float g_wcutil[tasknum];
     float WU;                       //worst-case utilization tracker.
     float SAWU;
-    FILE* w_workload;
+    FILE* w_workload;               //init profile result file
     FILE* r_workload;
-
-    //init profile result file
-
+    FILE* rr_profile;
+    
 #if defined(DOGCNOTHRES) && !defined(DORELOCATE)
     FILE* fp = fopen("SA_prof_GCC.csv","w");
 #endif
@@ -66,35 +58,38 @@ int main(int argc, char* argv[]){
     FILE* fp = fopen("SA_prof_heur.csv","w");
 #endif
 
-    fprintf(fp,"%s\n","timestamp,taskidx,WU,actual_WU,w_util,w_wc,r_util,r_wc,g_util,g_wc,old,yng,std,gc_limit");
     
     //MINRC is now a configurable value, which can be adjusted like OP
     //reference :: RTGC mechanism (2004, li pin chang et al.) 
-    int actual_minrc = (int)(((NOB-tasknum)*PPB - NOB*PPB*(1-OP))/NOB) - 2;
     int max_valid_pg = (int)((1.0-OP)*(float)(PPB*NOB));
-    int expected_minrc = MINRC;
     int expected_invalid = MINRC*(NOB-tasknum);
     int expected_fp = PPB*NOB - max_valid_pg - expected_invalid;
     printf("expected_invalid : %d, expected_fp : %d\n",expected_invalid,expected_fp);
+    
     //init tasks(expand this to function for multi-task declaration)
     rttask* tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
-    int gcp_temp = (int)(__calc_gcmult(75000,11,(int)(actual_minrc)));
-    int gcp_temp2 = (int)(__calc_gcmult(150000,6,(int)(actual_minrc)));
-    int gcp_temp3 = (int)(__calc_gcmult(300000,3,(int)(actual_minrc)));
+    int gcp_temp = (int)(__calc_gcmult(75000,11,MINRC));
+    int gcp_temp2 = (int)(__calc_gcmult(150000,6,MINRC));
+    int gcp_temp3 = (int)(__calc_gcmult(300000,3,MINRC)); 
     init_task(&(tasks[0]),0,75000,11,75000,100,gcp_temp);
     init_task(&(tasks[1]),1,150000,6,40000,12,gcp_temp2);
     init_task(&(tasks[2]),2,300000,3,30000,40,gcp_temp3);
-    
+
 #ifdef WORKGEN 
     IOgen(tasknum,tasks,2100000000,0);
     printf("workload generated!\n");
     return 0;
 #endif
 
+    //open csv files for profiling and workload
     w_workload = fopen("workload_w.csv","r");
     r_workload = fopen("workload_r.csv","r");
+    rr_profile = fopen("rr_prof.csv","w");
+    fprintf(fp,"%s\n","timestamp,taskidx,WU,actual_WU,w_util,w_wc,r_util,r_wc,g_util,g_wc,old,yng,std,gc_limit");
+    fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
+    
     //initialize blocklist for blockmanage.
-    init_metadata(newmeta);
+    init_metadata(newmeta,tasknum);
     int* cps = add_checkpoints(tasknum,tasks,2100000000,&(cps_size));
     fblist_head = init_blocklist(0, NOB-tasknum-1);
     rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);
@@ -104,6 +99,8 @@ int main(int argc, char* argv[]){
     wl_head = init_blocklist(0,-1);
     hotlist = init_blocklist(0,-1);
     coldlist = init_blocklist(0,-1);
+
+    //init data access & distribution tracker
 
     for(int i=0;i<tasknum;i++){
         w_util[i] = 0.0;
@@ -134,19 +131,19 @@ int main(int argc, char* argv[]){
         total_fp--;
     }//!!finish initial writing
     
-    //utilization function check codes
-    util_check_main();
-    
     int gc_limit = MAXPE;
     int gc_blockhistory = -1;
     int write_limit = 0;
+
     //[SIMULATION BODY]do simulation for designated checkpoints
     for(int i=0;i<cps_size;i++){
         
         //uncomment this area when wl mechanism is necessary
         int cycle_max = get_blockstate_meta(newmeta,OLD);
         int cycle_min = get_blockstate_meta(newmeta,YOUNG);
-        if(cycle_max - cycle_min >= THRESHOLD){wl_init = 1;}
+        if(cycle_max - cycle_min >= THRESHOLD){
+            wl_init = 1;
+        }
         
         //update current chekpoint
         cur_cp = cps[i];
@@ -155,9 +152,7 @@ int main(int argc, char* argv[]){
         }
         
         //I/O simulation
-        
         for(int j=0;j<tasknum;j++){//for each I/O tasks, simulate I/O operation
-
             if(cur_cp % tasks[j].wp == 0){//WRITE 
 #ifdef DOWRCONTROL
                 write_limit = find_writectrl(&(tasks[j]),j,tasknum,newmeta);
@@ -174,29 +169,23 @@ int main(int argc, char* argv[]){
             if(cur_cp % tasks[j].rp == 0){//READ
                 read_simul(tasks[j],newmeta,&(r_util[j]),0,r_workload);
                 r_wcutil[j] = __calc_ru(&(tasks[j]),cycle_max);
-            }
-            
-            //!READ
+            }//!READ
             
 #ifdef DOGC            
             int fp_from_blocks = 0;
             
             if(cur_cp % tasks[j].gcp == 0){ //GARBAGE COLLECTION
-                
-
+                //edge :: every block is free block
                 if(full_head->head == NULL){
                     printf("no target block\n");
                     continue;
-                }    
+                }
                 int old = get_blockstate_meta(newmeta,OLD);
                 int yng = get_blockstate_meta(newmeta,YOUNG);
                 int prev_tot;
-#ifdef GCFPLIMIT
-                if(newmeta->total_invalid >= expected_invalid){//if free page is not enough, do GC
-#endif
-#ifndef GCFPLIMIT
-                if(1){
-#endif
+
+                //if free page is not enough, do GC
+                if(newmeta->total_invalid >= expected_invalid){
                     printf("==value checking==\n");
                     int inv_test = 0;
                     for(int k=0;k<NOB;k++){
@@ -208,10 +197,10 @@ int main(int argc, char* argv[]){
                     prev_tot = total_fp;
                     printf("[%d][GC] cur fp %d\n",cur_cp,total_fp);
                     printf("[%d][GC] gc_limit is %d\n",cur_cp,gc_limit);
-                    gc_simul(tasks[j],newmeta,
+                    gc_simul(tasks[j],tasknum,newmeta,
                              fblist_head,full_head,rsvlist_head,
                              &(total_fp),&(g_util[j]),gc_limit,write_limit,&(gc_blockhistory));
-                    g_wcutil[j] = __calc_gcu(&(tasks[j]),actual_minrc,cycle_min,cycle_max,cycle_max);
+                    g_wcutil[j] = __calc_gcu(&(tasks[j]),MINRC,cycle_min,cycle_max,cycle_max);
                     printf("[%d][GC] inc fp %d\n",cur_cp,total_fp);
                     gc_count++;
                     
@@ -257,20 +246,22 @@ int main(int argc, char* argv[]){
                     }
                     if(WU >= 1.0){
                         fprintf(fp,"%d,%d\n",gc_count,wl_count);
+                        fflush(fp);
+                        fflush(rr_profile);
                         fclose(fp);
+                        fclose(rr_profile);
                         printf("utilization overflowed. exit in 5 seconds...\n");
                         sleep(5);
                         abort();
                     }
                     //check if new worstcase goes over 1.0
-                    
-                    if (actual_WU > 1.0){
-                        fprintf(fp,"%d,%d\n",gc_count,wl_count);
-                        fclose(fp);
-                        printf("!!!actual utilization overflowed. exit in 5 seconds...\n");
-                        sleep(5);
-                        abort();
-                    }  
+                    //if (actual_WU > 1.0){
+                    //    fprintf(fp,"%d,%d\n",gc_count,wl_count);
+                    //    fclose(fp);
+                    //    printf("!!!actual utilization overflowed. exit in 5 seconds...\n");
+                    //    sleep(5);
+                    //    abort();
+                    //}  
 
                 }
 #ifdef GCDEBUG
@@ -301,42 +292,45 @@ int main(int argc, char* argv[]){
 #endif 
 
 #ifdef DORELOCATE        
-            if((cur_cp % tasks[0].gcp*wl_mult == 0) && (wl_init == 1)){ //RELOCATION(a.k.a WL)
+            if((cur_cp % (tasks[0].gcp*wl_mult) == 0) && (wl_init == 1)){ //RELOCATION(a.k.a WL)
                 //utilization based read-relocation approach
-                
-                //case 1. build hot-cold list and pick hot-old, cold-yng block.
                 if(WU >= 0.4){
-                    
-                    //target is found   
+                    if(j != 0){
+                        continue;
+                    }
                     int high = -1;
                     int low = -1;
                     find_RR_target(newmeta,fblist_head,full_head,&high,&low);
                     printf("[WL]passed value : %d, %d\n",high,low);
                     if(high != -1 && low != -1){
-                        if(newmeta->state[high] - newmeta->state[low] >= THRESHOLD){
-                            wl_simul(newmeta,fblist_head,full_head,hotlist,coldlist,high,low,&(total_fp));
+                        if(newmeta->state[high] - newmeta->state[low] >= THRESHOLD && 
+                           newmeta->access_window[high] - newmeta->state[low] > 0){
+                            //if condition meets, do relocation
+                            wl_simul(newmeta,tasknum,fblist_head,full_head,hotlist,coldlist,high,low,&(total_fp));
                             wl_count++;
-                            
+                            //FIXME::due to the various edge cases, 
+                            //we RECALCULATE total_fp in here.
+                            block* t = fblist_head->head;
+                            int new_tot = 0;
+                            while(t != NULL){
+                                new_tot += t->fpnum;
+                                t=t->next;
+                            }
+                            new_tot += write_head->head->fpnum;
+                            total_fp = new_tot;
+                            //profile
+                            fprintf(rr_profile,"%d,%d,%d,%d,%d,%d,%d\n",cur_cp,
+                                    high,newmeta->state[high],newmeta->access_window[high],
+                                    low ,newmeta->state[low] ,newmeta->access_window[low]);
+                            fflush(rr_profile);
+                            //reset access window for accurate hotness detection
+                            for(int i=0;i<NOB;i++){
+                                newmeta->access_window[i] = 0;
+                            }
                         }
                         else{
                             printf("skip this RR. difference too small\n");
                         }
-                    }
-                    
-                    //FIXME::due to the various edge cases, 
-                    //we simply RECALCULATE total_fp in here.
-                    block* t = fblist_head->head;
-                    int new_tot = 0;
-                    while(t != NULL){
-                        new_tot += t->fpnum;
-                        t=t->next;
-                    }
-                    new_tot += write_head->head->fpnum;
-                    
-                    total_fp = new_tot;
-                    printf("[WL]new tot fp is %d\n",total_fp);
-                    for(int i=0;i<NOB;i++){
-                        newmeta->access_window[i] = 0;
                     }
                 }
                 
@@ -383,7 +377,7 @@ int main(int argc, char* argv[]){
             }
 #endif  
         }
-        //sleep(1);
+        
         
     }//!simulation codes
 

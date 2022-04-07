@@ -1,6 +1,6 @@
 #include "stateaware.h"
 
-void init_metadata(meta* metadata){
+void init_metadata(meta* metadata, int tasknum){
     for (int i=0;i<NOP;i++){
         metadata->pagemap[i] = -1;
         metadata->rmap[i] = -1;
@@ -12,6 +12,19 @@ void init_metadata(meta* metadata){
         metadata->access_window[i] = 0;
     }
     metadata->total_invalid = 0;
+    //REFACTOR::for per-task tracking, malloc these member variables.
+    //because number of task is declared in main, not header.
+    metadata->oldblock_tracker = (int*)malloc(sizeof(int)*tasknum);
+    for(int i=0;i<tasknum;i++){
+        metadata->oldblock_tracker[i] = 0;
+    }
+    metadata->access_tracker = (char**)malloc(sizeof(char*)*tasknum);
+    for(int i=0;i<tasknum;i++){
+        metadata->access_tracker[i] = (char*)malloc(sizeof(char)*NOB);
+        for(int j=0;j<NOB;j++){
+            metadata->access_tracker[i][j] = 0;
+        }
+    }
 }
 
 void free_metadata(meta* metadata){

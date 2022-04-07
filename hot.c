@@ -36,10 +36,9 @@ void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* r
         }
     }
     
-    //find the oldest/youngest block in hot/cold block
-    //or, find the hottest/coldest block in old/young block
+    //find the oldest/youngest(h/c) block in hot/cold block
     for(int i=0;i<highcnt;i++){
-        //printf("[HI]%d(cnt:%d,cyc:%d\n",temp_high[i],metadata->access_window[temp_high[i]],metadata->state[temp_high[i]]);
+        printf("[HI]%d(cnt:%d,cyc:%d)\n",temp_high[i],metadata->access_window[temp_high[i]],metadata->state[temp_high[i]]);
         if(cur_high == -1){
             if(is_idx_in_list(fblist_head,temp_high[i])||is_idx_in_list(full_head,temp_high[i])){
                 cur_high = metadata->access_window[temp_high[i]];
@@ -58,7 +57,7 @@ void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* r
         }
     }
     for(int i=0;i<lowcnt;i++){
-        //printf("[LO]%d(cnt:%d,cyc:%d\n",temp_low[i],metadata->access_window[temp_low[i]],metadata->state[temp_low[i]]);
+         printf("[LO]%d(cnt:%d,cyc:%d)\n",temp_low[i],metadata->access_window[temp_low[i]],metadata->state[temp_low[i]]);
         if(cur_low == -1){
             if(is_idx_in_list(fblist_head,temp_low[i])||is_idx_in_list(full_head,temp_low[i])){
                 cur_low = metadata->access_window[temp_low[i]];
@@ -77,8 +76,7 @@ void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* r
         }
     }
     printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",high,metadata->access_window[high],metadata->state[high]);
-    printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",low,metadata->access_window[low],metadata->state[low]);
-
+    printf("[WL]vic2 %d(cnt:%d)(cyc:%d)\n",low,metadata->access_window[low],metadata->state[low]);
     //return high/low value.
     *res1 = high;
     *res2 = low;
