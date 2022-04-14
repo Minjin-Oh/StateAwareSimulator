@@ -25,13 +25,18 @@ void init_metadata(meta* metadata, int tasknum){
             metadata->access_tracker[i][j] = 0;
         }
     }
+    metadata->runutils = (float**)malloc(sizeof(float*)*3);
+    for(int i=0;i<3;i++){
+        metadata->runutils[i] = (float*)malloc(sizeof(float)*tasknum);
+        for(int j=0;j<tasknum;j++){
+            metadata->runutils[i][j] = -1.0;
+        }
+    }
 }
 
 void free_metadata(meta* metadata){
     free(metadata);
 }
-
-
 
 bhead* init_blocklist(int start, int end){
     bhead* newlist =  ll_init();
@@ -51,11 +56,13 @@ void free_blocklist(bhead* head){
     ll_free(head);
 }
 void init_utillist(float* rutils, float* wutils, float* gcutils){}
-void init_task(rttask* task,int idx, int wp, int wn, int rp ,int rn, int gcp){
+void init_task(rttask* task,int idx, int wp, int wn, int rp ,int rn, int gcp,int lb, int ub){
     task->idx = idx;
     task->wp = wp;
     task->wn = wn;
     task->rp = rp;
     task->rn = rn;
     task->gcp  = gcp;
+    task->addr_lb = lb;
+    task->addr_ub = ub;
 }

@@ -64,16 +64,38 @@ block* ll_pop(bhead* head){
     return temp;
 }
 
+block* ll_findidx(bhead* head, int tar){
+    //find certain block
+    block* cur = NULL;
+    cur = head->head;
+    
+    while(cur != NULL){
+        if(cur->idx == tar)
+            break;
+        else{
+            cur = cur->next;
+        }
+    }
+    if(cur==NULL){
+        printf("[findidx]cannot find target block\n");
+    }
+    return cur;
+}
 block* ll_remove(bhead* head, int tar){
     //remove certain block
     block* cur = NULL;
     cur = head->head;
-    while((cur->idx != tar) && (cur != NULL)){
-        cur = cur->next;
+    
+    while(cur != NULL){
+        if(cur->idx == tar)
+            break;
+        else{
+            cur = cur->next;
+        }
     }
     //escape code
     if(cur == NULL){
-        printf("there's no such block!\n");
+        //printf("[RMV]there's no such block!\n");
         return NULL;
     }
     //conditions of target block
@@ -93,6 +115,28 @@ block* ll_remove(bhead* head, int tar){
     }
     head->blocknum--;
     return cur;
+}
+
+block* ll_find(meta* metadata, bhead* head, int cond){
+    //find a block which meets condition(state)
+    block* cur;
+    block* tar;
+    cur = head->head;
+    tar = cur;
+    while(cur != NULL){
+        if(cond == YOUNG){
+            if(metadata->state[cur->idx] <= metadata->state[tar->idx]){
+                tar = cur;
+            }
+        } else if (cond > 0){
+            if((metadata->state[cur->idx] <= metadata->state[tar->idx])&&
+               (metadata->state[cur->idx] >= cond)){
+                tar = cur;
+            }
+        }
+        cur = cur->next;
+    }
+    return tar;
 }
 
 block* ll_condremove(meta* metadata, bhead* head, int cond){

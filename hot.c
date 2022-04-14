@@ -1,7 +1,7 @@
 #include "stateaware.h"
 
 
-void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
+void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
     int access_avg = 0;
     int cycle_avg = 0;
     int high = -1;
@@ -11,8 +11,14 @@ void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* r
     
     int temp_high[NOB];
     int temp_low[NOB];
+    int task_high[NOB];
+    int task_low[NOB];
     int highcnt=0;
     int lowcnt=0;
+    int taskhighcnt = 0;
+    int tasklowcnt = 0;
+    float temp, highest;
+    int hightask_idx;
 
     printf("testing access window : ");
     for(int i=0;i<NOB;i++){
@@ -35,23 +41,66 @@ void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* r
             lowcnt++;
         }
     }
-    
+    //specify a read-intensive task
+    highest = 0.0;
+    for(int i=0;i<tasknum;i++){
+        temp = __calc_ru(&(tasks[i]),0);
+        if(temp >= highest){
+            highest = temp;
+            hightask_idx = i;
+        }
+    }
+    //if we can specify the block with read-intensive data, choose among them.
+    for(int i=0;i<highcnt;i++){
+        if(metadata->access_tracker[hightask_idx][temp_high[i]]==1){
+            task_high[taskhighcnt] = temp_high[i];
+            taskhighcnt++;
+        }
+    }
+    for(int i=0;i<lowcnt;i++){
+        if(metadata->access_tracker[hightask_idx][temp_low[i]]==0){
+            task_low[tasklowcnt] = temp_low[i];
+            tasklowcnt++;
+        }
+    }
+    //if there exists a hot&read-intensive-task and cold & no-read-intensive task, swap among them.
+    if(taskhighcnt!=0 && tasklowcnt!=0){
+        for(int i=0;i<taskhighcnt;i++){
+            if(cur_high == -1 || metadata->access_window[task_high[i]]>cur_high){
+                if(is_idx_in_list(full_head,task_high[i])){
+                    cur_high = metadata->access_window[task_high[i]];
+                    high = temp_high[i];
+                }
+            }
+        }
+        for(int i=0;i<lowcnt;i++){
+            if(cur_low == -1 || metadata->access_window[task_low[i]]<cur_low ){
+                if(is_idx_in_list(full_head,temp_low[i])){
+                    cur_low = metadata->access_window[temp_low[i]];
+                    low = temp_low[i];
+                }
+            }
+        }
+        *res1 = high;
+        *res2 = low;
+        return;
+    }
     //find the oldest/youngest(h/c) block in hot/cold block
     for(int i=0;i<highcnt;i++){
         printf("[HI]%d(cnt:%d,cyc:%d)\n",temp_high[i],metadata->access_window[temp_high[i]],metadata->state[temp_high[i]]);
         if(cur_high == -1){
-            if(is_idx_in_list(fblist_head,temp_high[i])||is_idx_in_list(full_head,temp_high[i])){
+            if(is_idx_in_list(full_head,temp_high[i])){
                 cur_high = metadata->access_window[temp_high[i]];
                 high = temp_high[i];
                 
             }
         }
         else if(metadata->access_window[temp_high[i]] > cur_high){
-            if(is_idx_in_list(fblist_head,temp_high[i])||is_idx_in_list(full_head,temp_high[i])){
+            if(is_idx_in_list(full_head,temp_high[i])){
                 cur_high = metadata->access_window[temp_high[i]];
                 high = temp_high[i];
             }
-        } 
+        }
         else{
             /*do nothing*/
         }
@@ -59,14 +108,14 @@ void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* r
     for(int i=0;i<lowcnt;i++){
          printf("[LO]%d(cnt:%d,cyc:%d)\n",temp_low[i],metadata->access_window[temp_low[i]],metadata->state[temp_low[i]]);
         if(cur_low == -1){
-            if(is_idx_in_list(fblist_head,temp_low[i])||is_idx_in_list(full_head,temp_low[i])){
+            if(is_idx_in_list(full_head,temp_low[i])){
                 cur_low = metadata->access_window[temp_low[i]];
                 low = temp_low[i];
                 
             }
         }
         else if(metadata->access_window[temp_low[i]] < cur_low){
-            if(is_idx_in_list(fblist_head,temp_low[i])||is_idx_in_list(full_head,temp_low[i])){
+            if(is_idx_in_list(full_head,temp_low[i])){
                 cur_low = metadata->access_window[temp_low[i]];
                 low = temp_low[i];
             }

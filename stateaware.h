@@ -5,6 +5,11 @@
 #include <string.h>
 #include <time.h>
 
+#define WR 1
+#define RD 2
+#define GC 3
+#define RR 4
+
 #define NOB 100
 #define PPB 128
 #define NOP NOB*PPB
@@ -35,7 +40,7 @@
 
 //scheme option toggle
 
-#define DORELOCATE
+//#define DORELOCATE
 //#define DOWRCONTROL
 //#define DOGCNOTHRES
 #define DOGCCONTROL
@@ -60,6 +65,8 @@ typedef struct _rttask{
     int wp;
     int wn;
     int gcp;
+    int addr_lb;
+    int addr_ub;
 }rttask;
 
 
@@ -69,6 +76,28 @@ typedef struct _block{
     int idx;
     int fpnum;
 }block;
+
+typedef struct _IO{
+    int type;
+    int lpa;
+    int ppa;
+    int gc_old_lpa;
+    int gc_vic_ppa;
+    int gc_tar_ppa;
+    int rr_old_lpa;
+    int rr_vic_ppa;
+    int rr_tar_ppa;
+}IO;
+
+typedef struct _GCBlock{
+    block* cur_vic;
+    block* cur_rsv;
+}GCblock;
+
+typedef struct _RRBlock{
+    block* cur_vic1;
+    block* cur_vic2;
+}RRblock;
 
 typedef struct _bhead{
     block* head;
@@ -85,18 +114,20 @@ typedef struct _meta{
     int access_window[NOB];
     int total_invalid;
     int* oldblock_tracker;
+    float** runutils;
     char** access_tracker;
 }meta;
 
 //IO microbenchmark generating function.
 void IOgen(int tasknum, rttask* task, int runtime, int offset);
-void IOgen_loc(int tasknum, rttask* task, int runtime, int offset);
 int IOget(FILE* fp);
+void IO_open(int tasknum, FILE** wfpp, FILE** rfpp);
+
 //init_array
 void init_metadata(meta* metadata, int tasknum);
 bhead* init_blocklist(int start, int end);
 void init_utillist(float* rutils, float* wutils, float* gcutils);
-void init_task(rttask* task,int idx, int wp, int wn, int rp, int rn, int gcp);
+void init_task(rttask* task,int idx, int wp, int wn, int rp, int rn, int gcp, int lb, int ub);
 
 //free
 void free_metadata(meta* metadata);
@@ -121,7 +152,7 @@ float find_cur_util();
 float find_worst_util(rttask* task, int tasknum, meta* metadata);
 float find_SAworst_util(rttask* task, int tasknum, meta* metadata);
 int find_gcctrl(rttask* task, int taskidx,int tasknum, meta* metadata,bhead* full_head);
-int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata);
+int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head);
 float calc_std(meta* metadata);
 int util_check_main(); //test function for debugging(not used in simulation)
 
@@ -143,6 +174,8 @@ void ll_free(bhead* head);
 block* ll_pop(bhead* head);
 block* ll_append(bhead* head, block* new);
 block* ll_remove(bhead* head, int tar);
+block* ll_findidx(bhead* head, int tar);
+block* ll_find(meta* metadata, bhead* head, int cond);
 block* ll_condremove(meta* metadata, bhead* head, int cond);
 int idx_exist(bhead* head, int tar);
 
@@ -151,7 +184,24 @@ void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist, int max);
 int get_blkidx_byage(meta* metadata, bhead* list, bhead* rsvlist_head, bhead* write_head, int param, int any);
 int get_blockstate_meta(meta* metadata, int param);
 int is_idx_in_list(bhead* head, int tar);
-void find_RR_target(meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2);
+void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2);
 
 //lpsolver
 int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,int low, int high);
+
+//refactored simulation functions
+block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* write_head,
+                     FILE* fp_w, int write_limit, IO* IOqueue, block* cur_target);
+void write_job_end(rttask task, meta* metadata, IO* IOqueue, int* total_fp);
+void read_job_start(rttask task, meta* metadata, FILE* fp_r, IO* IOqueue);
+void read_job_end(rttask task,meta* metadata, IO* IOqueue);
+void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
+                  bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
+                  int write_limit, IO* IOqueue, GCblock* cur_GC);
+void gc_job_end(rttask* tasks, int taskidx, int tasknum, meta* metadata, IO* IOqueue,
+                bhead* fblist_head, bhead* rsvlist_head,
+                GCblock* cur_GC, int* total_fp);
+void RR_job_start(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
+                  IO* IOqueue, RRblock* cur_RR);
+void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head, 
+                  IO* IOqueue, RRblock* cur_RR);

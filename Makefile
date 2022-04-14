@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -g -Wall 
 TARGET = statesimul.out
-OBJS = init.o simul.o main.o misc.o list.o hot.o util.o IOgen.o lpsolve.o
+OBJS = init.o IOsimul.o simul.o job_main.o misc.o list.o hot.o util.o IOgen.o lpsolve.o
 
 $(TARGET): $(OBJS)
 	$(CC) -o $@ $(OBJS) -lm -ldl -lglpk

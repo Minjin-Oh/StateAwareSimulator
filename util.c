@@ -164,7 +164,7 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
         var += b;
         //printf("dev : %f,dev^2 : %f, cur_var : %f\n",a,b,var);
     }
-    printf("oldest : %d, freshest : %d, std : %f\n",oldest,freshest,sqrt(var/(float)NOB));
+    //printf("oldest : %d, freshest : %d, std : %f\n",oldest,freshest,sqrt(var/(float)NOB));
     //with the oldest/freshest, calculate total utilization
     float total_u = 0.0;
     int min_period;
@@ -180,7 +180,7 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
     //add blocking factor
     total_u += (float)e_exec(oldest) / (float)_find_min_period(task,tasknum,OP);
     //printf("[WC]exec : %f, min_p :%d\n",e_exec(oldest),_find_min_period(task,tasknum,OP));
-    printf("[WC]worst case util is %f\n",total_u);
+    //printf("[WC]worst case util is %f\n",total_u);
     return total_u;
 }
 
@@ -270,29 +270,79 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
             cur = cur->next;
         }
     }
-    printf("expected target %d, util : %f, state : %d\n",expected_idx,cur_minutil,metadata->state[expected_idx]);
-    printf("wtf let's check utilization %f %f\n",cur_wcutil,cur_gc);
+    //printf("expected target %d, util : %f, state : %d\n",expected_idx,cur_minutil,metadata->state[expected_idx]);
+    //printf("wtf let's check utilization %f %f\n",cur_wcutil,cur_gc);
     
     return expected_idx;
 
 }
 
-int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata){
+int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head){
     //find a optimized value for worst case utilization
-    //FIXME::current writectrl supports only single task mode. for multiple task, we need LP solver
-    int yng, old, ret;
-    float cur_worst, cur_write, new_write, margin;
     
-    //find a margin which can be used by write
+    //init params
+    int yng, old, ret, iter;
+    float cur_worst, cur_write, new_write, margin;
+    int cyc[NOB];
+    float rw_util[NOB];
     yng = get_blockstate_meta(metadata,YOUNG);
     old = get_blockstate_meta(metadata,OLD);
     cur_worst = find_worst_util(task,tasknum,metadata);
-    
-    //if cur worst is below 1.0, do not shrink write.
-    if(cur_worst <= 1.0){
-        return -1;
+    iter = 0;
+    //find a worst read block for task
+    //FIXME:: we can add worst-block for task in metadata array.
+    int cur_read_worst = 0;
+    for(int i=0;i<NOB;i++){
+        if(metadata->access_tracker[taskidx][i] == 1){
+            if(metadata->state[i] >= cur_read_worst){
+                cur_read_worst = metadata->state[i];
+            }
+        }
     }
+    printf("current read worst : %d\n",cur_read_worst);
+    //draw a write-read profile according to cur_read_worst
+    printf("state(util):");
+    for(int i=yng;i<=old;i++){
+        cyc[iter] = i;
+        if(i<cur_read_worst){
+            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),cur_read_worst);
+        }
+        else if (i >= cur_read_worst){
+            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),i);
+        }
+        printf("%d(%f) ",i,rw_util[iter]);
+        iter++;   
+    }
+    printf("\n");
+    //find a suitable block for best utilization
+    block* cur = fblist_head->head;
+    float cur_util = -1.0;
+    int best_idx;
+    int cur_state;
+    while(cur != NULL){
+        cur_state = metadata->state[cur->idx];
+        //printf("[F]candidate : %d, %d, %f\n",cur->idx,cur_state,rw_util[cur_state-yng]);
+        if(cur_util == -1.0 || cur_util >= rw_util[cur_state-yng]){
+            cur_util = rw_util[cur_state-yng];
+            best_idx = cur->idx;
+        }
+        cur = cur->next;
+    }//!fblist search end
+    cur = write_head->head;
+    while(cur != NULL){
+        cur_state = metadata->state[cur->idx];
+        //printf("[W]candidate : %d, %d, %f\n",cur->idx,cur_state,rw_util[cur_state-yng]);
+        if(cur_util == -1.0 || cur_util >= rw_util[cur_state-yng]){
+            cur_util = rw_util[cur_state-yng];
+            best_idx = cur->idx;
+        }
+        cur = cur->next;
+    }//!writelist search end
+    printf("best block : %d, state : %d, util : %f\n",best_idx,metadata->state[best_idx],cur_util);
+    return best_idx;
 
+    /*//old logic
+    //find a margin which can be used by write
     cur_write = __calc_wu(task,yng);
     margin = 1.0 - (cur_worst - cur_write);
     printf("cur worst is %f\n",cur_worst);
@@ -315,110 +365,7 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata){
     }
     else
         return ret;
-}
-float find_SAworst_util(rttask* task, int tasknum, meta* metadata){
-    //Find a bit more optimized value as a worst utilization.
-    //check if a system can bound the worst case utilization,
-    //by restricting "cycle count" of target block
-
-    //params
-    float SA_total_u = 0.0;
-    int freshest, oldest;
-    int limit_fresh = 0;
-    int limit_old = 0;
-    int feasible = NOB;
-    int minimum_period = -1;
-    
-    //find cycle bound.
-    for(int i=0;i<NOB;i++){
-        if(i==0){
-            freshest = metadata->state[i];
-            oldest = metadata->state[i];
-        }
-        else{
-            if (freshest >= metadata->state[i]){
-                freshest = metadata->state[i];
-            }
-            if (oldest <= metadata->state[i]){
-                oldest = metadata->state[i];
-            }
-        }
-    }
-    printf("fresh:%d,old:%d\n",freshest,oldest);
-    //find the possible window for task.
-    //shrink window = lower write util(write accel), higher gc util (OP decrease)
-    limit_fresh = freshest;
-    limit_old = oldest;
-    float prev_util = 0.0;
-    float cur_util = 0.0;
-    int prev_min_reclaim = 0;
-    int cur_min_reclaim = 0;
-    float utils[MAXPE-freshest];
-    for(int a=0;a<tasknum;a++){
-        for(int i=0;i<MAXPE-freshest;i++){
-            feasible = NOB-2;
-            //check if how many block is feasible
-            for(int j=0;j<NOB;j++){
-                if(metadata->state[j] < limit_fresh) feasible--;
-            }
-
-            //find new minimum reclaimable page. 
-            //lpa not changed. calc as (1-OP) * originalphysicalspace
-            float new_phy = (float)(feasible*PPB);
-            float orig_logi = (float)(NOP*(1-OP));
-            float newOP = 1 - orig_logi/new_phy;
-            if(newOP <= 0.0){
-                utils[i] = 100.0;//unshrinkable
-                //printf("[%d]%f\n",limit_fresh,utils[i]);
-                limit_fresh++;
-                continue;
-            }
-            int min_reclaim = (int)(newOP*PPB);
-            if(prev_min_reclaim == 0){
-                prev_min_reclaim = min_reclaim;
-            }
-            //printf("[SA]feasible block : %d, newOP : %f, min_rec : %d\n",feasible,newOP,min_reclaim);
-            
-            //prev_util vs cur util
-            float cur_r = __calc_ru(&(task[a]),oldest);
-            float cur_w = __calc_wu(&(task[a]),limit_fresh);
-            float cur_gc = __calc_gcu(&(task[a]),min_reclaim,limit_fresh,oldest,oldest);
-            cur_util = cur_r+cur_w+cur_gc;    
-            if(prev_util == 0.0){
-                prev_util = cur_util;
-            }
-            else{/*do not update prev value, if it already exists*/}
-            //printf("[SA][%d] prev util : %f, new util : %f\n",limit_fresh,prev_util,cur_util);
-            int task_minp = __get_min(task[a].wp,task[a].rp,_gc_period(&(task[a]),prev_min_reclaim));
-            
-            //update minimum period if necessary
-            if(minimum_period == -1)
-                minimum_period = task_minp;
-            else if (minimum_period >= task_minp)
-                minimum_period = task_minp;
-
-            //record utilization
-            utils[i] = cur_util + (float)e_exec(oldest)/(float)minimum_period;
-            
-            prev_util = cur_util;
-            prev_min_reclaim = min_reclaim;
-            limit_fresh++;
-            //printf("[SA][%d]%f\n",limit_fresh,utils[i]);
-            //At this point, update all information for next check next case.
-
-        }//single task ended shrink
-    }//every task ended shrink
-    for(int i=0;i<MAXPE-freshest;i++){
-        if(SA_total_u == 0.0){
-            SA_total_u = utils[i];
-        }
-        else if(SA_total_u >= utils[i]){
-            SA_total_u = utils[i];
-        }
-        else{/*do nothing*/}
-    }
-    //printf("[SA]sa total utilization is %f\n",SA_total_u);
-    return SA_total_u;
+    */
 }
 
 int util_check_main(){
@@ -428,7 +375,7 @@ int util_check_main(){
     printf("10 cycle %f %f %f\n",w_exec(10),r_exec(10),e_exec(10));
     printf("00 cycle %f %f %f\n",w_exec(0),r_exec(0),e_exec(0));
     rttask* tasks = (rttask*)malloc(sizeof(rttask)*3);
-    init_task(&(tasks[0]),1,STARTW*50,65,STARTR*10,10,__calc_gcmult(STARTW*50,65,(int)(PPB*OP)));
+    init_task(&(tasks[0]),1,STARTW*50,65,STARTR*10,10,__calc_gcmult(STARTW*50,65,(int)(PPB*OP)),0,PPB*OP);
     printf("[util calc check]\n");
     printf("rd util e:%d p:%d u:%f\n",tasks[0].rn*STARTR, tasks[0].rp,__calc_ru(&(tasks[0]),0));
     printf("wt util e:%d p:%d u:%f\n",tasks[0].wn*STARTW, tasks[0].wp,__calc_wu(&(tasks[0]),0));

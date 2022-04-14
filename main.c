@@ -101,7 +101,6 @@ int main(int argc, char* argv[]){
     coldlist = init_blocklist(0,-1);
 
     //init data access & distribution tracker
-
     for(int i=0;i<tasknum;i++){
         w_util[i] = 0.0;
         r_util[i] = 0.0;
@@ -192,6 +191,7 @@ int main(int argc, char* argv[]){
                         inv_test+=newmeta->invnum[k];
                     }
                     printf("tot_inv : %d vs inv in block : %d\n",newmeta->total_invalid,inv_test);
+                    printf("INV+FP:%d\n",newmeta->total_invalid+total_fp);
                     printf("==value test end==\n");
                     gc_limit = find_gcctrl(tasks,tasks[j].idx,tasknum,newmeta,full_head);
                     prev_tot = total_fp;

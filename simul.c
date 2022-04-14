@@ -272,7 +272,7 @@ void gc_simul(rttask task, int tasknum, meta* metadata, bhead* fblist_head,
             metadata->pagemap[rtv_lpa] = rsv_offset+vp_count;
             metadata->rmap[rsv_offset+vp_count] = rtv_lpa;
             metadata->invmap[rsv_offset+vp_count]=0;
-            //update runtime utilization(copy)
+            //update runtime utilization(copyback overhead)
             vic_state[vp_count] = vic->idx;
             tar_state[vp_count] = rsv->idx;
             run_exec += r_exec(metadata->state[vic->idx])+w_exec(metadata->state[rsv->idx]);
