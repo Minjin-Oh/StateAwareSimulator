@@ -1,6 +1,5 @@
 #include "stateaware.h"
-
-
+extern int rrflag;
 void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
     int access_avg = 0;
     int cycle_avg = 0;
@@ -11,15 +10,26 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     
     int temp_high[NOB];
     int temp_low[NOB];
-    int task_high[NOB];
-    int task_low[NOB];
+    int** block_vmap;
+
     int highcnt=0;
     int lowcnt=0;
     int taskhighcnt = 0;
     int tasklowcnt = 0;
+
     float temp, highest;
     int hightask_idx;
 
+    //init
+    block_vmap = (int**)malloc(sizeof(int*)*tasknum); 
+    for(int i=0;i<tasknum;i++){
+        block_vmap[i]=(int*)malloc(sizeof(int)*NOB);
+    }
+    for(int i=0;i<tasknum;i++){
+        for(int j=0;j<NOB;j++){
+            block_vmap[i][j]=0;
+        }
+    }
     printf("testing access window : ");
     for(int i=0;i<NOB;i++){
         printf("%d(%d), ",i,metadata->access_window[i]);
@@ -30,17 +40,6 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     access_avg = access_avg/NOB;
     cycle_avg = cycle_avg/NOB;
 
-    //generate temporary block list w.r.t (A.hotness, B.state)
-    for(int i=0;i<NOB;i++){
-        if(metadata->state[i] > cycle_avg){
-            temp_high[highcnt] = i;
-            highcnt++;
-        }
-        else{
-            temp_low[lowcnt] = i;
-            lowcnt++;
-        }
-    }
     //specify a read-intensive task
     highest = 0.0;
     for(int i=0;i<tasknum;i++){
@@ -50,49 +49,60 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
             hightask_idx = i;
         }
     }
-    //if we can specify the block with read-intensive data, choose among them.
-    for(int i=0;i<highcnt;i++){
-        if(metadata->access_tracker[hightask_idx][temp_high[i]]==1){
-            task_high[taskhighcnt] = temp_high[i];
-            taskhighcnt++;
-        }
-    }
-    for(int i=0;i<lowcnt;i++){
-        if(metadata->access_tracker[hightask_idx][temp_low[i]]==0){
-            task_low[tasklowcnt] = temp_low[i];
-            tasklowcnt++;
-        }
-    }
-    //if there exists a hot&read-intensive-task and cold & no-read-intensive task, swap among them.
-    if(taskhighcnt!=0 && tasklowcnt!=0){
-        for(int i=0;i<taskhighcnt;i++){
-            if(cur_high == -1 || metadata->access_window[task_high[i]]>cur_high){
-                if(is_idx_in_list(full_head,task_high[i])){
-                    cur_high = metadata->access_window[task_high[i]];
-                    high = temp_high[i];
-                }
+
+    //build a block valid map
+    for(int i=0;i<NOP;i++){
+        if(metadata->vmap_task[i]!=-1){
+            int tidx = metadata->vmap_task[i];
+            if(tidx >= 0){
+                block_vmap[tidx][i/PPB]=1;
             }
         }
-        for(int i=0;i<lowcnt;i++){
-            if(cur_low == -1 || metadata->access_window[task_low[i]]<cur_low ){
-                if(is_idx_in_list(full_head,temp_low[i])){
-                    cur_low = metadata->access_window[temp_low[i]];
-                    low = temp_low[i];
-                }
+    }
+    //generate temporary block list w.r.t (A.hotness, B.state)
+    if(rrflag == 1){
+        for(int i=0;i<NOB;i++){
+            if(metadata->state[i] > cycle_avg && (block_vmap[hightask_idx][i]==1) && is_idx_in_list(full_head,i)){
+                //printf("[HI][RRC]%d, state : %d\n",i,metadata->state[i]);
+                temp_high[highcnt] = i;
+                highcnt++;
+            }
+            else if(metadata->state[i] <= cycle_avg && (block_vmap[hightask_idx][i]==0) && is_idx_in_list(full_head,i)){
+                //printf("[LO][RRC]%d, state : %d\n",i,metadata->state[i]);
+                temp_low[lowcnt] = i;
+                lowcnt++;
             }
         }
-        *res1 = high;
-        *res2 = low;
-        return;
     }
+    else if(rrflag == 0){
+        highcnt = 0;
+        lowcnt = 0;
+    }
+
+    if(highcnt == 0 || lowcnt == 0){
+        highcnt = 0;
+        lowcnt = 0;
+        for(int i=0;i<NOB;i++){
+            if(metadata->state[i] > cycle_avg && is_idx_in_list(full_head,i)){
+                //printf("[HI]%d, state : %d\n",i,metadata->state[i]);
+                temp_high[highcnt] = i;
+                highcnt++;
+            }
+            else if(metadata->state[i] <= cycle_avg && is_idx_in_list(full_head,i)){
+                //printf("[LO]%d, state : %d\n",i,metadata->state[i]);
+                temp_low[lowcnt] = i;
+                lowcnt++;
+            }
+        }
+    }
+    
     //find the oldest/youngest(h/c) block in hot/cold block
     for(int i=0;i<highcnt;i++){
-        printf("[HI]%d(cnt:%d,cyc:%d)\n",temp_high[i],metadata->access_window[temp_high[i]],metadata->state[temp_high[i]]);
+        //printf("[HI]%d(cnt:%d,cyc:%d)\n",temp_high[i],metadata->access_window[temp_high[i]],metadata->state[temp_high[i]]);
         if(cur_high == -1){
             if(is_idx_in_list(full_head,temp_high[i])){
                 cur_high = metadata->access_window[temp_high[i]];
                 high = temp_high[i];
-                
             }
         }
         else if(metadata->access_window[temp_high[i]] > cur_high){
@@ -106,7 +116,7 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
     }
     for(int i=0;i<lowcnt;i++){
-         printf("[LO]%d(cnt:%d,cyc:%d)\n",temp_low[i],metadata->access_window[temp_low[i]],metadata->state[temp_low[i]]);
+        //printf("[LO]%d(cnt:%d,cyc:%d)\n",temp_low[i],metadata->access_window[temp_low[i]],metadata->state[temp_low[i]]);
         if(cur_low == -1){
             if(is_idx_in_list(full_head,temp_low[i])){
                 cur_low = metadata->access_window[temp_low[i]];
@@ -127,6 +137,13 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",high,metadata->access_window[high],metadata->state[high]);
     printf("[WL]vic2 %d(cnt:%d)(cyc:%d)\n",low,metadata->access_window[low],metadata->state[low]);
     //return high/low value.
+    
+    //free
+    for(int i=0;i<tasknum;i++){
+        free(block_vmap[i]);
+    }
+    free(block_vmap);
+
     *res1 = high;
     *res2 = low;
 }

@@ -50,7 +50,7 @@ block* ll_pop(bhead* head){
     temp = head->head;
     if(temp == NULL){
         printf("head is null");
-        abort();
+        return NULL;
     }
     else{
         if(temp->next != NULL){
@@ -61,6 +61,8 @@ block* ll_pop(bhead* head){
         }
     }
     head->blocknum--;
+    temp->prev = NULL;
+    temp->next = NULL;
     return temp;
 }
 
@@ -99,21 +101,24 @@ block* ll_remove(bhead* head, int tar){
         return NULL;
     }
     //conditions of target block
-    if((cur->next != NULL) && (cur->prev != NULL)){
+    if((cur->next != NULL) && (cur->prev != NULL)){//middle
         cur->prev->next = cur->next;
         cur->next->prev = cur->prev;
     }
-    else if ((cur->next != NULL) && (cur->prev == NULL)){
-        head->head = cur->next;
-        head->head->prev = NULL;
+    else if (head->head == cur){//head
+        if(cur->next != NULL){//removing head & link next as head
+            head->head = cur->next;
+            head->head->prev = NULL;
+        } else {
+            head->head = NULL;
+        }
     }
-    else if ((cur->next == NULL) && (cur->prev != NULL)){
+    else if ((cur->next == NULL) && (cur->prev != NULL)){//tail
         cur->prev->next = NULL;
     }
-    else{//only one block inside
-        head->head = NULL;
-    }
     head->blocknum--;
+    cur->prev = NULL;
+    cur->next = NULL;
     return cur;
 }
 
@@ -133,6 +138,10 @@ block* ll_find(meta* metadata, bhead* head, int cond){
                (metadata->state[cur->idx] >= cond)){
                 tar = cur;
             }
+        } else if (cond == OLD){
+            if(metadata->state[cur->idx] >= metadata->state[tar->idx]){
+                tar = cur;
+            }
         }
         cur = cur->next;
     }
@@ -148,13 +157,9 @@ block* ll_condremove(meta* metadata, bhead* head, int cond){
     cur = head->head;
     tar = cur;
     while(cur != NULL){
+        printf("[ll]traversing %d(%d)\n",cur->idx, metadata->state[cur->idx]);
         if(cond == YOUNG){
             if(metadata->state[cur->idx] <= metadata->state[tar->idx]){
-                tar = cur;
-            }
-        } else if (cond > 0){
-            if((metadata->state[cur->idx] <= metadata->state[tar->idx])&&
-               (metadata->state[cur->idx] >= cond)){
                 tar = cur;
             }
         }
@@ -163,33 +168,31 @@ block* ll_condremove(meta* metadata, bhead* head, int cond){
 
     //edge cases
     //if condition is not YOUNG, check if head is suitable
-    if((cur == head->head)&&(cond!=YOUNG)){
-        if(metadata->state[cur->idx] < cond){
-            printf("[cond]there's no such block!\n");
-            return NULL;
-        }
-    }
     if(tar == NULL){
         printf("there's no such block!\n");
         return NULL;
     }
 
     //link other blocks if necessary
-    if((tar->next != NULL) && (tar->prev != NULL)){
+    if((tar->next != NULL) && (tar->prev != NULL)){//middle
         tar->prev->next = tar->next;
         tar->next->prev = tar->prev;
     }
-    else if ((tar->next != NULL) && (tar->prev == NULL)){
-        head->head = tar->next;
-        head->head->prev = NULL;
+    else if (head->head == tar){//head
+        if(tar->next != NULL){//removing head & link next as head
+            head->head = tar->next;
+            head->head->prev = NULL;
+        } else {
+            head->head = NULL;
+        }
     }
-    else if ((tar->next == NULL) && (tar->prev != NULL)){
+    else if ((tar->next == NULL) && (tar->prev != NULL)){//tail
         tar->prev->next = NULL;
     }
-    else{//only one block inside
-        head->head = NULL;
-    }
     head->blocknum--;
+    printf("[ll]blocknum:%d, tar : %d\n",head->blocknum,tar->idx);
+    tar->prev = NULL;
+    tar->next = NULL;
     return tar;
 }
 

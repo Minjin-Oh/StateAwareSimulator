@@ -13,10 +13,12 @@ int compare(const void *a, const void *b){
 
 int* add_checkpoints(int tasknum, rttask* tasks, int runtime, int* cps_size){
     int size = 0; // find the size of checkpoint list
+    
     for(int i=0;i<tasknum;i++){
         size += runtime/tasks[i].wp + 1;
         size += runtime/tasks[i].rp + 1;
         size += runtime/tasks[i].gcp + 1;
+        printf("periods : %d %d %d\n",tasks[i].wp,tasks[i].rp,tasks[i].gcp);
         printf("added %d %d %d\n",runtime/tasks[i].wp,runtime/tasks[i].rp,runtime/tasks[i].gcp);
     }
     int* cps = (int*)malloc(sizeof(int)*size);

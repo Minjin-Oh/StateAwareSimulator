@@ -5,6 +5,7 @@ void init_metadata(meta* metadata, int tasknum){
         metadata->pagemap[i] = -1;
         metadata->rmap[i] = -1;
         metadata->invmap[i] = 0;
+        metadata->vmap_task[i] = -1;
     }
     for (int i=0;i<NOB;i++){
         metadata->invnum[i] = 0;
@@ -14,10 +15,7 @@ void init_metadata(meta* metadata, int tasknum){
     metadata->total_invalid = 0;
     //REFACTOR::for per-task tracking, malloc these member variables.
     //because number of task is declared in main, not header.
-    metadata->oldblock_tracker = (int*)malloc(sizeof(int)*tasknum);
-    for(int i=0;i<tasknum;i++){
-        metadata->oldblock_tracker[i] = 0;
-    }
+
     metadata->access_tracker = (char**)malloc(sizeof(char*)*tasknum);
     for(int i=0;i<tasknum;i++){
         metadata->access_tracker[i] = (char*)malloc(sizeof(char)*NOB);
@@ -25,11 +23,12 @@ void init_metadata(meta* metadata, int tasknum){
             metadata->access_tracker[i][j] = 0;
         }
     }
+
     metadata->runutils = (float**)malloc(sizeof(float*)*3);
     for(int i=0;i<3;i++){
         metadata->runutils[i] = (float*)malloc(sizeof(float)*tasknum);
         for(int j=0;j<tasknum;j++){
-            metadata->runutils[i][j] = -1.0;
+            metadata->runutils[i][j] = 0.0;
         }
     }
 }

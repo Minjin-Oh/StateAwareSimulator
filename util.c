@@ -61,7 +61,8 @@ float __calc_gcmult(int wp, int wn, int _minrc){
     }
     else{
         mult = myceil((float)wn/(float)min_reclaim);
-        return wp * (float)1/(float)mult;
+        printf("min_rc,wn,mult : %d %d 1/%d\n",min_reclaim,wn,mult);
+        return (int)(wp * (float)1/(float)mult);
     }
     printf("gc period calc fail\n");
     sleep(1);
@@ -292,23 +293,25 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     //find a worst read block for task
     //FIXME:: we can add worst-block for task in metadata array.
     int cur_read_worst = 0;
-    for(int i=0;i<NOB;i++){
-        if(metadata->access_tracker[taskidx][i] == 1){
-            if(metadata->state[i] >= cur_read_worst){
-                cur_read_worst = metadata->state[i];
+    for(int i=0;i<NOP;i++){
+        if(metadata->vmap_task[i] == taskidx){
+            int cur_b = i/PPB;
+            if(metadata->state[cur_b] >= cur_read_worst){
+                cur_read_worst = metadata->state[cur_b];
             }
         }
     }
-    printf("current read worst : %d\n",cur_read_worst);
+    printf("task read worst : %d, system worst : %d\n",cur_read_worst,old);
+    //if(cur_read_worst != old){sleep(1);}
     //draw a write-read profile according to cur_read_worst
     printf("state(util):");
     for(int i=yng;i<=old;i++){
         cyc[iter] = i;
         if(i<cur_read_worst){
-            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),cur_read_worst);
+            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),cur_read_worst) + __calc_gcu(&task[taskidx],MINRC,yng,i,i);
         }
         else if (i >= cur_read_worst){
-            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),i);
+            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),i) + __calc_gcu(&task[taskidx],MINRC,yng,i,i);;
         }
         printf("%d(%f) ",i,rw_util[iter]);
         iter++;   

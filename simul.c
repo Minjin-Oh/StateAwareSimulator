@@ -177,7 +177,7 @@ void gc_simul(rttask task, int tasknum, meta* metadata, bhead* fblist_head,
         }
         cur = cur->next;
     }
-    if(vic == NULL){//if victim is not found, fallback to NORMAL
+    if(vic == NULL){//if victim is not found, fallback to GCBASE
         cur = full_head->head;
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
@@ -213,7 +213,7 @@ void gc_simul(rttask task, int tasknum, meta* metadata, bhead* fblist_head,
         }
         cur = cur->next;
     }
-    if(vic == NULL){//if victim is not found, fallback to NORMAL
+    if(vic == NULL){//if victim is not found, fallback to GCBASE
         cur = full_head->head;
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
@@ -226,7 +226,7 @@ void gc_simul(rttask task, int tasknum, meta* metadata, bhead* fblist_head,
         }
     }
 #endif
-#ifdef NORMAL
+#ifdef GCBASE
     while(cur != NULL){
         if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
            (metadata->state[cur->idx] >= write_limit)){
@@ -401,7 +401,7 @@ void wl_simul(meta* metadata, int tasknum, bhead* fblist_head, bhead* full_head,
             metadata->pagemap[rtv_lpa] = vic2_offset+vp1_count;
             metadata->rmap[vic2_offset+vp1_count] = rtv_lpa;
             metadata->invmap[vic2_offset+vp1_count]=0;
-            //printf("[WL1]map %d, mov %d to %d\n",rtv_lpa,vic1_offset+i,vic2_offset+vp1_count);
+            printf("[WL1]map %d, mov %d to %d\n",rtv_lpa,vic1_offset+i,vic2_offset+vp1_count);
             vp1_count++;
         }
     }
@@ -413,7 +413,7 @@ void wl_simul(meta* metadata, int tasknum, bhead* fblist_head, bhead* full_head,
             metadata->pagemap[rtv_lpa] = vic1_offset+vp2_count;
             metadata->rmap[vic1_offset+vp2_count] = rtv_lpa;
             metadata->invmap[vic1_offset+vp2_count] = 0;
-            //printf("[WL2]map %d, mov %d to %d\n",rtv_lpa,vic2_offset+i,vic1_offset+vp2_count);
+            printf("[WL2]map %d, mov %d to %d\n",rtv_lpa,vic2_offset+i,vic1_offset+vp2_count);
             vp2_count++;
         }
     }

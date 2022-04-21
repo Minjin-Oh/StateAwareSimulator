@@ -31,22 +31,29 @@
 #define ASC 0
 #define DES 1
 
-//#define WORKGEN
-
-//GC and GCDEBUG option toggle
-#define DOGC
-#define GCFPLIMIT     // a case where GC is triggered with free page threshold
-//#define GCDEBUG       // DEBUG print option
+//GC and GCDEBUG option toggle  
+//#define GCDEBUG                // DEBUG print option
 
 //scheme option toggle
-
+#define DOGC
 //#define DORELOCATE
+
+//baseline vs new scheme
+#define DOGCCONTROL
+//#define GCBASE
+
+//#define DOWCONTROL
+//#define WRITEBASE
+
+
+#define DORRCONTROL
+//#define RRBASE
+
+//deprecated params
 //#define DOWRCONTROL
 //#define DOGCNOTHRES
-#define DOGCCONTROL
 //#define FORCEDCONTROL
 //#define FORCEDNOTHRES
-//#define NORMAL
 
 //profiles -- assume linear execution time change
 #define STARTW 500
@@ -87,6 +94,7 @@ typedef struct _IO{
     int rr_old_lpa;
     int rr_vic_ppa;
     int rr_tar_ppa;
+    int vmap_task;
 }IO;
 
 typedef struct _GCBlock{
@@ -97,6 +105,7 @@ typedef struct _GCBlock{
 typedef struct _RRBlock{
     block* cur_vic1;
     block* cur_vic2;
+    float execution_time;
 }RRblock;
 
 typedef struct _bhead{
@@ -113,9 +122,9 @@ typedef struct _meta{
     int state[NOB];
     int access_window[NOB];
     int total_invalid;
-    int* oldblock_tracker;
     float** runutils;
     char** access_tracker;
+    char vmap_task[NOP];
 }meta;
 
 //IO microbenchmark generating function.
@@ -191,17 +200,23 @@ int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,
 
 //refactored simulation functions
 block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, int write_limit, IO* IOqueue, block* cur_target);
+                     FILE* fp_w, IO* IOqueue, block* cur_target, int wflag);
 void write_job_end(rttask task, meta* metadata, IO* IOqueue, int* total_fp);
 void read_job_start(rttask task, meta* metadata, FILE* fp_r, IO* IOqueue);
 void read_job_end(rttask task,meta* metadata, IO* IOqueue);
 void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
-                  int write_limit, IO* IOqueue, GCblock* cur_GC);
+                  int write_limit, IO* IOqueue, GCblock* cur_GC,int gcflag);
 void gc_job_end(rttask* tasks, int taskidx, int tasknum, meta* metadata, IO* IOqueue,
                 bhead* fblist_head, bhead* rsvlist_head,
                 GCblock* cur_GC, int* total_fp);
 void RR_job_start(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
                   IO* IOqueue, RRblock* cur_RR);
 void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head, 
-                  IO* IOqueue, RRblock* cur_RR);
+                  IO* IOqueue, RRblock* cur_RR, int* total_fp);
+
+//checker & profiler
+FILE* open_file_bycase(int gcflag, int wflag, int rrflag);
+float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
+                    int yng, int old,int cur_cp,int cur_gc_idx,int cur_gc_state);
+void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, int cur_cp, FILE* fp, FILE* fplife);
