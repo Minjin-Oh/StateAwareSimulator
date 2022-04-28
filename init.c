@@ -31,6 +31,10 @@ void init_metadata(meta* metadata, int tasknum){
             metadata->runutils[i][j] = 0.0;
         }
     }
+    metadata->cur_read_worst = (int*)malloc(sizeof(int)*tasknum);
+    for(int i=0;i<tasknum;i++){
+        metadata->cur_read_worst[i] = 0;
+    }
 }
 
 void free_metadata(meta* metadata){

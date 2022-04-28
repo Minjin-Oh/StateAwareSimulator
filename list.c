@@ -49,7 +49,7 @@ block* ll_pop(bhead* head){
     block* temp;
     temp = head->head;
     if(temp == NULL){
-        printf("head is null");
+        printf("head is null\n");
         return NULL;
     }
     else{

@@ -1,5 +1,7 @@
 #include "stateaware.h"
+
 extern int rrflag;
+
 void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
     int access_avg = 0;
     int cycle_avg = 0;
@@ -30,13 +32,13 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
             block_vmap[i][j]=0;
         }
     }
-    printf("testing access window : ");
-    for(int i=0;i<NOB;i++){
-        printf("%d(%d), ",i,metadata->access_window[i]);
-        access_avg += metadata->access_window[i];
-        cycle_avg += metadata->state[i];
-    }
-    printf("\n");
+    //printf("testing access window : ");
+    //for(int i=0;i<NOB;i++){
+    //    printf("%d(%d), ",i,metadata->access_window[i]);
+    //    access_avg += metadata->access_window[i];
+    //    cycle_avg += metadata->state[i];
+    //}
+    //printf("\n");
     access_avg = access_avg/NOB;
     cycle_avg = cycle_avg/NOB;
 
@@ -60,25 +62,10 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
     }
     //generate temporary block list w.r.t (A.hotness, B.state)
-    if(rrflag == 1){
-        for(int i=0;i<NOB;i++){
-            if(metadata->state[i] > cycle_avg && (block_vmap[hightask_idx][i]==1) && is_idx_in_list(full_head,i)){
-                //printf("[HI][RRC]%d, state : %d\n",i,metadata->state[i]);
-                temp_high[highcnt] = i;
-                highcnt++;
-            }
-            else if(metadata->state[i] <= cycle_avg && (block_vmap[hightask_idx][i]==0) && is_idx_in_list(full_head,i)){
-                //printf("[LO][RRC]%d, state : %d\n",i,metadata->state[i]);
-                temp_low[lowcnt] = i;
-                lowcnt++;
-            }
-        }
-    }
-    else if(rrflag == 0){
-        highcnt = 0;
-        lowcnt = 0;
-    }
-
+   
+    highcnt = 0;
+    lowcnt = 0;
+    
     if(highcnt == 0 || lowcnt == 0){
         highcnt = 0;
         lowcnt = 0;
@@ -279,3 +266,19 @@ int get_blockstate_meta(meta* metadata, int param){
     }
     return ret_state;
 }
+/*
+if(rrflag == 1){
+        for(int i=0;i<NOB;i++){
+            if(metadata->state[i] > cycle_avg && (block_vmap[hightask_idx][i]==1) && is_idx_in_list(full_head,i)){
+                //printf("[HI][RRC]%d, state : %d\n",i,metadata->state[i]);
+                temp_high[highcnt] = i;
+                highcnt++;
+            }
+            else if(metadata->state[i] <= cycle_avg && (block_vmap[hightask_idx][i]==0) && is_idx_in_list(full_head,i)){
+                //printf("[LO][RRC]%d, state : %d\n",i,metadata->state[i]);
+                temp_low[lowcnt] = i;
+                lowcnt++;
+            }
+        }
+    }
+*/

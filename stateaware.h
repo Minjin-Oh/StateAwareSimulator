@@ -20,10 +20,10 @@
 #define TPLOCAL 0.95
 
 //lifetime params
-#define MINRC 36
+#define MINRC 35
 #define MAXPE 100
 #define MARGIN 3 
-#define THRESHOLD 10
+#define THRESHOLD 5
 #define OLD 0
 #define YOUNG -1
 
@@ -36,17 +36,15 @@
 
 //scheme option toggle
 #define DOGC
-//#define DORELOCATE
+#define DORELOCATE
+//#define IGNOREUTIL
 
-//baseline vs new scheme
-#define DOGCCONTROL
+//baseline vs new scheme(deprecated)
+//#define DOGCCONTROL
 //#define GCBASE
-
 //#define DOWCONTROL
 //#define WRITEBASE
-
-
-#define DORRCONTROL
+//#define DORRCONTROL
 //#define RRBASE
 
 //deprecated params
@@ -124,6 +122,7 @@ typedef struct _meta{
     int total_invalid;
     float** runutils;
     char** access_tracker;
+    int* cur_read_worst;
     char vmap_task[NOP];
 }meta;
 
@@ -163,6 +162,7 @@ float find_SAworst_util(rttask* task, int tasknum, meta* metadata);
 int find_gcctrl(rttask* task, int taskidx,int tasknum, meta* metadata,bhead* full_head);
 int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head);
 float calc_std(meta* metadata);
+int _find_min_period(rttask* task,int tasknum);
 int util_check_main(); //test function for debugging(not used in simulation)
 
 //expose some internal functions in util.c for other files
@@ -194,7 +194,7 @@ int get_blkidx_byage(meta* metadata, bhead* list, bhead* rsvlist_head, bhead* wr
 int get_blockstate_meta(meta* metadata, int param);
 int is_idx_in_list(bhead* head, int tar);
 void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2);
-
+void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2);
 //lpsolver
 int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,int low, int high);
 
@@ -215,8 +215,17 @@ void RR_job_start(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head
 void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head, 
                   IO* IOqueue, RRblock* cur_RR, int* total_fp);
 
+
 //checker & profiler
 FILE* open_file_bycase(int gcflag, int wflag, int rrflag);
+void update_read_worst(meta* metadata, int tasknum);
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
-                    int yng, int old,int cur_cp,int cur_gc_idx,int cur_gc_state);
+                    int yng, int old,int cur_cp,int cur_gc_idx,int cur_gc_state, int getfp);
+float print_profile_best(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
+                   int yng, int old,int cur_cp,int cur_gc_idx,int cur_gc_state);
 void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, int cur_cp, FILE* fp, FILE* fplife);
+
+//gen_task
+rttask* generate_taskset(int tasknum, float util, int addr, float* result_util);
+rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type);
+void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile);

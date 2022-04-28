@@ -1,5 +1,36 @@
 #include "stateaware.h"
 
+extern int rrflag; 
+
+block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadata,
+                           bhead* fblist_head, bhead* write_head, block* cur_b){
+    int target;
+    block* cur = NULL;
+    if(cur_b != NULL){
+        if(cur_b->fpnum > 0){
+            printf("do not change wb, left fp : %d\n",cur_b->fpnum);
+            return cur_b;
+        } else {
+            printf("target block : %d\n",target);
+            cur = ll_condremove(metadata,fblist_head,OLD);
+            if (cur != NULL){
+                ll_append(write_head,cur);
+            } else {
+                cur = write_head->head;
+            }
+        }
+    } else { //initial case :: cur_b == NULL. find new block
+        printf("[INIT]target block : %d\n",target);
+        cur = ll_condremove(metadata,fblist_head,OLD);
+        if (cur != NULL){
+            ll_append(write_head,cur);
+        } else {
+            cur = write_head->head;
+        }
+    }//if state is different, get another write block
+    return cur;
+}
+
 block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b){
     int target;
@@ -78,12 +109,21 @@ block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     if(wflag == 1){
         cur = assign_write_ctrl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
     }
-    else{
+    else if (wflag == 0){
         if(cur_target == NULL){
             printf("init\n");
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         }
         else{ 
+            cur = cur_target;
+        }
+    } 
+    else if(wflag == 2){
+        if(cur_target == NULL){
+            printf("init\n");
+            cur = assign_write_greedy(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
+        }
+        else {
             cur = cur_target;
         }
     }
@@ -100,8 +140,11 @@ block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             if(wflag == 1){
                 cur = assign_write_ctrl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
             }
-            else{
+            else if (wflag == 0){
                 cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
+            }
+            else if (wflag == 2){
+                cur = assign_write_greedy(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
             }
             if(cur==NULL){
                 printf("noFP available\n");
@@ -362,7 +405,13 @@ void RR_job_start(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head
     float execution_time = 0.0;
     block *vb1, *vb2, *cur;
     meta temp;
-    find_RR_target(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
+    printf("rrflag is %d\n",rrflag);
+    if(rrflag == 0){
+        find_RR_target(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
+    }
+    else if (rrflag == 1){
+        find_RR_target_util(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
+    }
     cur = full_head->head;
     while(cur != NULL){
         if(cur->idx == vic1){

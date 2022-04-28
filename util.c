@@ -96,7 +96,7 @@ int __get_min(int a, int b, int c){
     }
 }
 
-int _find_min_period(rttask* task,int tasknum,float _OP){
+int _find_min_period(rttask* task,int tasknum){
     int ret = -1;
     int min_each_task = -1;
     for(int i=0;i<tasknum;i++){
@@ -179,7 +179,7 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
         //printf("[WC]cur_util:%f\n",total_u);
     }
     //add blocking factor
-    total_u += (float)e_exec(oldest) / (float)_find_min_period(task,tasknum,OP);
+    total_u += (float)e_exec(oldest) / (float)_find_min_period(task,tasknum);
     //printf("[WC]exec : %f, min_p :%d\n",e_exec(oldest),_find_min_period(task,tasknum,OP));
     //printf("[WC]worst case util is %f\n",total_u);
     return total_u;
@@ -201,7 +201,17 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
     float cur_gcctrl = 0.0;
     float cur_minutil = -1.0;
     float cur_gc,gc_exec,gc_period;
+    float util_profile[MAXPE];
 
+    //update read_worst
+    update_read_worst(metadata,tasknum);
+    //build a readworst+write map for utilization comparison.
+    printf("rworst: ");
+    for(int i=0;i<tasknum;i++){
+        printf("%d, ",metadata->cur_read_worst[i]);
+    }
+    printf("\n");
+    
     //find worst util given old/yng value
     cur_wcutil = __calc_gcu(&(task[taskidx]),MINRC,yng,old,old);
     float prev_gc_exec = (PPB-MINRC)*(w_exec(yng)+r_exec(old))+e_exec(old);
@@ -211,9 +221,21 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
     cur_target = -1;
     new_rc = 0;
     cur_gcctrl = 0.0;
-    cur_minutil = cur_wcutil;
+    cur_minutil = 1.0;
     //scan the metadata and find a block with lowest utilization
     
+    for(int i=0;i<MAXPE;i++){
+        util_profile[i] = 0.0;
+        //add readworst util
+        for(int j=0;j<tasknum;j++){
+            if(i <= metadata->cur_read_worst[j]){
+                util_profile[i] += __calc_ru(&(task[j]),metadata->cur_read_worst[j]);
+            } else {
+                util_profile[i] += __calc_ru(&(task[j]),i);
+            }
+            util_profile[i] += __calc_wu(&(task[j]),i);
+        }
+    }
 #ifdef DOGCNOTHRES
     while(cur != NULL){
         if(metadata->state[cur->idx] != old){
@@ -232,33 +254,27 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
         cur = cur->next;
     }
 #endif
-#ifdef DOGCCONTROL
+    float gc_runutil = 0.0;
+    float profile_util = 0.0;
     while(cur != NULL){
-        if(metadata->state[cur->idx] != old && metadata->invnum[cur->idx] >= MINRC){
+        //if GCing current block is impossible, select another one
+        
+        if(metadata->invnum[cur->idx] >= MINRC){
             cur_state = metadata->state[cur->idx];
             new_rc = metadata->invnum[cur->idx];
-            float gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(cur_state)) + e_exec(cur_state);
+            float profile_util = 0.0;
+            float gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(cur_state))+e_exec(cur_state);
             float gc_period = _gc_period(&(task[taskidx]),(int)(new_rc));
             cur_gc = gc_exec/gc_period;
-            if(cur_gc <= cur_minutil){
+            profile_util = cur_gc + util_profile[cur_state+1];
+            if(profile_util <= cur_minutil){
                 expected_idx = cur->idx;
-                cur_minutil = cur_gc;
+                cur_minutil = cur_gc + util_profile[cur_state+1];
             }
         }
         cur = cur->next;
     }
-#endif
-       
-    //check if min_util can be derived with smaller period than original
-    if(gc_period < prev_gc_period){
-        //printf("[prev]GC %f,%f,%f\n",prev_gc_period,prev_gc_exec,cur_wcutil);
-        //printf("[new]GC %f,%f,%f\n",gc_period,gc_exec,cur_gcctrl);
-        //sleep(5);
-    }
-    else {
-        /* do nothing*/
-    }
-
+    //EDGE CASE HANDLING!!
     if(expected_idx == -1){
         cur = full_head->head;
         cur_invalid = metadata->invnum[cur->idx];
@@ -271,9 +287,8 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
             cur = cur->next;
         }
     }
-    //printf("expected target %d, util : %f, state : %d\n",expected_idx,cur_minutil,metadata->state[expected_idx]);
-    //printf("wtf let's check utilization %f %f\n",cur_wcutil,cur_gc);
     
+    printf("expected target %d, util : %f, state : %d\n",expected_idx,cur_minutil,metadata->state[expected_idx]);
     return expected_idx;
 
 }
@@ -304,7 +319,7 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     printf("task read worst : %d, system worst : %d\n",cur_read_worst,old);
     //if(cur_read_worst != old){sleep(1);}
     //draw a write-read profile according to cur_read_worst
-    printf("state(util):");
+    //printf("state(util):");
     for(int i=yng;i<=old;i++){
         cyc[iter] = i;
         if(i<cur_read_worst){
@@ -313,7 +328,7 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
         else if (i >= cur_read_worst){
             rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),i) + __calc_gcu(&task[taskidx],MINRC,yng,i,i);;
         }
-        printf("%d(%f) ",i,rw_util[iter]);
+        //printf("%d(%f) ",i,rw_util[iter]);
         iter++;   
     }
     printf("\n");
@@ -324,7 +339,7 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     int cur_state;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        //printf("[F]candidate : %d, %d, %f\n",cur->idx,cur_state,rw_util[cur_state-yng]);
+        printf("[F]candidate : %d, %d, %f\n",cur->idx,cur_state,rw_util[cur_state-yng]);
         if(cur_util == -1.0 || cur_util >= rw_util[cur_state-yng]){
             cur_util = rw_util[cur_state-yng];
             best_idx = cur->idx;
@@ -334,7 +349,7 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     cur = write_head->head;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        //printf("[W]candidate : %d, %d, %f\n",cur->idx,cur_state,rw_util[cur_state-yng]);
+        printf("[W]candidate : %d, %d, %f\n",cur->idx,cur_state,rw_util[cur_state-yng]);
         if(cur_util == -1.0 || cur_util >= rw_util[cur_state-yng]){
             cur_util = rw_util[cur_state-yng];
             best_idx = cur->idx;
@@ -386,3 +401,56 @@ int util_check_main(){
     int gc_period = _gc_period(&(tasks[0]),(int)(PPB*OP));
     printf("gc util e:%d p:%d u:%f\n",gc_exec,gc_period,__calc_gcu(&(tasks[0]),(int)(PPB*OP),0,20,20));
 }
+
+
+/*while(cur != NULL){
+        if(metadata->state[cur->idx] != old && metadata->invnum[cur->idx] >= MINRC){
+            cur_state = metadata->state[cur->idx];
+            new_rc = metadata->invnum[cur->idx];
+            float gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(cur_state))+e_exec(cur_state);
+            float gc_period = _gc_period(&(task[taskidx]),(int)(new_rc));
+            cur_gc = gc_exec/gc_period;
+            if(cur_gc <= cur_minutil){
+                expected_idx = cur->idx;
+                cur_minutil = cur_gc;
+            }
+        }
+        cur = cur->next;
+    }
+*/
+
+/*while(cur != NULL){
+        if(metadata->invnum[cur->idx] >= MINRC){
+            cur_state = metadata->state[cur->idx];
+            new_rc = metadata->invnum[cur->idx];
+            float profile_util = 0.0;
+            float gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(cur_state))+e_exec(cur_state);
+            float gc_period = _gc_period(&(task[taskidx]),(int)(new_rc));
+            cur_gc = gc_exec/gc_period;
+            profile_util = cur_gc + util_profile[cur_state+1];
+            if(profile_util <= cur_minutil){
+                expected_idx = cur->idx;
+                cur_minutil = cur_gc + util_profile[cur_state+1];
+            }
+        }
+        cur = cur->next;
+    }
+*/
+
+/*//print functions for util checking
+printf("util check : ");
+    for(int i=0;i<MAXPE;i++){
+        util_profile[i] = 0.0;
+        //add readworst util
+        for(int j=0;j<tasknum;j++){
+            if(i <= metadata->cur_read_worst[j]){
+                util_profile[i] += __calc_ru(&(task[j]),metadata->cur_read_worst[j]);
+            } else {
+                util_profile[i] += __calc_ru(&(task[j]),i);
+            }
+            util_profile[i] += __calc_wu(&(task[j]),i);
+        }
+        printf("%d(%f), ",i,util_profile[i]);
+    }
+    printf("\n");*/
+    //sleep(1);

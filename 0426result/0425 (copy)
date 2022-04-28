@@ -1,0 +1,28 @@
+1. GC 할때 gc utilization + read & write (from all tasks) 고려하게 수정함. 
+utilization vs P/E cycle을 출력해본 결과, worst-case read를 기준으로 utilization 그래프가 꺾이는 것을 확인.
+실제로 돌려본 결과 그래프 개형은 reasonable하게 보이나,
+기존의 ad-hoc한 어프로치보다 성능이 낮음을 확인
+이는 수정된 알고리즘이 기존의 ad-hoc한 어프로치의 경우보다 young 한 블록을 GC하는 경우가 적어서 그런 것으로 사료됨
+기존 알고리즘의 경우 oldest block 이외에는 candidate이 없어지는 시점까지 oldest block의 GC가 제한되지만,
+현 알고리즘의 경우 때에 따라 oldest block이 valid가 적으면 read-worst block이 바뀌는 것을 고려하더라도 oldest block을 GC하는 것이 좋다고 결론내리는 것을 확인할 수 있었음.
+utilization을 모두 고려하면서도 기존의 ad-hoc한 어프로치와 비슷한 성능을 보일 수 있도록 하는 방법이 있을까?
+- utilization에 가중치를 주는 건? --> 이 방식과 ad-hoc한 어프로치의 차이점은 무엇?
+
+
+2. Read Relocation 할 때 period 줄이면 어떻게 되나?
+해봤는데 그래도 후반부에 가면 read-worst가 제대로 제한이 안되는 걸로 봐서는 주기가 문제가 아닌 것 같다.
+어디가 문제지...?
+
+
+1200000, 1, 30000, 100
+
+150000, 6 40000, 12
+
+75000, 12, 75000, 20
+
+1200000, 1, 30000, 200
+
+150000, 3 40000, 12
+
+75000, 6, 75000, 20
+
