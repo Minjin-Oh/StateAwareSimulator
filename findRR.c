@@ -23,7 +23,10 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
             block_vmap[i][j]=0;
         }
     }
-
+    for(int i=0;i<NOB;i++){
+        access_avg += metadata->access_window[i];
+        cycle_avg += metadata->state[i];
+    }
     access_avg = access_avg/NOB;
     cycle_avg = cycle_avg/NOB;
 
@@ -95,7 +98,6 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
         free(block_vmap[i]);
     }
     free(block_vmap);
-
     *res1 = vic1;
     *res2 = vic2;
 }

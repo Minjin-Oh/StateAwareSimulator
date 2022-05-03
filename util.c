@@ -181,7 +181,7 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
     //add blocking factor
     total_u += (float)e_exec(oldest) / (float)_find_min_period(task,tasknum);
     //printf("[WC]exec : %f, min_p :%d\n",e_exec(oldest),_find_min_period(task,tasknum,OP));
-    //printf("[WC]worst case util is %f\n",total_u);
+    //rintf("[WC]worst case util is %f\n",total_u);
     return total_u;
 }
 
@@ -194,7 +194,7 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
     block* cur = full_head->head;
     int new_rc = 0;
     int expected_idx = -1;
-    int cur_invalid;
+    int cur_invalid = 0;
     int cur_target;
     int cur_state;
     float cur_wcutil = 0.0;
@@ -206,11 +206,11 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
     //update read_worst
     update_read_worst(metadata,tasknum);
     //build a readworst+write map for utilization comparison.
-    printf("rworst: ");
-    for(int i=0;i<tasknum;i++){
-        printf("%d, ",metadata->cur_read_worst[i]);
-    }
-    printf("\n");
+    //printf("rworst: ");
+    //for(int i=0;i<tasknum;i++){
+        //printf("%d, ",metadata->cur_read_worst[i]);
+    //}
+    //printf("\n");
     
     //find worst util given old/yng value
     cur_wcutil = __calc_gcu(&(task[taskidx]),MINRC,yng,old,old);
@@ -270,10 +270,13 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
             if(profile_util <= cur_minutil){
                 expected_idx = cur->idx;
                 cur_minutil = cur_gc + util_profile[cur_state+1];
+                cur_invalid = metadata->invnum[cur->idx];
             }
         }
         cur = cur->next;
     }
+    if(expected_idx != -1)
+        printf("[ctrl]expected target %d, inv : %d, util : %f, state : %d\n",expected_idx,cur_invalid,cur_minutil,metadata->state[expected_idx]);
     //EDGE CASE HANDLING!!
     if(expected_idx == -1){
         cur = full_head->head;
@@ -288,7 +291,7 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
         }
     }
     
-    printf("expected target %d, util : %f, state : %d\n",expected_idx,cur_minutil,metadata->state[expected_idx]);
+    printf("expected target %d, inv : %d, util : %f, state : %d\n",expected_idx,cur_invalid,cur_minutil,metadata->state[expected_idx]);
     return expected_idx;
 
 }
@@ -337,9 +340,10 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     float cur_util = -1.0;
     int best_idx;
     int cur_state;
+    //printf("cur bnum : %d\n",fblist_head->blocknum);
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        printf("[F]candidate : %d, %d, %f\n",cur->idx,cur_state,rw_util[cur_state-yng]);
+        //printf("[F]candidate : %d, %d, %d, %f\n",cur->idx,cur_state,cur->fpnum,rw_util[cur_state-yng]);
         if(cur_util == -1.0 || cur_util >= rw_util[cur_state-yng]){
             cur_util = rw_util[cur_state-yng];
             best_idx = cur->idx;
@@ -347,9 +351,10 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
         cur = cur->next;
     }//!fblist search end
     cur = write_head->head;
+    //printf("cur bnum : %d\n",write_head->blocknum);
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        printf("[W]candidate : %d, %d, %f\n",cur->idx,cur_state,rw_util[cur_state-yng]);
+        //printf("[W]candidate : %d, %d, %d, %f\n",cur->idx,cur_state,cur->fpnum,rw_util[cur_state-yng]);
         if(cur_util == -1.0 || cur_util >= rw_util[cur_state-yng]){
             cur_util = rw_util[cur_state-yng];
             best_idx = cur->idx;
@@ -358,32 +363,6 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     }//!writelist search end
     printf("best block : %d, state : %d, util : %f\n",best_idx,metadata->state[best_idx],cur_util);
     return best_idx;
-
-    /*//old logic
-    //find a margin which can be used by write
-    cur_write = __calc_wu(task,yng);
-    margin = 1.0 - (cur_worst - cur_write);
-    printf("cur worst is %f\n",cur_worst);
-    printf("margin for write : %f\n",margin);
-
-    //use that margin to calculate how much should write shrink
-    ret = -1;
-    for(int i=yng;i<=old;i++){
-        new_write = __calc_wu(task,i);
-        if(new_write < margin){
-            printf("write util : %f at %d\n",new_write,i);
-            ret = i;
-            break;
-        }
-    }
-    if(ret == -1){
-        printf("maximum shrink : %f\n",__calc_wu(task,old));
-        printf("write shrink failed!\n");
-        return -2;
-    }
-    else
-        return ret;
-    */
 }
 
 int util_check_main(){

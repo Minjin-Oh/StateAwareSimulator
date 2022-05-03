@@ -72,9 +72,10 @@ block* assign_write_ctrl(rttask* task, int taskidx, int tasknum, meta* metadata,
             printf("do not change wb, left fp : %d\n",cur_b->fpnum);
             return cur_b;
         } else {
-            printf("target block : %d\n",target);
+            printf("target block : %d, fp : %d\n",target);
             cur = ll_remove(fblist_head,target);
             if (cur != NULL){
+                printf("retreived %d\n",cur->idx);
                 ll_append(write_head,cur);
             } else {
                 cur = ll_findidx(write_head,target);
@@ -147,10 +148,12 @@ block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
                 cur = assign_write_greedy(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
             }
             if(cur==NULL){
-                printf("noFP available\n");
+
+                printf("noFP available\n, totalfp : %d\n");
                 abort();
             }
             cur_offset = PPB - cur->fpnum;
+            printf("current offset : %d\n",cur_offset);
         }
         ppa_dest[i] = cur->idx*PPB + cur_offset;
         ppa_state[i] = metadata->state[cur->idx];
@@ -286,6 +289,7 @@ void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     if(gcflag == 1){
         while(cur != NULL){
             if(cur->idx == gc_limit){
+                cur_vic_idx = cur->idx;
                 vic = cur;
                 break;
             }
@@ -294,12 +298,12 @@ void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     }
 
     //!gc target found
-
+    printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
     if(vic==NULL){
         printf("[GC]no feasible block\n");
         abort();
     }
-    if(metadata->invnum[cur_vic_idx]==0){
+    if(metadata->invnum[vic->idx]==0){
         printf("no fp block\n");
         return;
     }//edge cases
@@ -333,7 +337,7 @@ void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     rsv->fpnum = PPB - vp_count;
     vic->fpnum = PPB;
     //make sure we use "append", so that it does not immediately get popped.
-    printf("[%d][GC_S]%d to %d\n",taskidx,cur_GC->cur_vic->idx,cur_GC->cur_rsv->idx);
+    //printf("[%d][GC_S]%d to %d\n",taskidx,cur_GC->cur_vic->idx,cur_GC->cur_rsv->idx);
     gc_exec += e_exec(metadata->state[vic->idx]);
     //update runtime util
     metadata->runutils[2][taskidx] = gc_exec / gc_period;
@@ -344,7 +348,7 @@ void gc_job_end(rttask* tasks, int taskidx, int tasknum, meta* metadata, IO* IOq
                 GCblock* cur_GC, int* total_fp){
     int old_ppa, new_ppa, old_lpa, vp_count;
     int vicidx = cur_GC->cur_vic->idx, rsvidx = cur_GC->cur_rsv->idx;
-    printf("[%d][GC_E]%d to %d\n",taskidx,vicidx,rsvidx);
+    //printf("[%d][GC_E]%d to %d\n",taskidx,vicidx,rsvidx);
     metadata->invnum[rsvidx] = 0;
     vp_count = 0;
     for(int i=0;i<PPB;i++){

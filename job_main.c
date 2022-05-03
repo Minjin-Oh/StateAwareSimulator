@@ -21,10 +21,11 @@ int main(int argc, char* argv[]){
     int skewnum;                    //number of skewed task
     float totutil;
     int last_task = tasknum-1;
-    int cur_cp = 0;                 //current checkpoint time
+    long cur_cp = 0;                 //current checkpoint time
+    int cps_size = 0;                //number of checkpoints
     int wl_mult = 8;               //period of wl. computed as wl_mult*gcp
     int total_fp = NOP-PPB*tasknum; //tracks number of free page = (physical space - reserved area)
-    int cps_size = 0;               //number of checkpoints
+                 
     int wl_init = 0;                //flag for wear-leveling initiation
     int wl_count = 0;               //a count for how many wl occured
     int gc_count = 0;               //a profiles for how many gc occured
@@ -32,12 +33,6 @@ int main(int argc, char* argv[]){
     int gc_nonworst = 0;
     int fstamp = 0;                 //a period for profile recording.
     
-    float w_util[tasknum];          //runtime utilization tracker
-    float r_util[tasknum];
-    float g_util[tasknum];
-    float w_wcutil[tasknum];        //per-task utilization tracker
-    float r_wcutil[tasknum];
-    float g_wcutil[tasknum];
     float WU;                       //worst-case utilization tracker.
     float SAWU;
     FILE* w_workload;               //init profile result file
@@ -54,9 +49,13 @@ int main(int argc, char* argv[]){
     block* cur_wb[tasknum];
     GCblock cur_GC[tasknum];
     RRblock cur_rr;
+    
+    //only enable following two lines in a case to check util per cycle.
+    //randtask_statechecker(tasknum,8000);
+    //return;
 
     //get flags & open file
-    int gcflag = 0, wflag = 0, genflag = 0, taskflag = 0;
+    int gcflag = 0, wflag = 0, genflag = 0, taskflag = 0, rrcond = 0;
     if(strcmp(argv[1],"DOGC")==0){
         gcflag = 1;
     }
@@ -65,10 +64,53 @@ int main(int argc, char* argv[]){
     } else if (strcmp(argv[2],"GREEDYW")==0){
         wflag = 2;
     }
-    if(strcmp(argv[3],"DORR")==0){
+    if(strcmp(argv[3],"SKIPRR")==0){// do util-based relocation
+        rrflag = -1;
+    } else if (strcmp(argv[3],"DORR")==0){//a case when read occurs in best
         rrflag = 1;
-    } else if (strcmp(argv[3],"BESTR")==0){
-        rrflag = 2;
+        rrcond = 0;
+    } else if (strcmp(argv[3],"RR005")==0){
+        rrflag = 1;
+        rrcond = 1;
+    } else if (strcmp(argv[3],"RR01")==0){
+        rrflag = 1;
+        rrcond = 2;
+    } else if (strcmp(argv[3],"FRR")==0){
+        rrflag = 1;
+        rrcond = 3;
+    } else if (strcmp(argv[3], "FRR01")==0){
+        rrflag = 1;
+        rrcond = 4;
+    } else if (strcmp(argv[3], "FRR02")==0){
+        rrflag = 1;
+        rrcond = 5;
+    } else if (strcmp(argv[3], "FRR03")==0){
+        rrflag = 1;
+        rrcond = 6;
+    } else if (strcmp(argv[3],"BASE")==0){
+        rrflag = 0;
+        rrcond = 0;   
+    } else if (strcmp(argv[3],"BASE005")==0){
+        rrflag = 0;
+        rrcond = 1;
+    } else if (strcmp(argv[3],"BASE01")==0){
+        rrflag = 0;
+        rrcond = 2;
+    } else if (strcmp(argv[3],"FBASE")==0){
+        rrflag = 0;
+        rrcond = 3;
+    } else if (strcmp(argv[3], "FBASE01")==0){
+        rrflag = 0;
+        rrcond = 4;
+    } else if (strcmp(argv[3], "FBASE02")==0){
+        rrflag = 0;
+        rrcond = 5;
+    } else if (strcmp(argv[3], "FBASE03")==0){
+        rrflag = 0;
+        rrcond = 6;
+    } 
+    else if (strcmp(argv[3],"BESTR")==0){//always SKIP RR
+        rrflag = 5;
     }
     if(strcmp(argv[4],"WORKGEN")==0){
         genflag = 1;
@@ -77,8 +119,13 @@ int main(int argc, char* argv[]){
         taskflag = 1;
     }
     tasknum = atoi(argv[5]);
-    skewness = atoi(argv[6]);
-    totutil = atof(argv[7]);
+    totutil = atof(argv[6]);
+    skewness = atof(argv[7]);
+    float sploc = atof(argv[8]);
+    float tploc = atof(argv[9]);
+    if(skewness != -1){
+        skewnum = atoi(argv[10]);
+    }
     printf("we got %d, %d, %f\n",tasknum,skewness,totutil);
 
     printf("flags:%d,%d,%d\n",gcflag,wflag,rrflag);
@@ -90,23 +137,24 @@ int main(int argc, char* argv[]){
     if(gcflag == 1 && wflag == 1 && rrflag == 1){
         fprintf(fplife,"\n"); 
     }
-    sleep(1);
+   
 
     //MINRC is now a configurable value, which can be adjusted like OP
     //reference :: RTGC mechanism (2004, li pin chang et al.) 
     int max_valid_pg = (int)((1.0-OP)*(float)(PPB*NOB));
     int expected_invalid = MINRC*(NOB-tasknum);
     int expected_fp = PPB*(NOB-tasknum) - max_valid_pg - expected_invalid;
-    printf("expected_invalid : %d, expected_fp : %d\n",expected_invalid,expected_fp);
+    printf("expected_invalid : %d, expected_fp : %d, maxvalid : %d\n",expected_invalid,expected_fp,max_valid_pg);
+    sleep(1);
     float res = 1.0;
     rttask* rand_tasks = NULL;
     if(taskflag==1){
         while(res >= 1.0){
             if(skewness == -1){
-                rand_tasks = generate_taskset(tasknum,0.2,max_valid_pg,&res);
+                rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
             }
             if(skewness != -1){
-                rand_tasks = generate_taskset_skew(tasknum,totutil,max_valid_pg,&res,1,skewness);
+                rand_tasks = generate_taskset_skew(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
             }
             if(res >= 1.0){
                 free(rand_tasks);
@@ -120,6 +168,7 @@ int main(int argc, char* argv[]){
                 rand_tasks[i].wn,rand_tasks[i].wp,rand_tasks[i].rn,rand_tasks[i].rp,rand_tasks[i].gcp,
                 rand_tasks[i].addr_lb,rand_tasks[i].addr_ub);
         }
+        fprintf(taskparams,"%f\n",res);
         fflush(taskparams);
         fclose(taskparams);
         return 0;
@@ -139,7 +188,7 @@ int main(int argc, char* argv[]){
         FILE* file_taskparam = fopen("taskparam.csv","r");
         rand_tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
         get_task_from_file(rand_tasks,tasknum,file_taskparam);
-        IOgen(tasknum,rand_tasks,2100000000,0);
+        IOgen(tasknum,rand_tasks,8400000000,0,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
         return 0;
@@ -148,6 +197,10 @@ int main(int argc, char* argv[]){
     FILE* main_taskparam = fopen("taskparam.csv","r");
     rand_tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
     get_task_from_file(rand_tasks,tasknum,main_taskparam);
+    float bfac_min = e_exec(0)/(float)_find_min_period(rand_tasks,tasknum);
+    float bfac_max = e_exec(MAXPE)/(float)_find_min_period(rand_tasks,tasknum);
+    printf("blocking : %f to %f\n",bfac_min,bfac_max);
+    sleep(1);
     fclose(main_taskparam);
     
     //!!!rest of the main function uses "tasks", so remember to assign correct pointer. 
@@ -164,7 +217,7 @@ int main(int argc, char* argv[]){
     
     //initialize blocklist for blockmanage.
     init_metadata(newmeta,tasknum);
-    int* cps = add_checkpoints(tasknum,tasks,2100000000,&(cps_size));
+    long* cps = add_checkpoints(tasknum,tasks,8400000000,&(cps_size));
     fblist_head = init_blocklist(0, NOB-tasknum-1);
     rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);
     full_head = init_blocklist(0,-1);//generate 0 component ll.
@@ -176,12 +229,6 @@ int main(int argc, char* argv[]){
 
     //init data access & distribution tracker
     for(int i=0;i<tasknum;i++){
-        w_util[i] = 0.0;
-        r_util[i] = 0.0;
-        g_util[i] = 0.0;
-        w_wcutil[i] = 0.0;
-        r_wcutil[i] = 0.0;
-        g_wcutil[i] = 0.0;
         IO_wqueue[i] = (IO*)malloc(sizeof(IO)*tasks[i].wn);
         IO_rqueue[i] = (IO*)malloc(sizeof(IO)*tasks[i].rn);
         IO_gcqueue[i] = (IO*)malloc(sizeof(IO)*PPB);
@@ -218,18 +265,20 @@ int main(int argc, char* argv[]){
     int oldest;
     int yngest;
     int over_avg = 0;
-    int rr_check = tasks[last_task].gcp;
+    long rr_check = (long)100000;
     for(int i=0;i<cps_size;i++){
         yngest = get_blockstate_meta(newmeta,YOUNG);
         oldest = get_blockstate_meta(newmeta,OLD);
         cur_cp = cps[i];
+        //printf("cur cp : %ld\n",cur_cp);
         //skip already checked timestamp
         if((i != 0) && (cur_cp == cps[i-1])){continue;}
         
         //iterate through tasks.
         for(int j=0;j<tasknum;j++){
-            if(cur_cp % tasks[j].wp == 0){
-                int cur_y=0, cur_o=0, targ=0;
+
+            if(cur_cp % (long)tasks[j].wp == 0){
+                //write body
                 if(wjob[j] == 1){
                     write_job_end(tasks[j],newmeta,IO_wqueue[j],&(total_fp));
                 }
@@ -237,6 +286,8 @@ int main(int argc, char* argv[]){
                                             fblist_head,full_head,write_head,
                                             w_workloads[j],IO_wqueue[j],cur_wb[j],wflag);
                 wjob[j] = 1;
+                //write profile
+                int cur_y=0, cur_o=0, targ=0;
                 block* check_yng = ll_find(newmeta, fblist_head, YOUNG);
                 block* check_old = ll_find(newmeta, fblist_head, OLD);
                 if(check_yng == NULL || check_old == NULL){
@@ -246,39 +297,36 @@ int main(int argc, char* argv[]){
                 cur_y = newmeta->state[check_yng->idx];
                 cur_o = newmeta->state[check_old->idx];
                 targ = newmeta->state[cur_wb[j]->idx];
-                fprintf(fpwrite,"%d,%d,%d,%d\n",cur_cp,targ,cur_y,cur_o);
+                fprintf(fpwrite,"%ld,%d,%d,%d\n",cur_cp,targ,cur_y,cur_o);
             }//!write end
             
-            if(cur_cp % tasks[j].rp == 0){
+            if(cur_cp % (long)tasks[j].rp == 0){
+                //read body
                 if(rjob[j]==1){
                     read_job_end(tasks[j],newmeta,IO_rqueue[j]);
-                    //check if there's any update in read-worst.
-                    update_read_worst(newmeta,tasknum);
-                    fprintf(fpread,"%d,",cur_cp);
-                    for(int k=0;k<tasknum;k++){
-                        fprintf(fpread,"%d,",newmeta->cur_read_worst[k]);
-                    }
-                    fprintf(fpread,"%d\n",oldest);
-                    fflush(fpread);
+                    
                 }
                 read_job_start(tasks[j],newmeta,r_workloads[j],IO_rqueue[j]);
                 rjob[j] = 1;
+                //read profile
+                update_read_worst(newmeta,tasknum);
+                fprintf(fpread,"%ld,",cur_cp);
+                for(int k=0;k<tasknum;k++){
+                    fprintf(fpread,"%d,",newmeta->cur_read_worst[k]);
+                }
+                fprintf(fpread,"%d\n",oldest);
+                fflush(fpread);
             }//!read end
     
-            if((cur_cp % tasks[j].gcp == 0) && (newmeta->total_invalid >= expected_invalid)){
+            if((cur_cp % (long)tasks[j].gcp == 0) && (newmeta->total_invalid >= expected_invalid)){
                 if(gcjob[j] == 1){
-                    
                     //save cur_GC idx for profiling.
                     int cur_gc_idx = cur_GC[j].cur_vic->idx;
                     int cur_gc_state = newmeta->state[cur_gc_idx];
-                    if(cur_gc_state >= oldest-1){
-                        over_avg += 1;
-                    }
                     int prev_fp = total_fp;
                     gc_job_end(tasks,j,tasknum,newmeta,IO_gcqueue[j],
                                fblist_head,rsvlist_head,
                                &(cur_GC[j]),&(total_fp));
-
                     //PROFILES
                     if(rrflag != 2){
                         total_u = print_profile(tasks,tasknum,j,newmeta,fp,yngest,oldest,cur_cp,cur_gc_idx,cur_gc_state,total_fp-prev_fp);   
@@ -292,12 +340,7 @@ int main(int argc, char* argv[]){
                 gcjob[j] = 1;
             }//!gc end
 #ifdef DORELOCATE
-#ifdef IGNOREUTIL
-            if((cur_cp % tasks[last_task].gcp*wl_mult == 0) && (j == last_task)){
-#endif
-#ifndef IGNOREUTIL
-            if((cur_cp == rr_check) && (j==last_task)){
-#endif
+            if((cur_cp == rr_check) && (j==last_task) && rrflag != -1){
                 int vic1 = -1;
                 int vic2 = -1;
                 int RRsched = 0;
@@ -311,39 +354,71 @@ int main(int argc, char* argv[]){
                     RR_job_end(newmeta,fblist_head,full_head,IO_rrqueue,&cur_rr,&total_fp);
                     rrjob = 0;
                     update_read_worst(newmeta,tasknum);
-                    fprintf(fprr,"%d,",cur_cp);
+                    fprintf(fprr,"%ld,%ld,",cur_cp,rr_check);
                     for(int k=0;k<tasknum;k++){
                         fprintf(fprr,"%d,",newmeta->cur_read_worst[k]);
                     }
-                    fprintf(fprr,"%d,%d\n",yngest, oldest);
+                    fprintf(fprr,"%d,%d,%d,%d,%d,%d,%f,%ld,%ld\n",yngest, oldest,
+                    newmeta->state[cur_rr.cur_vic1->idx],newmeta->state[cur_rr.cur_vic2->idx],
+                    cur_rr.vic1_acc,cur_rr.vic2_acc,
+                    cur_rr.execution_time,cur_rr.period,cur_rr.rrcheck);
+
                     fflush(fprr);
                 }
                 if(vic1 != -1 && vic2 != -1){
-                    if(newmeta->state[vic1] - newmeta->state[vic2] >= THRESHOLD){
+                    if((newmeta->state[vic1] - newmeta->state[vic2] >= THRESHOLD) && 
+                       (newmeta->access_window[vic1] - newmeta->access_window[vic2] > 100)){
                         //calculate slack
+                        //evaluate various cases
+                        //case1. allocate slack <= 0.05
+                        //case2. allocate slack <= 0.1
+                        //case3. allocate every slack
+                        //case4. allocate 0.05~0.3 statically
                         WU = find_worst_util(tasks,tasknum,newmeta);
-                        slack_util = 1.0 - WU;
+                        if(rrcond==1){//case1
+                            slack_util = 1.0 - WU;
+                            if(slack_util >= 0.05)
+                                slack_util = (float)0.05;
+                        } else if (rrcond==2){//case2
+                            slack_util = 1.0 - WU;
+                            if(slack_util >= 0.1)
+                                slack_util = (float)0.1;
+                        } else if(rrcond==0){//case3
+                            slack_util = 1.0 - WU;
+                        } else if (rrcond==3){//case4
+                            slack_util = 0.05;
+                        } else if (rrcond==4){//case4
+                            slack_util = 0.1;
+                        } else if (rrcond==5){//case4
+                            slack_util = 0.2;
+                        } else if (rrcond==6){//case4
+                            slack_util = 0.3;
+                        }
                         //temporary skip condition
                         float worst_exec = ((r_exec(oldest)+w_exec(yngest))*PPB + e_exec(oldest))*2;
-                        if(slack_util <= 0.0){
                         //if(slack_util <= -10.0){
+                        if(slack_util <= 0.0){
                             printf("skip RR. no util.\n");
                             RRsched = 0;
                         } else {
                             //enqueue RR opeartion
                             RR_job_start(tasks,tasknum,newmeta,fblist_head,full_head,IO_rrqueue,&cur_rr);
                             printf("[RR]fp:%d vs inv:%d, %d\n",total_fp,newmeta->total_invalid,total_fp+newmeta->total_invalid);
+                            cur_rr.vic1_acc = newmeta->access_window[cur_rr.cur_vic1->idx];
+                            cur_rr.vic2_acc = newmeta->access_window[cur_rr.cur_vic2->idx];
                             rrjob = 1;
                             for(int i=0;i<NOB;i++){
                                 newmeta->access_window[i]=0;
                             }
                             //calculate least period
                             float rr_period = cur_rr.execution_time / slack_util;
-                            float mult = rr_period/(float)tasks[last_task].gcp;
-                            int next_rr = (int)ceil((double)mult) * tasks[last_task].gcp + cur_cp;
+                            float mult = rr_period/(float)100000;
+                            long next_rr = (long)ceil((double)mult) * (long)100000 + cur_cp;
+                            cur_rr.cur = cur_cp;
+                            cur_rr.period = next_rr - cur_cp;
+                            cur_rr.rrcheck = next_rr;
                             //show result
-                            printf("period : %d, mult : %f\n",next_rr,mult);
-                            //sleep(1);
+                            printf("slack : %f, period : %ld, mult : %f\n",slack_util,next_rr,mult);
                             rr_check = next_rr;
                             RRsched = 1;
                         }
@@ -356,16 +431,21 @@ int main(int argc, char* argv[]){
                     RRsched = 0;
                 }
                 if(RRsched == 0){
-                    rr_check = cur_cp + tasks[last_task].gcp;
+                    rr_check = cur_cp + (long)100000;
                 }
-                printf("next rr_check : %d, gap : %d, slack : %f\n",rr_check, rr_check-cur_cp,slack_util);
+                printf("next rr_check : %ld, gap : %ld, slack : %f\n",rr_check, rr_check-cur_cp,slack_util);
             }//!RR end
+
+            
 #endif
         }//!task iteration end
         //printf("tot_u : %f\n",total_u);
         check_profile(total_u,newmeta,tasks,tasknum,cur_cp,fp,fplife);
+        check_block(total_u,newmeta,tasks,tasknum,cur_cp,fp,fplife);
     }
-    printf("run through all!!!\n");
+    printf("run through all!!![cur_cp : %ld]\n",cur_cp);
+    fprintf(fplife,"%ld,",cur_cp);
+    fflush(fplife);
     sleep(1);
     return 0;
 }

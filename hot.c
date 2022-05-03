@@ -12,7 +12,7 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     
     int temp_high[NOB];
     int temp_low[NOB];
-    int** block_vmap;
+    
 
     int highcnt=0;
     int lowcnt=0;
@@ -22,23 +22,12 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     float temp, highest;
     int hightask_idx;
 
-    //init
-    block_vmap = (int**)malloc(sizeof(int*)*tasknum); 
-    for(int i=0;i<tasknum;i++){
-        block_vmap[i]=(int*)malloc(sizeof(int)*NOB);
+    
+    
+    for(int i=0;i<NOB;i++){
+        access_avg += metadata->access_window[i];
+        cycle_avg += metadata->state[i];
     }
-    for(int i=0;i<tasknum;i++){
-        for(int j=0;j<NOB;j++){
-            block_vmap[i][j]=0;
-        }
-    }
-    //printf("testing access window : ");
-    //for(int i=0;i<NOB;i++){
-    //    printf("%d(%d), ",i,metadata->access_window[i]);
-    //    access_avg += metadata->access_window[i];
-    //    cycle_avg += metadata->state[i];
-    //}
-    //printf("\n");
     access_avg = access_avg/NOB;
     cycle_avg = cycle_avg/NOB;
 
@@ -52,17 +41,7 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
     }
 
-    //build a block valid map
-    for(int i=0;i<NOP;i++){
-        if(metadata->vmap_task[i]!=-1){
-            int tidx = metadata->vmap_task[i];
-            if(tidx >= 0){
-                block_vmap[tidx][i/PPB]=1;
-            }
-        }
-    }
-    //generate temporary block list w.r.t (A.hotness, B.state)
-   
+    //generate temporary block list w.r.t (A.hotness, B.state) 
     highcnt = 0;
     lowcnt = 0;
     
@@ -126,11 +105,6 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     //return high/low value.
     
     //free
-    for(int i=0;i<tasknum;i++){
-        free(block_vmap[i]);
-    }
-    free(block_vmap);
-
     *res1 = high;
     *res2 = low;
 }

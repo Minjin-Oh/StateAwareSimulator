@@ -1,6 +1,6 @@
 #include "stateaware.h"
 
-rttask* generate_taskset(int tasknum, float tot_util,int addr, float* result_util){
+rttask* generate_taskset(int tasknum, float tot_util,int addr, float* result_util, int cycle){
     //params
     //what about address??
     float utils[tasknum];
@@ -67,12 +67,12 @@ rttask* generate_taskset(int tasknum, float tot_util,int addr, float* result_uti
     return tasks;
 }
 
-rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type){
+rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle){
     /*assign 90% of utilization to certain amount of tasks*/
     float utils[tasknum];
     float util_task[2];
     int util_ratio[tasknum];
-    int util_ratio_sum;
+    int util_ratio_sum = 0;
     int wratio, rratio;
     int wnum, rnum;
     int wp, rp, gcp;
@@ -82,7 +82,8 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
     for(int i=0;i<tasknum;i++){
         if (i < skewnum){
             util_ratio[i] = -1;
-        } else {
+        }
+        else {
             util_ratio[i] = rand()%10 + 1;
             util_ratio_sum += util_ratio[i];
         }
@@ -92,7 +93,9 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
             utils[i] = skew;
         }
         else{
-            utils[i] = ((float)util_ratio[i]/(float)util_ratio_sum) * tot_util * 0.1;
+            printf("ratio:%f\n",(float)util_ratio[i]/(float)util_ratio_sum);
+            utils[i] = ((float)util_ratio[i]/(float)util_ratio_sum) * (tot_util * 0.1);
+
         }
     }
     for(int i=0;i<tasknum;i++){
@@ -156,4 +159,56 @@ void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile){
         rand_tasks[i].addr_lb = lb;
         rand_tasks[i].addr_ub = ub;
     }
+}
+
+float calcutil_per_pecycle(rttask* task,int tasknum, int cycle){
+    float res = 0.0;
+    for(int i=0;i<tasknum;i++){
+        res += __calc_wu(&(task[i]),cycle);
+        res += __calc_ru(&(task[i]),cycle);
+        res += __calc_gcu(&(task[i]),MINRC,cycle,cycle,cycle);
+    }
+    res += e_exec(cycle)/(float)_find_min_period(task,tasknum);
+    return res;
+}
+void randtask_statechecker(int tasknum,int addr){
+    float startutil = 0.05;
+    int ratios[10][11];
+    //init result array
+    for(int i=0;i<10;i++){
+        for(int j=0;j<11;j++){
+            ratios[i][j] = 0;
+        }
+    }
+    for(int i=0;i<10;i++){//for util ranging from 0.05 ~ 0.5
+        for(int j=0;j<1000;j++){//generate 1000 tasks and check success or not
+            float res;
+            float cur_util = startutil*(i+1);
+            //generate taskset && save initial util.
+            rttask* zstate_task = generate_taskset(tasknum,cur_util,addr,&res,0);
+            for(int k=0;k<11;k++){
+                res = calcutil_per_pecycle(zstate_task,tasknum,10*k);
+                if(res <= 1.0){
+                    ratios[i][k]++;
+                }
+            }   
+        }
+    }
+    
+    for(int i=0;i<11;i++){
+        printf("ratios[CYC:%d] :",10*i);
+        for(int j=0;j<10;j++){
+            printf("%f, ",(float)ratios[j][i]/10.0);
+        }
+        printf("\n");
+    }
+    FILE* fp = fopen("utilpercycle.csv","w");
+    for(int i=0;i<11;i++){
+        for(int j=0;j<10;j++){
+            fprintf(fp,"%f,",(float)ratios[j][i]/10.0);
+        }
+        fprintf(fp,"\n");
+    }
+    fflush(fp);
+    fclose(fp);
 }

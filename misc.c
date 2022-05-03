@@ -1,8 +1,8 @@
 #include "stateaware.h"
 
 int compare(const void *a, const void *b){
-    int num1= *(int*)a;
-    int num2= *(int*)b;
+    long num1= *(long*)a;
+    long num2= *(long*)b;
 
     if(num1<num2)
         return -1;
@@ -11,18 +11,20 @@ int compare(const void *a, const void *b){
     return 0;
 }
 
-int* add_checkpoints(int tasknum, rttask* tasks, int runtime, int* cps_size){
-    int size = 0; // find the size of checkpoint list
-    
+int* add_checkpoints(int tasknum, rttask* tasks, long runtime, int* cps_size){
+    long size = 0; // find the size of checkpoint list
+    printf("runtime : %ld\n",runtime);
     for(int i=0;i<tasknum;i++){
-        size += runtime/tasks[i].wp + 1;
-        size += runtime/tasks[i].rp + 1;
-        size += runtime/tasks[i].gcp + 1;
+        size += runtime/(long)tasks[i].wp + 1;
+        size += runtime/(long)tasks[i].rp + 1;
+        size += runtime/(long)tasks[i].gcp + 1;
         printf("periods : %d %d %d\n",tasks[i].wp,tasks[i].rp,tasks[i].gcp);
         printf("added %d %d %d\n",runtime/tasks[i].wp,runtime/tasks[i].rp,runtime/tasks[i].gcp);
     }
-    int* cps = (int*)malloc(sizeof(int)*size);
-    int cnt = 0;
+    size += runtime/(long)100000 + 1;
+    printf("size is %ld\n",size);
+    long* cps = (long*)malloc(sizeof(long)*size);
+    long cnt = 0;
     for(int i=0;i<tasknum;i++){
         for(int j=0;j<3;j++){
             int mult = 0;
@@ -30,16 +32,28 @@ int* add_checkpoints(int tasknum, rttask* tasks, int runtime, int* cps_size){
             if(j==0) period = tasks[i].wp;
             if(j==1) period = tasks[i].rp;
             if(j==2) period = tasks[i].gcp;
-            while(mult*period <= runtime){
-                cps[cnt] = mult*period;
+            while((long)mult*(long)period <= runtime){
+                cps[cnt] = (long)mult*(long)period;
                 cnt++;
                 mult++;
             }
         }
     }
-    printf("size %d, cnt %d\n",size,cnt);
-    qsort(cps,size,sizeof(int),compare);
-    *cps_size = size;
+    //add another timestamp for RR scheduling.
+    int RRmult = 0;
+    int RRperiod = 100000;//set default RR period as multiple of 100ms.
+    while((long)RRmult*(long)RRperiod <= runtime){
+        cps[cnt] = (long)RRmult*(long)RRperiod;
+        cnt++;
+        RRmult++;
+    }
+    printf("size %ld, cnt %ld\n",size,cnt);
+    qsort(cps,size,sizeof(long),compare);
+    *cps_size = (int)size;
+    for(int i=0;i<300;i++){
+        printf("%ld, ",cps[i]);
+    }
+    sleep(1);
     return cps;
 }
 

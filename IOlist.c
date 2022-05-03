@@ -1,32 +1,31 @@
 #include "stateaware.h"
 
-bhead* ll_init(){
+IOhead* ll_init_IO(){
     //init and return head poiner
-    bhead* head;
-    head = (bhead*)malloc(sizeof(bhead));
-    head->blocknum = 0;
+    IOhead* head;
+    head = (IOhead*)malloc(sizeof(IOhead));
+    head->reqnum = 0;
     head->head = NULL;
     return head;
 }
 
-void ll_free(bhead* head){
+void ll_free_IO(IOhead* head){
     int freecnt = 0;
-    int component = head->blocknum;
-    block* cur = head->head;
+    int component = head->reqnum;
+    IO* cur = head->head;
     //free linked blocks starting from the head
-    block* temp = head->head;
+    IO* temp = head->head;
     while(freecnt != component){
         cur = cur->next;
         freecnt++;
-        printf("temp info : %d, %dvs%d\n",temp->idx,freecnt,component);
         free(temp);
         temp = cur;
     }   
 }
 
-block* ll_append(bhead* head, block* new){
+IO* ll_append_IO(IOhead* head, IO* new){
     //append block
-    block* cur;
+    IO* cur;
     //printf("appending %d\n",new->idx);
     if(head->head == NULL){
         head->head = new;
@@ -41,13 +40,13 @@ block* ll_append(bhead* head, block* new){
         new->prev = cur;
         new->next = NULL;
     }
-    head->blocknum++;
+    head->reqnum++;
 
 }
 
-block* ll_pop(bhead* head){
+IO* ll_pop_IO(IOhead* head){
     //pop block
-    block* temp;
+    IO* temp;
     temp = head->head;
     if(temp == NULL){
         printf("head is null\n");
@@ -61,15 +60,16 @@ block* ll_pop(bhead* head){
         head->head = NULL;
         }
     }
-    head->blocknum--;
+    head->reqnum--;
     temp->prev = NULL;
     temp->next = NULL;
     return temp;
 }
 
-block* ll_findidx(bhead* head, int tar){
+/*
+IO* ll_findidx(IOhead* head, int tar){
     //find certain block
-    block* cur = NULL;
+    IO* cur = NULL;
     cur = head->head;
     
     while(cur != NULL){
@@ -85,9 +85,9 @@ block* ll_findidx(bhead* head, int tar){
     }
     return cur;
 }
-block* ll_remove(bhead* head, int tar){
+IO* ll_remove(IOhead* head, int tar){
     //remove certain block
-    block* cur = NULL;
+    IO* cur = NULL;
     cur = head->head;
     
     while(cur != NULL){
@@ -125,19 +125,19 @@ block* ll_remove(bhead* head, int tar){
         //printf("[case3]prev block : %d\n",cur->prev->idx);
         cur->prev->next = NULL;
     }
-    head->blocknum--;
-    //printf("bnum:%d\n",head->blocknum);
-    if(head->blocknum <= -1) 
+    head->reqnum--;
+    //printf("bnum:%d\n",head->reqnum);
+    if(head->reqnum <= -1) 
         abort();
     cur->prev = NULL;
     cur->next = NULL;
     return cur;
 }
 
-block* ll_find(meta* metadata, bhead* head, int cond){
+IO* ll_find(meta* metadata, IOhead* head, int cond){
     //find a block which meets condition(state)
-    block* cur;
-    block* tar;
+    IO* cur;
+    IO* tar;
     cur = head->head;
     tar = cur;
     while(cur != NULL){
@@ -160,12 +160,12 @@ block* ll_find(meta* metadata, bhead* head, int cond){
     return tar;
 }
 
-block* ll_condremove(meta* metadata, bhead* head, int cond){
+IO* ll_condremove(meta* metadata, IOhead* head, int cond){
     //remove certain block, according to condition of block.
     //if cond == YOUNG, return youngest block
     //else if cond over 1 is given, return only the block with state >= cond.
-    block* cur;
-    block* tar;
+    IO* cur;
+    IO* tar;
     cur = head->head;
     tar = cur;
     while(cur != NULL){
@@ -201,15 +201,15 @@ block* ll_condremove(meta* metadata, bhead* head, int cond){
     else if ((tar->next == NULL) && (tar->prev != NULL)){//tail
         tar->prev->next = NULL;
     }
-    head->blocknum--;
-    printf("[ll]blocknum:%d, tar : %d\n",head->blocknum,tar->idx);
+    head->reqnum--;
+    printf("[ll]reqnum:%d, tar : %d\n",head->reqnum,tar->idx);
     tar->prev = NULL;
     tar->next = NULL;
     return tar;
 }
 
-int is_idx_in_list(bhead* head, int tar){
-    block* cur;
+int is_idx_in_list(IOhead* head, int tar){
+    IO* cur;
     cur = head->head;
     int ret = 0;
     while(cur != NULL){
@@ -221,3 +221,4 @@ int is_idx_in_list(bhead* head, int tar){
     }
     return ret;
 }
+*/

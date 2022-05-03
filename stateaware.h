@@ -9,6 +9,7 @@
 #define RD 2
 #define GC 3
 #define RR 4
+#define ER 5
 
 #define NOB 100
 #define PPB 128
@@ -37,7 +38,6 @@
 //scheme option toggle
 #define DOGC
 #define DORELOCATE
-//#define IGNOREUTIL
 
 //baseline vs new scheme(deprecated)
 //#define DOGCCONTROL
@@ -83,6 +83,8 @@ typedef struct _block{
 }block;
 
 typedef struct _IO{
+    struct _IO* next;
+    struct _IO* prev;
     int type;
     int lpa;
     int ppa;
@@ -93,7 +95,14 @@ typedef struct _IO{
     int rr_vic_ppa;
     int rr_tar_ppa;
     int vmap_task;
+    long deadline;
 }IO;
+
+typedef struct _IOhead{
+    IO* head;
+    block* last;
+    int reqnum;
+}IOhead;
 
 typedef struct _GCBlock{
     block* cur_vic;
@@ -104,6 +113,11 @@ typedef struct _RRBlock{
     block* cur_vic1;
     block* cur_vic2;
     float execution_time;
+    int vic1_acc;
+    int vic2_acc;
+    long cur;
+    long period;
+    long rrcheck;
 }RRblock;
 
 typedef struct _bhead{
@@ -127,7 +141,7 @@ typedef struct _meta{
 }meta;
 
 //IO microbenchmark generating function.
-void IOgen(int tasknum, rttask* task, int runtime, int offset);
+void IOgen(int tasknum, rttask* task, long runtime, int offset,float _splocal,float _tplocal);
 int IOget(FILE* fp);
 void IO_open(int tasknum, FILE** wfpp, FILE** rfpp);
 
@@ -175,7 +189,7 @@ float __calc_ru(rttask* task, int scale_r);
 float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e);
 
 //misc
-int* add_checkpoints(int tasknum, rttask* tasks, int runtime, int* cps_size);
+int* add_checkpoints(int tasknum, rttask* tasks, long runtime, int* cps_size);
 
 //linked-list
 bhead* ll_init();
@@ -220,12 +234,14 @@ void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head,
 FILE* open_file_bycase(int gcflag, int wflag, int rrflag);
 void update_read_worst(meta* metadata, int tasknum);
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
-                    int yng, int old,int cur_cp,int cur_gc_idx,int cur_gc_state, int getfp);
+                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, int getfp);
 float print_profile_best(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
-                   int yng, int old,int cur_cp,int cur_gc_idx,int cur_gc_state);
-void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, int cur_cp, FILE* fp, FILE* fplife);
+                   int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state);
+void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, long cur_cp, FILE* fp, FILE* fplife);
+void check_block(float tot_u, meta* metadata, rttask* tasks, int tasknum, long cur_cp, FILE* fp, FILE* fplife);
 
 //gen_task
-rttask* generate_taskset(int tasknum, float util, int addr, float* result_util);
-rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type);
+rttask* generate_taskset(int tasknum, float util, int addr, float* result_util, int cycle);
+rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile);
+void randtask_statechecker(int tasknum,int addr);
