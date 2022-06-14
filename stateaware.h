@@ -1,161 +1,34 @@
+#pragma once
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
 #include <time.h>
+#include "types.h"
 
-#define WR 1
-#define RD 2
-#define GC 3
-#define RR 4
-#define ER 5
+int util_check_main(); //test function for debugging(not used in simulation)
 
-#define NOB 100
-#define PPB 128
-#define NOP NOB*PPB
-#define OP 0.32
+//expose internal functions in util.c for other files
+float w_exec(int cycle);
+float r_exec(int cycle);
+float e_exec(int cycle);
+int __calc_gcmult(int wp, int wn, int _minrc);
+float __calc_wu(rttask* task, int scale_w);
+float __calc_ru(rttask* task, int scale_r);
+float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e);
+int _gc_period(rttask* task,int _minrc);
 
-//locality param
-#define SPLOCAL 0.05
-#define TPLOCAL 0.95
-
-//lifetime params
-#define MINRC 35
-#define MAXPE 100
-#define MARGIN 3 
-#define THRESHOLD 5
-#define OLD 0
-#define YOUNG -1
-
-//sorting
-#define ASC 0
-#define DES 1
-
-//GC and GCDEBUG option toggle  
-//#define GCDEBUG                // DEBUG print option
-
-//scheme option toggle
-#define DOGC
-#define DORELOCATE
-
-//baseline vs new scheme(deprecated)
-//#define DOGCCONTROL
-//#define GCBASE
-//#define DOWCONTROL
-//#define WRITEBASE
-//#define DORRCONTROL
-//#define RRBASE
-
-//deprecated params
-//#define DOWRCONTROL
-//#define DOGCNOTHRES
-//#define FORCEDCONTROL
-//#define FORCEDNOTHRES
-
-//profiles -- assume linear execution time change
-#define STARTW 500
-#define ENDW 350
-#define STARTR 50
-#define ENDR 200
-#define STARTE 5000
-#define ENDE 20000
-
-#define STAMP 1
-//structure definition
-typedef struct _rttask{
-    int idx;
-    int rp;
-    int rn;
-    int wp;
-    int wn;
-    int gcp;
-    int addr_lb;
-    int addr_ub;
-}rttask;
+//flag getting functions
+void set_scheme_flags(char* argv[], 
+                      int *gcflag, int *wflag, int *rrflag, int *rrcond);
+void set_exec_flags(char* argv[], int *tasknum, float *totutil, 
+                    int *genflag, int* taskflag,
+                    int *skewness, float* sploc, float* tploc, int* skewnum,
+                    int *OPflag, double *OP, int *MINRC);
 
 
-typedef struct _block{
-    struct _block* next;
-    struct _block* prev;
-    int idx;
-    int fpnum;
-}block;
-
-typedef struct _IO{
-    struct _IO* next;
-    struct _IO* prev;
-    int type;
-    int lpa;
-    int ppa;
-    int gc_old_lpa;
-    int gc_vic_ppa;
-    int gc_tar_ppa;
-    int rr_old_lpa;
-    int rr_vic_ppa;
-    int rr_tar_ppa;
-    int vmap_task;
-    long deadline;
-}IO;
-
-typedef struct _IOhead{
-    IO* head;
-    block* last;
-    int reqnum;
-}IOhead;
-
-typedef struct _GCBlock{
-    block* cur_vic;
-    block* cur_rsv;
-}GCblock;
-
-typedef struct _RRBlock{
-    block* cur_vic1;
-    block* cur_vic2;
-    float execution_time;
-    int vic1_acc;
-    int vic2_acc;
-    long cur;
-    long period;
-    long rrcheck;
-}RRblock;
-
-typedef struct _bhead{
-    block* head;
-    block* last;
-    int blocknum;
-}bhead;
-
-typedef struct _meta{
-    int pagemap[NOP];
-    int rmap[NOP];
-    int invnum[NOB];
-    int invmap[NOP];
-    int state[NOB];
-    int access_window[NOB];
-    int total_invalid;
-    float** runutils;
-    char** access_tracker;
-    int* cur_read_worst;
-    char vmap_task[NOP];
-}meta;
-
-//IO microbenchmark generating function.
-void IOgen(int tasknum, rttask* task, long runtime, int offset,float _splocal,float _tplocal);
-int IOget(FILE* fp);
-void IO_open(int tasknum, FILE** wfpp, FILE** rfpp);
-
-//init_array
-void init_metadata(meta* metadata, int tasknum);
-bhead* init_blocklist(int start, int end);
-void init_utillist(float* rutils, float* wutils, float* gcutils);
-void init_task(rttask* task,int idx, int wp, int wn, int rp, int rn, int gcp, int lb, int ub);
-
-//free
-void free_metadata(meta* metadata);
-void free_blocklist(bhead* head);
-
-//simulator functions
+//simulator functions(deprecated)
 block* write_simul(rttask task, meta* metadata, int* g_cur, 
                    bhead* fblist_head, bhead* write_head, bhead* full_head, 
                    block* cur_fb,int* total_fp, float* tracker, FILE* fp_w, int write_limit);
@@ -173,20 +46,10 @@ void wl_simul(meta* metadata, int tasknum,
 float find_cur_util();
 float find_worst_util(rttask* task, int tasknum, meta* metadata);
 float find_SAworst_util(rttask* task, int tasknum, meta* metadata);
-int find_gcctrl(rttask* task, int taskidx,int tasknum, meta* metadata,bhead* full_head);
-int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head);
-float calc_std(meta* metadata);
 int _find_min_period(rttask* task,int tasknum);
-int util_check_main(); //test function for debugging(not used in simulation)
+float calc_std(meta* metadata);
 
-//expose some internal functions in util.c for other files
-float w_exec(int cycle);
-float r_exec(int cycle);
-float e_exec(int cycle);
-float __calc_gcmult(int wp, int wn, int _minrc);
-float __calc_wu(rttask* task, int scale_w);
-float __calc_ru(rttask* task, int scale_r);
-float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e);
+int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head);
 
 //misc
 int* add_checkpoints(int tasknum, rttask* tasks, long runtime, int* cps_size);
@@ -202,18 +65,30 @@ block* ll_find(meta* metadata, bhead* head, int cond);
 block* ll_condremove(meta* metadata, bhead* head, int cond);
 int idx_exist(bhead* head, int tar);
 
+//linked-list(IOqueue)
+IOhead* ll_init_IO();
+void ll_free_IO(IOhead* head);
+void ll_append_IO(IOhead* head, IO* new);
+IO* ll_pop_IO(IOhead* head);
+
 //hot cold seperation functions.
 void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist, int max);
 int get_blkidx_byage(meta* metadata, bhead* list, bhead* rsvlist_head, bhead* write_head, int param, int any);
 int get_blockstate_meta(meta* metadata, int param);
 int is_idx_in_list(bhead* head, int tar);
-void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2);
-void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2);
+
+
 //lpsolver
 int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,int low, int high);
 
+//block assignment functions
+block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                         bhead* fblist_head, bhead* write_head, block* cur_b);
+
+
 //refactored simulation functions
-block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* write_head,
+block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
+                     bhead* fblist_head, bhead* full_head, bhead* write_head,
                      FILE* fp_w, IO* IOqueue, block* cur_target, int wflag);
 void write_job_end(rttask task, meta* metadata, IO* IOqueue, int* total_fp);
 void read_job_start(rttask task, meta* metadata, FILE* fp_r, IO* IOqueue);
@@ -229,9 +104,17 @@ void RR_job_start(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head
 void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head, 
                   IO* IOqueue, RRblock* cur_RR, int* total_fp);
 
+//emulation functions
+block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
+                     bhead* fblist_head, bhead* full_head, bhead* write_head,
+                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp);
+void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
+                  bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
+                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, int cur_cp);
 
 //checker & profiler
 FILE* open_file_bycase(int gcflag, int wflag, int rrflag);
+void open_files_misc(FILE* fplife, FILE* fpwrite, FILE* fpread, FILE* fprr);
 void update_read_worst(meta* metadata, int tasknum);
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
                     int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, int getfp);
@@ -243,5 +126,6 @@ void check_block(float tot_u, meta* metadata, rttask* tasks, int tasknum, long c
 //gen_task
 rttask* generate_taskset(int tasknum, float util, int addr, float* result_util, int cycle);
 rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
+rttask* generate_taskset_hardcode(int tasknum, int addr);
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile);
 void randtask_statechecker(int tasknum,int addr);

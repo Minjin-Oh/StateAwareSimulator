@@ -1,4 +1,6 @@
 #include "stateaware.h"
+#include "findGC.h"
+#include "findRR.h"
 
 extern int rrflag; 
 
@@ -11,22 +13,24 @@ block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadat
             printf("do not change wb, left fp : %d\n",cur_b->fpnum);
             return cur_b;
         } else {
-            printf("target block : %d\n",target);
-            cur = ll_condremove(metadata,fblist_head,OLD);
+            cur = ll_condremove(metadata,fblist_head,YOUNG);
             if (cur != NULL){
                 ll_append(write_head,cur);
             } else {
                 cur = write_head->head;
             }
+            target = cur->idx;
+            printf("target block : %d\n",target);
         }
     } else { //initial case :: cur_b == NULL. find new block
-        printf("[INIT]target block : %d\n",target);
-        cur = ll_condremove(metadata,fblist_head,OLD);
+        cur = ll_condremove(metadata,fblist_head,YOUNG);
         if (cur != NULL){
             ll_append(write_head,cur);
         } else {
             cur = write_head->head;
         }
+        target = cur->idx;
+        printf("[INIT]target block : %d\n",target);
     }//if state is different, get another write block
     return cur;
 }
@@ -40,22 +44,24 @@ block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata,
             printf("do not change wb, left fp : %d\n",cur_b->fpnum);
             return cur_b;
         } else {
-            printf("target block : %d\n",target);
             cur = ll_pop(fblist_head);
             if (cur != NULL){
                 ll_append(write_head,cur);
             } else {
                 cur = write_head->head;
             }
+            target = cur->idx;
+            printf("target block : %d\n",target);
         }
     } else { //initial case :: cur_b == NULL. find new block
-        printf("[INIT]target block : %d\n",target);
         cur = ll_pop(fblist_head);
         if (cur != NULL){
             ll_append(write_head,cur);
         } else {
             cur = write_head->head;
         }
+        target = cur->idx;
+        printf("[INIT]target block : %d\n",target);
     }//if state is different, get another write block
     return cur;
 }
@@ -171,9 +177,7 @@ block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     }
     //append current block to freeblock list
     metadata->runutils[0][taskidx] = exec_sum / period; 
-    
     return cur;
-    
 }
 
 void write_job_end(rttask task, meta* metadata, IO* IOqueue, int* total_fp){
@@ -240,42 +244,7 @@ void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     float gc_exec = 0.0, gc_period = tasks[taskidx].gcp;
     //find gc target
     int gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);
-#ifdef FORCEDCONTROL
-    while(cur!=NULL){
-        if(cur_vic_invalid == -1){//initialize block target
-            if((metadata->invnum[cur->idx] >= MINRC) &&
-               (metadata->state[cur->idx] != old) &&
-               (metadata->state[cur->idx] >= write_limit)){
-                //only when state is not oldest & invnum + GC is tolerable, update target.
-                cur_vic_invalid = metadata->invnum[cur->idx];
-                cur_vic_idx = cur->idx;
-                vic = cur;
-            }
-        } else {
-            if((metadata->invnum[cur->idx] >= cur_vic_invalid) &&
-               (metadata->state[cur->idx] != old) &&
-               (metadata->state[cur->idx] >= write_limit)){
-                //only when state is not oldest & invnum + GC is tolerable, update target.
-                cur_vic_invalid = metadata->invnum[cur->idx];
-                cur_vic_idx = cur->idx;
-                vic = cur;
-            }
-        }
-        cur = cur->next;
-    }
-    if(vic == NULL){//if victim is not found, fallback to NORMAL
-        cur = full_head->head;
-        while(cur != NULL){
-            if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
-               (metadata->state[cur->idx] >= write_limit) &&
-               (metadata->invnum[cur->idx] >= MINRC)){
-                cur_vic_idx = cur->idx;
-                vic = cur;
-            }
-            cur = cur->next;
-        }
-    }
-#endif
+
     if(gcflag == 0){
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
@@ -298,7 +267,7 @@ void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     }
 
     //!gc target found
-    printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
+    printf("target is %d, inv : %d\n",vic->idx,metadata->invnum[vic->idx]);
     if(vic==NULL){
         printf("[GC]no feasible block\n");
         abort();
@@ -386,6 +355,7 @@ void gc_job_end(rttask* tasks, int taskidx, int tasknum, meta* metadata, IO* IOq
     metadata->total_invalid -= PPB - vp_count;
     metadata->invnum[vicidx] = 0;
     metadata->state[vicidx]++;
+
     for(int i=0;i<tasknum;i++){
         //transfer access data from vic to rsv.
         //FIXME::simply moving a access tracker is not exact solution
@@ -611,4 +581,42 @@ block* assign_write(meta* metadata,bhead* fblist_head,bhead* write_head){
     }
     return cur;
 }
+*/
+/*
+#ifdef FORCEDCONTROL
+    while(cur!=NULL){
+        if(cur_vic_invalid == -1){//initialize block target
+            if((metadata->invnum[cur->idx] >= MINRC) &&
+               (metadata->state[cur->idx] != old) &&
+               (metadata->state[cur->idx] >= write_limit)){
+                //only when state is not oldest & invnum + GC is tolerable, update target.
+                cur_vic_invalid = metadata->invnum[cur->idx];
+                cur_vic_idx = cur->idx;
+                vic = cur;
+            }
+        } else {
+            if((metadata->invnum[cur->idx] >= cur_vic_invalid) &&
+               (metadata->state[cur->idx] != old) &&
+               (metadata->state[cur->idx] >= write_limit)){
+                //only when state is not oldest & invnum + GC is tolerable, update target.
+                cur_vic_invalid = metadata->invnum[cur->idx];
+                cur_vic_idx = cur->idx;
+                vic = cur;
+            }
+        }
+        cur = cur->next;
+    }
+    if(vic == NULL){//if victim is not found, fallback to NORMAL
+        cur = full_head->head;
+        while(cur != NULL){
+            if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
+               (metadata->state[cur->idx] >= write_limit) &&
+               (metadata->invnum[cur->idx] >= MINRC)){
+                cur_vic_idx = cur->idx;
+                vic = cur;
+            }
+            cur = cur->next;
+        }
+    }
+#endif
 */

@@ -1,8 +1,15 @@
-#include "stateaware.h"
+#include "stateaware.h"     // contains rest of the functions
+#include "init.h"           // contains init function for lists 
+#include "emul.h"           // contains req process functions for emulation 
+#include "findRR.h"         // contains block selection functions
+#include "IOgen.h"          // contains random workload generation functions
 
 //globals
 block* cur_fb = NULL;
 int rrflag = 0;
+int MINRC;
+double OP;
+
 int main(int argc, char* argv[]){
     //init params
     srand(time(NULL)); 
@@ -20,18 +27,10 @@ int main(int argc, char* argv[]){
     int skewness;                   //skew of utilization(-1 = noskew, 0 = read, 1 = write)
     int skewnum;                    //number of skewed task
     float totutil;
-    int last_task = tasknum-1;
+    //int last_task = tasknum-1;
     long cur_cp = 0;                 //current checkpoint time
     int cps_size = 0;                //number of checkpoints
-    int wl_mult = 8;               //period of wl. computed as wl_mult*gcp
-    int total_fp = NOP-PPB*tasknum; //tracks number of free page = (physical space - reserved area)
-                 
-    int wl_init = 0;                //flag for wear-leveling initiation
-    int wl_count = 0;               //a count for how many wl occured
-    int gc_count = 0;               //a profiles for how many gc occured
-    int gc_ctrl = 0;
-    int gc_nonworst = 0;
-    int fstamp = 0;                 //a period for profile recording.
+    //int total_fp = NOP-PPB*tasknum; //tracks number of free page = (physical space - reserved area) 
     
     float WU;                       //worst-case utilization tracker.
     float SAWU;
@@ -56,78 +55,20 @@ int main(int argc, char* argv[]){
 
     //get flags & open file
     int gcflag = 0, wflag = 0, genflag = 0, taskflag = 0, rrcond = 0;
-    if(strcmp(argv[1],"DOGC")==0){
-        gcflag = 1;
-    }
-    if(strcmp(argv[2],"DOW")==0){
-        wflag = 1;
-    } else if (strcmp(argv[2],"GREEDYW")==0){
-        wflag = 2;
-    }
-    if(strcmp(argv[3],"SKIPRR")==0){// do util-based relocation
-        rrflag = -1;
-    } else if (strcmp(argv[3],"DORR")==0){//a case when read occurs in best
-        rrflag = 1;
-        rrcond = 0;
-    } else if (strcmp(argv[3],"RR005")==0){
-        rrflag = 1;
-        rrcond = 1;
-    } else if (strcmp(argv[3],"RR01")==0){
-        rrflag = 1;
-        rrcond = 2;
-    } else if (strcmp(argv[3],"FRR")==0){
-        rrflag = 1;
-        rrcond = 3;
-    } else if (strcmp(argv[3], "FRR01")==0){
-        rrflag = 1;
-        rrcond = 4;
-    } else if (strcmp(argv[3], "FRR02")==0){
-        rrflag = 1;
-        rrcond = 5;
-    } else if (strcmp(argv[3], "FRR03")==0){
-        rrflag = 1;
-        rrcond = 6;
-    } else if (strcmp(argv[3],"BASE")==0){
-        rrflag = 0;
-        rrcond = 0;   
-    } else if (strcmp(argv[3],"BASE005")==0){
-        rrflag = 0;
-        rrcond = 1;
-    } else if (strcmp(argv[3],"BASE01")==0){
-        rrflag = 0;
-        rrcond = 2;
-    } else if (strcmp(argv[3],"FBASE")==0){
-        rrflag = 0;
-        rrcond = 3;
-    } else if (strcmp(argv[3], "FBASE01")==0){
-        rrflag = 0;
-        rrcond = 4;
-    } else if (strcmp(argv[3], "FBASE02")==0){
-        rrflag = 0;
-        rrcond = 5;
-    } else if (strcmp(argv[3], "FBASE03")==0){
-        rrflag = 0;
-        rrcond = 6;
-    } 
-    else if (strcmp(argv[3],"BESTR")==0){//always SKIP RR
-        rrflag = 5;
-    }
-    if(strcmp(argv[4],"WORKGEN")==0){
-        genflag = 1;
-    }
-    if(strcmp(argv[4],"TASKGEN")==0){
-        taskflag = 1;
-    }
-    tasknum = atoi(argv[5]);
-    totutil = atof(argv[6]);
-    skewness = atof(argv[7]);
-    float sploc = atof(argv[8]);
-    float tploc = atof(argv[9]);
-    if(skewness != -1){
-        skewnum = atoi(argv[10]);
-    }
-    printf("we got %d, %d, %f\n",tasknum,skewness,totutil);
-
+    float sploc;
+    float tploc;
+    int OPflag;
+    set_scheme_flags(argv,
+                     &gcflag, &wflag, &rrflag, &rrcond);
+    set_exec_flags(argv, &tasknum, &totutil,
+                   &genflag, &taskflag,
+                   &skewness, &sploc, &tploc, &skewnum,
+                   &OPflag, &OP, &MINRC);
+    int total_fp = NOP-PPB*tasknum;
+    int last_task = tasknum-1;  
+         
+    printf("we got %d, %d, %f, %d, %f\n",tasknum,skewness,totutil,MINRC,OP);
+    sleep(1);
     printf("flags:%d,%d,%d\n",gcflag,wflag,rrflag);
     FILE* fp = open_file_bycase(gcflag,wflag,rrflag);
     FILE* fplife = fopen("lifetime.csv","a");
@@ -138,7 +79,6 @@ int main(int argc, char* argv[]){
         fprintf(fplife,"\n"); 
     }
    
-
     //MINRC is now a configurable value, which can be adjusted like OP
     //reference :: RTGC mechanism (2004, li pin chang et al.) 
     int max_valid_pg = (int)((1.0-OP)*(float)(PPB*NOB));
@@ -148,15 +88,17 @@ int main(int argc, char* argv[]){
     sleep(1);
     float res = 1.0;
     rttask* rand_tasks = NULL;
-    if(taskflag==1){
+    if(taskflag==1){//generate taskset and save
         while(res >= 1.0){
             if(skewness == -1){
                 rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
-            }
-            if(skewness != -1){
+            } else if (skewness == -2){
+                rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg);
+                res = 0.5;//just hardcode and pass
+            } else if(skewness >= 0){
                 rand_tasks = generate_taskset_skew(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
             }
-            if(res >= 1.0){
+            if(res > 1.0){
                 free(rand_tasks);
             }
         }
@@ -173,26 +115,21 @@ int main(int argc, char* argv[]){
         fclose(taskparams);
         return 0;
     }
-    /*//init tasks(old logic)
-    rttask* tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
-    int gcp_temp = (int)(__calc_gcmult(75000,19,MINRC));
-    int gcp_temp2 = (int)(__calc_gcmult(150000,3,MINRC));
-    int gcp_temp3 = (int)(__calc_gcmult(75000,6,MINRC)); 
-    init_task(&(tasks[0]),0,75000,19,75000,1,gcp_temp,0,max_valid_pg);
-    //example task
-    //init_task(&(tasks[0]),0,1200000,1,30000,200,gcp_temp,0,128);
-    //init_task(&(tasks[1]),1,150000,3,40000,12,gcp_temp2,128,max_valid_pg);
-    //init_task(&(tasks[2]),2,75000,6,75000,20,gcp_temp3,128,max_valid_pg);
-    */
-    if(genflag == 1){
+    
+    if(genflag == 1){//generate workload and save
         FILE* file_taskparam = fopen("taskparam.csv","r");
         rand_tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
-        get_task_from_file(rand_tasks,tasknum,file_taskparam);
+        if(OPflag != 1){
+            get_task_from_file(rand_tasks,tasknum,file_taskparam);
+        } else if(OPflag == 1){
+            get_task_from_file_recalc(rand_tasks,tasknum,file_taskparam,max_valid_pg);
+        }
         IOgen(tasknum,rand_tasks,8400000000,0,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
         return 0;
     }
+
     //open csv files for profiling and workload
     FILE* main_taskparam = fopen("taskparam.csv","r");
     rand_tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
@@ -242,7 +179,9 @@ int main(int argc, char* argv[]){
     cur_rr.cur_vic1 = NULL;
     cur_rr.cur_vic2 = NULL;
     rrjob = 0;
+
     //do initial writing (validate all logical address)
+    printf("total fp before dummy : %d\n",total_fp);
     int logi = (int)(NOP*(1-OP));
     cur_fb = ll_pop(fblist_head);
     for(int i=0;i<logi;i++){
@@ -258,6 +197,8 @@ int main(int argc, char* argv[]){
         total_fp--;
     }
     ll_append(fblist_head,cur_fb);
+    printf("total fp after dummy : %d\n",total_fp);
+    sleep(1);
     //!!finish initial writing
     
     //simulate I/O
@@ -328,11 +269,8 @@ int main(int argc, char* argv[]){
                                fblist_head,rsvlist_head,
                                &(cur_GC[j]),&(total_fp));
                     //PROFILES
-                    if(rrflag != 2){
-                        total_u = print_profile(tasks,tasknum,j,newmeta,fp,yngest,oldest,cur_cp,cur_gc_idx,cur_gc_state,total_fp-prev_fp);   
-                    } else if (rrflag == 2){
-                        total_u = print_profile_best(tasks,tasknum,j,newmeta,fp,yngest,oldest,cur_cp,cur_gc_idx,cur_gc_state);   
-                    }
+                    total_u = print_profile(tasks,tasknum,j,newmeta,fp,yngest,oldest,cur_cp,cur_gc_idx,cur_gc_state,total_fp-prev_fp);   
+                   
                 }
                 gc_job_start(tasks,j,tasknum,newmeta,
                              fblist_head,full_head,rsvlist_head,-1,
@@ -449,3 +387,15 @@ int main(int argc, char* argv[]){
     sleep(1);
     return 0;
 }
+
+/*//init tasks(old logic)
+    rttask* tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
+    int gcp_temp = (int)(__calc_gcmult(75000,19,MINRC));
+    int gcp_temp2 = (int)(__calc_gcmult(150000,3,MINRC));
+    int gcp_temp3 = (int)(__calc_gcmult(75000,6,MINRC)); 
+    init_task(&(tasks[0]),0,75000,19,75000,1,gcp_temp,0,max_valid_pg);
+    //example task
+    //init_task(&(tasks[0]),0,1200000,1,30000,200,gcp_temp,0,128);
+    //init_task(&(tasks[1]),1,150000,3,40000,12,gcp_temp2,128,max_valid_pg);
+    //init_task(&(tasks[2]),2,75000,6,75000,20,gcp_temp3,128,max_valid_pg);
+*/

@@ -23,7 +23,7 @@ void ll_free_IO(IOhead* head){
     }   
 }
 
-IO* ll_append_IO(IOhead* head, IO* new){
+void ll_append_IO(IOhead* head, IO* new){
     //append block
     IO* cur;
     //printf("appending %d\n",new->idx);
@@ -49,7 +49,7 @@ IO* ll_pop_IO(IOhead* head){
     IO* temp;
     temp = head->head;
     if(temp == NULL){
-        printf("head is null\n");
+        printf("[IO]head is null\n");
         return NULL;
     }
     else{

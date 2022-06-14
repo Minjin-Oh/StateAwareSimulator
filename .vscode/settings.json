@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "stateaware.h": "c"
+        "stateaware.h": "c",
+        "types.h": "c"
     }
 }

@@ -71,7 +71,7 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     float total_u=0.0;
     for(int j=0;j<tasknum;j++){//0 = write, 2 = GC
         total_u += metadata->runutils[0][j];
-        total_u += __calc_ru(&(tasks[j]),cur_read_worst[j]);
+        total_u += metadata->runutils[1][j];
         total_u += metadata->runutils[2][j];
     }
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
@@ -112,7 +112,7 @@ void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, long
         for(int j=0;j<tasknum;j++){//0 = write, 2 = GC
             printf("utils:%f, %f, %f\n",
                     metadata->runutils[0][j],
-                    __calc_ru(&(tasks[j]),cur_read_worst[j]),
+                    metadata->runutils[1][j],
                     metadata->runutils[2][j]);
         }
         fprintf(fplife,"%ld,",cur_cp);

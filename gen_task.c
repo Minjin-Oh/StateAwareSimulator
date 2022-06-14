@@ -1,6 +1,8 @@
 #include "stateaware.h"
 
-rttask* generate_taskset(int tasknum, float tot_util,int addr, float* result_util, int cycle){
+extern int MINRC;
+
+rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_util, int cycle){
     //params
     //what about address??
     float utils[tasknum];
@@ -36,8 +38,8 @@ rttask* generate_taskset(int tasknum, float tot_util,int addr, float* result_uti
         
         //!!restrictions!!
         //period should be over 100ms --> considering a blocking factor
-        //access number of page should be under 200pg --> considering a free page limit
-        //randomly generate a flash page under 200pg
+        //access number of page should be under 30pg --> considering a free page limit
+        //randomly generate a flash page under 30pg, 100pg
         wnum = rand()%30 + 1;
         rnum = rand()%100 + 1;
         //generate a taskset parameter
@@ -64,6 +66,19 @@ rttask* generate_taskset(int tasknum, float tot_util,int addr, float* result_uti
     checker += (float)STARTE/(float)_find_min_period(tasks,tasknum);
     printf("WRsum : %f, checker : %f\n",WRsum, checker);
     *result_util = checker;
+    return tasks;
+}
+
+rttask* generate_taskset_hardcode(int tasknum, int addr){
+    //hardcoded to a case of 3 taskset
+    rttask* tasks;
+    tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
+    int gcp_temp = __calc_gcmult(1200000,1,MINRC);
+    int gcp_temp2 = __calc_gcmult(150000,5,MINRC);
+    int gcp_temp3 = __calc_gcmult(75000,11,MINRC);
+    init_task(&(tasks[0]),0,1200000,1,30000,100,gcp_temp,0,addr/tasknum*(1)-1);
+    init_task(&(tasks[1]),1,150000,5,40000,12,gcp_temp2,addr/tasknum*(1),addr/tasknum*(2)-1);
+    init_task(&(tasks[2]),2,75000,11,75000,20,gcp_temp3,addr/tasknum*(2),addr/tasknum*(3)-1);
     return tasks;
 }
 
@@ -161,6 +176,27 @@ void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile){
     }
 }
 
+void get_task_from_file_recalc(rttask* tasks, int tasknum, FILE* taskfile, int max_valid_pg){
+    //call this function instead of get_task_from_file, when OP changes.
+    rttask* rand_tasks = tasks;
+    for(int i=0;i<tasknum;i++){
+        int wn, wp, rn, rp, gcp, lb, ub;
+        fscanf(taskfile,"%d,%d,%d,%d,%d,%d,%d\n",&wn,&wp,&rn,&rp,&gcp,&lb,&ub);
+        printf("reading %d,%d,%d,%d,%d,%d,%d\n",wn,wp,rn,rp,gcp,lb,ub);
+        rand_tasks[i].idx = i;
+        rand_tasks[i].wn = wn;
+        rand_tasks[i].wp = wp;
+        rand_tasks[i].rn = rn;
+        rand_tasks[i].rp = rp;
+        //recalculate GCperiod
+        gcp = __calc_gcmult(wp,wn,MINRC);
+        rand_tasks[i].gcp = gcp;
+        lb = max_valid_pg / tasknum * i;
+        ub = max_valid_pg / tasknum * (i+1)-1;
+        rand_tasks[i].addr_lb = lb;
+        rand_tasks[i].addr_ub = ub;        
+    }
+}
 float calcutil_per_pecycle(rttask* task,int tasknum, int cycle){
     float res = 0.0;
     for(int i=0;i<tasknum;i++){

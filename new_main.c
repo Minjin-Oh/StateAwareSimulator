@@ -1,4 +1,5 @@
 #include "stateaware.h"
+#include "init.h"
 
 void release_write(rttask* task, int cur_time, int* next){
     int wp = task->wp;

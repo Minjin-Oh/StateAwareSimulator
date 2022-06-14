@@ -1,5 +1,4 @@
-#include "stateaware.h"
-
+#include "init.h"
 void init_metadata(meta* metadata, int tasknum){
     for (int i=0;i<NOP;i++){
         metadata->pagemap[i] = -1;
@@ -13,6 +12,7 @@ void init_metadata(meta* metadata, int tasknum){
         metadata->access_window[i] = 0;
     }
     metadata->total_invalid = 0;
+    metadata->total_fp = NOP-PPB*tasknum;
     //REFACTOR::for per-task tracking, malloc these member variables.
     //because number of task is declared in main, not header.
 

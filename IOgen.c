@@ -1,4 +1,5 @@
-#include "stateaware.h"
+#include "IOgen.h"
+
 void IOgen_task(rttask* task, long runtime, int offset, float _splocal, float _tplocal){
     //generate workload with given restrictions.
     char name[30];

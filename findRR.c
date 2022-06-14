@@ -2,6 +2,109 @@
 
 extern int rrflag;
 
+void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
+    int access_avg = 0;
+    int cycle_avg = 0;
+    int high = -1;
+    int low = -1;
+    int cur_high = -1;
+    int cur_low = -1;
+    int temp_high[NOB];
+    int temp_low[NOB];
+    int highcnt=0;
+    int lowcnt=0;
+    int taskhighcnt = 0;
+    int tasklowcnt = 0;
+    float temp, highest;
+    int hightask_idx;
+
+
+    for(int i=0;i<NOB;i++){
+        access_avg += metadata->access_window[i];
+        cycle_avg += metadata->state[i];
+    }
+    access_avg = access_avg/NOB;
+    cycle_avg = cycle_avg/NOB;
+
+    //specify a read-intensive task
+    highest = 0.0;
+    for(int i=0;i<tasknum;i++){
+        temp = __calc_ru(&(tasks[i]),0);
+        if(temp >= highest){
+            highest = temp;
+            hightask_idx = i;
+        }
+    }
+
+    //generate temporary block list w.r.t (A.hotness, B.state) 
+    highcnt = 0;
+    lowcnt = 0;
+    
+    if(highcnt == 0 || lowcnt == 0){
+        highcnt = 0;
+        lowcnt = 0;
+        for(int i=0;i<NOB;i++){
+            if(metadata->state[i] > cycle_avg && is_idx_in_list(full_head,i)){
+                //printf("[HI]%d, state : %d\n",i,metadata->state[i]);
+                temp_high[highcnt] = i;
+                highcnt++;
+            }
+            else if(metadata->state[i] <= cycle_avg && is_idx_in_list(full_head,i)){
+                //printf("[LO]%d, state : %d\n",i,metadata->state[i]);
+                temp_low[lowcnt] = i;
+                lowcnt++;
+            }
+        }
+    }
+    
+    //find the oldest/youngest(h/c) block in hot/cold block
+    for(int i=0;i<highcnt;i++){
+        //printf("[HI]%d(cnt:%d,cyc:%d)\n",temp_high[i],metadata->access_window[temp_high[i]],metadata->state[temp_high[i]]);
+        if(cur_high == -1){
+            if(is_idx_in_list(full_head,temp_high[i])){
+                cur_high = metadata->access_window[temp_high[i]];
+                high = temp_high[i];
+            }
+        }
+        else if(metadata->access_window[temp_high[i]] > cur_high){
+            if(is_idx_in_list(full_head,temp_high[i])){
+                cur_high = metadata->access_window[temp_high[i]];
+                high = temp_high[i];
+            }
+        }
+        else{
+            /*do nothing*/
+        }
+    }
+    for(int i=0;i<lowcnt;i++){
+        //printf("[LO]%d(cnt:%d,cyc:%d)\n",temp_low[i],metadata->access_window[temp_low[i]],metadata->state[temp_low[i]]);
+        if(cur_low == -1){
+            if(is_idx_in_list(full_head,temp_low[i])){
+                cur_low = metadata->access_window[temp_low[i]];
+                low = temp_low[i];
+                
+            }
+        }
+        else if(metadata->access_window[temp_low[i]] < cur_low){
+            if(is_idx_in_list(full_head,temp_low[i])){
+                cur_low = metadata->access_window[temp_low[i]];
+                low = temp_low[i];
+            }
+        } 
+        else{
+            /*do nothing*/
+        }
+    }
+    printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",high,metadata->access_window[high],metadata->state[high]);
+    printf("[WL]vic2 %d(cnt:%d)(cyc:%d)\n",low,metadata->access_window[low],metadata->state[low]);
+    //return high/low value.
+    
+    //free
+    *res1 = high;
+    *res2 = low;
+}
+
+
 void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
     int access_avg = 0;
     int cycle_avg = 0;
@@ -100,4 +203,16 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
     free(block_vmap);
     *res1 = vic1;
     *res2 = vic2;
+}
+
+long find_RR_period(int v1, int v2, int vp1_cnt, int vp2_cnt, double rrutil, meta* metadata){
+    long rexec = (long)(floor((double)r_exec(metadata->state[v1])));
+    long rexec2 = (long)(floor((double)r_exec(metadata->state[v2])));
+    long wexec = (long)(floor((double)w_exec(metadata->state[v1])));
+    long wexec2 = (long)(floor((double)w_exec(metadata->state[v2])));
+    long eexec = (long)(floor((double)e_exec(metadata->state[v1])));
+    long eexec2 = (long)(floor((double)e_exec(metadata->state[v2])));
+    long tot_exec = (long)vp2_cnt*(rexec2+wexec) + (long)vp1_cnt*(rexec+wexec2)+eexec+eexec2;
+    long period = (long)ceil((double)tot_exec / (double)rrutil);
+    return period;
 }

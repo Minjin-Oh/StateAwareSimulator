@@ -1,4 +1,7 @@
 #include "stateaware.h"
+#include "findGC.h"
+#include "findRR.h"
+#include "rrsim_q.h"
 
 extern int rrflag;
 
@@ -21,7 +24,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     }
     else if (wflag == 0){
         if(cur_target == NULL){
-            printf("init\n");
+            //printf("init\n");
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         }
         else{ 
@@ -30,13 +33,14 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     } 
     else if(wflag == 2){
         if(cur_target == NULL){
-            printf("init\n");
+            //printf("init\n");
             cur = assign_write_greedy(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         }
         else {
             cur = cur_target;
         }
     }
+
     //save the destination ppa for each write
     //ONLY update blockmanager (reserve free page)
     //page mapping updated later
@@ -71,12 +75,16 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     //generate I/O requests.
     for (int i=0;i<tasks[taskidx].wn;i++){
         IO* req = (IO*)malloc(sizeof(IO));
+        lpa = IOget(fp_w);
         req->type = WR;
+        req->taskidx = taskidx;
         req->lpa = lpa;
         req->ppa = ppa_dest[i];
         req->deadline = (long)cur_cp + (long)tasks[taskidx].wp;
+        req->exec = (long)floor((double)w_exec(ppa_state[i]));
         ll_append_IO(wq,req);
         exec_sum += w_exec(ppa_state[i]);
+        printf("tp:%d,lpa:%d,ppa:%d,dl:%ld,exec:%ld\n",req->type,req->lpa,req->ppa,req->deadline,req->exec);
     }
     //append current block to freeblock list
     metadata->runutils[0][taskidx] = exec_sum / period; 
@@ -101,7 +109,7 @@ void read_job_start_q(rttask task, meta* metadata, FILE* fp_r, IOhead* rq){
 
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
-                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag){
+                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, int cur_cp){
     //params
     block* cur = full_head->head;
     block* vic = NULL;
@@ -114,6 +122,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     int old = get_blockstate_meta(metadata,OLD);
     int yng = get_blockstate_meta(metadata,YOUNG);
     float gc_exec = 0.0, gc_period = tasks[taskidx].gcp;
+
     //find gc target
     int gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);
 
@@ -135,8 +144,11 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             }
             cur = cur->next;
         }
-    }//!gc target found
+    }
+
+    //edge cases
     printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
+
     if(vic==NULL){
         printf("[GC]no feasible block\n");
         abort();
@@ -144,12 +156,13 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     if(metadata->invnum[vic->idx]==0){
         printf("no fp block\n");
         return;
-    }//edge cases
+    }
 
+    //remove the block from blocklist. prevent concurrency issue
     ll_remove(full_head,vic->idx);
     rsv = ll_pop(rsvlist_head);
 
-    //make relocation I/O jobs.
+    //make copyback requests
     vic_offset = PPB*(vic->idx);
     rsv_offset = PPB*(rsv->idx);
     vp_count = 0;
@@ -157,41 +170,55 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         if(metadata->invmap[vic_offset+i]==0){
             IO* req = (IO*)malloc(sizeof(IO));
             req->type = GC;
+            req->taskidx = taskidx;
             rtv_lpa = metadata->rmap[vic_offset+i];
             req->gc_old_lpa = rtv_lpa;
             req->gc_tar_ppa = rsv_offset+vp_count;
             req->gc_vic_ppa = vic_offset+i;
+            req->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
+            req->exec = (long)floor((double)r_exec(metadata->state[vic->idx])) + 
+                        (long)floor((double)w_exec(metadata->state[rsv->idx]));
             ll_append_IO(gcq,req);
             vp_count++;
-            //printf("[GCIO]lpa:%d,mov %d to %d\n",rtv_lpa,vic_offset+i,rsv_offset+vp_count);
-            gc_exec += r_exec(metadata->state[vic->idx])+w_exec(metadata->state[rsv->idx]);
+            printf("tp:%d,lpa:%d,ppa:%d,dl:%ld,exec:%ld\n",req->type,req->gc_old_lpa,req->gc_tar_ppa,req->deadline,req->exec);
+            gc_exec += req->exec;
         }
     }
+
+    //append erase operation at the end
     IO* er = (IO*)malloc(sizeof(IO));
-    er->type = ER;
+    er->type = GCER;
+    er->taskidx = taskidx;
+    er->vic_idx = vic->idx;
+    er->rsv_idx = rsv->idx;
+    er->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
+    er->exec = (long)floor((double)e_exec(metadata->state[vic->idx]));
+    er->gc_valid_count = vp_count;
+    gc_exec += er->exec;
     ll_append_IO(gcq,er);
-    
+    printf("tp:%d,target block :%d,vcount: %d, exec : %d\n",er->type,er->vic_idx,er->gc_valid_count,er->exec);
     //update blockmanager (reserve pages)
     cur_GC->cur_rsv = rsv;
     cur_GC->cur_vic = vic;
     rsv->fpnum = PPB - vp_count;
     vic->fpnum = PPB;
-    gc_exec += e_exec(metadata->state[vic->idx]);
     
     //update runtime util
     metadata->runutils[2][taskidx] = gc_exec / gc_period;
+    //sleep(1);
 }
 
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
-                  IO* IOqueue, RRblock* cur_RR){
+                  IOhead* rrq, RRblock* cur_RR, double rrutil, int cur_cp){
     int vic1, vic2, v1_state, v2_state;
     int v1_offset, v2_offset, v1_cnt=0, v2_cnt=0;
     int lpa;
-    int queue_ptr=0;
+    long rrp;
     float execution_time = 0.0;
-    block *vb1, *vb2, *cur;
+    block *vb1 = NULL, *vb2 = NULL, *cur;
     meta temp;
-    printf("rrflag is %d\n",rrflag);
+    
+    //find relocation victim blocks
     if(rrflag == 0){
         find_RR_target(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
     }
@@ -222,63 +249,41 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     v2_offset = PPB*vic2;
     v1_state = metadata->state[vb1->idx];
     v2_state = metadata->state[vb2->idx];
+    
+    //find data relocation period
+    rrp = find_RR_period(vic1,vic2,PPB - metadata->invnum[vic1], PPB - metadata->invnum[vic2], 0.05, metadata);
+
+    //copy the metadata into temp param and use temp
+    //make sure that metadata update do NOT generate concurrency issue.
     memcpy(&temp,metadata,sizeof(meta));
+
     //generate relocation requests.
-    for(int i=0;i<PPB;i++){
-        if(temp.invmap[v1_offset+i]==0){
-            lpa=temp.rmap[v1_offset+i];
-            IOqueue[queue_ptr].type = RR;
-            IOqueue[queue_ptr].rr_old_lpa = lpa;
-            IOqueue[queue_ptr].rr_vic_ppa = v1_offset+i;
-            IOqueue[queue_ptr].rr_tar_ppa = v2_offset+v1_cnt;
-            IOqueue[queue_ptr].vmap_task = metadata->vmap_task[v1_offset+i];
-            v1_cnt++;
-            queue_ptr++;
-            execution_time += r_exec(v1_state) + w_exec(v2_state);
-        }
-    }
-    for(int i=0;i<PPB;i++){
-        if(temp.invmap[v2_offset+i]==0){
-            lpa=temp.rmap[v2_offset+i];
-            IOqueue[queue_ptr].type = RR;
-            IOqueue[queue_ptr].rr_old_lpa = lpa;
-            IOqueue[queue_ptr].rr_vic_ppa = v2_offset+i;
-            IOqueue[queue_ptr].rr_tar_ppa = v1_offset+v2_cnt;
-            IOqueue[queue_ptr].vmap_task = metadata->vmap_task[v2_offset+i];
-            v2_cnt++;
-            queue_ptr++;
-            execution_time += r_exec(v2_state) + w_exec(v1_state);
-        }
-    }
-    for(int i=queue_ptr;i<2*PPB;i++){
-        IOqueue[i].type = -1;
-    }
+    execution_time += gen_read_rr(vic1,vic2,cur_cp,rrp,temp,rrq);
+    //make erase request.
+    execution_time += gen_erase_rr(vic1,vic2,cur_cp,rrp,temp,rrq);
+    //make write request
+    execution_time += gen_write_rr(vic1,vic2,cur_cp,rrp,temp,rrq);
+
     //remove target block from blocklist & update block info.
     if(is_idx_in_list(full_head,vic1)){
         vb1 = ll_remove(full_head,vic1);
     }
-    else if(is_idx_in_list(fblist_head,vic1)){
-        vb1 = ll_remove(fblist_head,vic1);
-    }
     if(is_idx_in_list(full_head,vic2)){
         vb2 = ll_remove(full_head,vic2);
     }
-    else if(is_idx_in_list(fblist_head,vic2)){
-        vb2 = ll_remove(fblist_head,vic2);    
+    if(vb1 == NULL || vb2 == NULL){
+        printf("block selection fucked up\n");
+        abort();
     }
+
+    //update block info & allocate pointer to tracker
     vb1->fpnum = PPB-v2_cnt;
     vb2->fpnum = PPB-v1_cnt;
     cur_RR->cur_vic1 = vb1;
     cur_RR->cur_vic2 = vb2;
     cur_RR->execution_time = execution_time;
-    execution_time += e_exec(v1_state) + e_exec(v2_state);
-    //validation(print the info)
-    for(int i=0;i<2*PPB;i++){
-        //if(IOqueue[i].type == RR){
-        //    printf("[%d]lpa=%d, %d to %d\n",
-        //        i,IOqueue[i].rr_old_lpa,IOqueue[i].rr_vic_ppa,IOqueue[i].rr_tar_ppa);
-        //}
-    }
+
     printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
     printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
+
 }
