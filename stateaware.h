@@ -43,13 +43,12 @@ void wl_simul(meta* metadata, int tasknum,
               int vic1, int vic2, int* total_fp);
 
 //utilization_calculate
-float find_cur_util();
 float find_worst_util(rttask* task, int tasknum, meta* metadata);
+float find_cur_util(rttask* tasks, int tasknum, meta* metadata, int old);
+int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util);
 float find_SAworst_util(rttask* task, int tasknum, meta* metadata);
 int _find_min_period(rttask* task,int tasknum);
 float calc_std(meta* metadata);
-
-int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head);
 
 //misc
 int* add_checkpoints(int tasknum, rttask* tasks, long runtime, int* cps_size);
@@ -84,8 +83,14 @@ int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,
 //block assignment functions
 block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b);
+block* assign_write_ctrl(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                         bhead* fblist_head, bhead* write_head, block* cur_b);
+block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadata,
+                           bhead* fblist_head, bhead* write_head, block* cur_b);
+block* assign_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                         bhead* fblist_head, bhead* write_head, block* cur_b, int* lpas);
 
-
+                         
 //refactored simulation functions
 block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
@@ -105,17 +110,23 @@ void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head,
                   IO* IOqueue, RRblock* cur_RR, int* total_fp);
 
 //emulation functions
+void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOhead* rq, long cur_cp);
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
                      FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp);
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
-                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, int cur_cp);
+                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp);
+void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
+                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp);
 
 //checker & profiler
 FILE* open_file_bycase(int gcflag, int wflag, int rrflag);
 void open_files_misc(FILE* fplife, FILE* fpwrite, FILE* fpread, FILE* fprr);
 void update_read_worst(meta* metadata, int tasknum);
+float calc_readlatency(meta* metadata, int taskidx);
+float calib_readlatency(meta* metadata, int taskidx, float cur_exp_lat, int old_ppa, int new_ppa);
+float get_totutil(rttask* tasks, int tasknum, int taskidx, meta* metadata, int old);
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
                     int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, int getfp);
 float print_profile_best(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 

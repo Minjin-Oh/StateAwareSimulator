@@ -5,6 +5,8 @@ void init_metadata(meta* metadata, int tasknum){
         metadata->rmap[i] = -1;
         metadata->invmap[i] = 0;
         metadata->vmap_task[i] = -1;
+        metadata->read_cnt[i] = 0;
+        metadata->write_cnt[i] = 0;
     }
     for (int i=0;i<NOB;i++){
         metadata->invnum[i] = 0;
@@ -13,17 +15,21 @@ void init_metadata(meta* metadata, int tasknum){
     }
     metadata->total_invalid = 0;
     metadata->total_fp = NOP-PPB*tasknum;
+
     //REFACTOR::for per-task tracking, malloc these member variables.
     //because number of task is declared in main, not header.
-
+    metadata->read_cnt_task = (int*)malloc(sizeof(int)*tasknum);
+    metadata->write_cnt_task = (int*)malloc(sizeof(int)*tasknum);
     metadata->access_tracker = (char**)malloc(sizeof(char*)*tasknum);
     for(int i=0;i<tasknum;i++){
+        metadata->read_cnt_task[i] = 0;
+        metadata->write_cnt_task[i] = 0;
         metadata->access_tracker[i] = (char*)malloc(sizeof(char)*NOB);
         for(int j=0;j<NOB;j++){
             metadata->access_tracker[i][j] = 0;
         }
     }
-
+    //index for write = 0, read = 1, GC =2. therefore, 3 double-pointer is hardcoded
     metadata->runutils = (float**)malloc(sizeof(float*)*3);
     for(int i=0;i<3;i++){
         metadata->runutils[i] = (float*)malloc(sizeof(float)*tasknum);
@@ -38,6 +44,11 @@ void init_metadata(meta* metadata, int tasknum){
 }
 
 void free_metadata(meta* metadata){
+    free(metadata->cur_read_worst);
+    free(metadata->read_cnt_task);
+    free(metadata->write_cnt_task);
+    free(metadata->runutils);
+    free(metadata->access_tracker);
     free(metadata);
 }
 

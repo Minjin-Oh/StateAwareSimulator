@@ -206,13 +206,19 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
 }
 
 long find_RR_period(int v1, int v2, int vp1_cnt, int vp2_cnt, double rrutil, meta* metadata){
-    long rexec = (long)(floor((double)r_exec(metadata->state[v1])));
-    long rexec2 = (long)(floor((double)r_exec(metadata->state[v2])));
-    long wexec = (long)(floor((double)w_exec(metadata->state[v1])));
-    long wexec2 = (long)(floor((double)w_exec(metadata->state[v2])));
-    long eexec = (long)(floor((double)e_exec(metadata->state[v1])));
-    long eexec2 = (long)(floor((double)e_exec(metadata->state[v2])));
-    long tot_exec = (long)vp2_cnt*(rexec2+wexec) + (long)vp1_cnt*(rexec+wexec2)+eexec+eexec2;
-    long period = (long)ceil((double)tot_exec / (double)rrutil);
+    long rexec, rexec2, wexec, wexec2, eexec, eexec2, tot_exec, period;
+    if(rrutil <= 0.0){
+        period = __LONG_MAX__;
+        return period;
+    } else{ 
+        rexec = (long)(floor((double)r_exec(metadata->state[v1])));
+        rexec2 = (long)(floor((double)r_exec(metadata->state[v2])));
+        wexec = (long)(floor((double)w_exec(metadata->state[v1])));
+        wexec2 = (long)(floor((double)w_exec(metadata->state[v2])));
+        eexec = (long)(floor((double)e_exec(metadata->state[v1])));
+        eexec2 = (long)(floor((double)e_exec(metadata->state[v2])));
+        tot_exec = (long)vp2_cnt*(rexec2+wexec) + (long)vp1_cnt*(rexec+wexec2)+eexec+eexec2;
+        period = (long)ceil((double)tot_exec / (double)rrutil);
+    }
     return period;
 }

@@ -2,14 +2,21 @@
 
 void set_scheme_flags(char* argv[], 
                       int *gcflag, int *wflag, int *rrflag, int *rrcond){
+    //gcflag
     if(strcmp(argv[1],"DOGC")==0){
         *gcflag = 1;
+    } else if (strcmp(argv[1],"GREEDYGC")==0){
+        *gcflag = 2;
     }
+
+    //wflag
     if(strcmp(argv[2],"DOW")==0){
         *wflag = 1;
     } else if (strcmp(argv[2],"GREEDYW")==0){
         *wflag = 2;
     }
+
+    //rrflag,rrcond
     if(strcmp(argv[3],"SKIPRR")==0){// do util-based relocation
         *rrflag = -1;
     } else if (strcmp(argv[3],"DORR")==0){//a case when read occurs in best

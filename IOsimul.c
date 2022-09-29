@@ -41,7 +41,7 @@ block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata,
     block* cur = NULL;
     if(cur_b != NULL){
         if(cur_b->fpnum > 0){
-            printf("do not change wb, left fp : %d\n",cur_b->fpnum);
+            //printf("do not change wb, left fp : %d\n",cur_b->fpnum);
             return cur_b;
         } else {
             cur = ll_pop(fblist_head);
@@ -51,7 +51,7 @@ block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata,
                 cur = write_head->head;
             }
             target = cur->idx;
-            printf("target block : %d\n",target);
+            //printf("target block : %d\n",target);
         }
     } else { //initial case :: cur_b == NULL. find new block
         cur = ll_pop(fblist_head);
@@ -61,7 +61,7 @@ block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata,
             cur = write_head->head;
         }
         target = cur->idx;
-        printf("[INIT]target block : %d\n",target);
+        //printf("[INIT]target block : %d\n",target);
     }//if state is different, get another write block
     return cur;
 }
@@ -99,11 +99,44 @@ block* assign_write_ctrl(rttask* task, int taskidx, int tasknum, meta* metadata,
     return cur;
 }
 
+block* assign_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                         bhead* fblist_head, bhead* write_head, block* cur_b, int* lpas){
+    int target;
+    block* cur = NULL;
+    target = find_writelimit(task,taskidx,tasknum,metadata,fblist_head,write_head,lpas);
+    if(cur_b != NULL){
+        if(metadata->state[target] == metadata->state[cur_b->idx] && cur_b->fpnum > 0){
+        //don't have to change wb? just return current block pointer.
+        //remember that when current block runs out of fp, we must change block
+            printf("do not change wb, left fp : %d\n",cur_b->fpnum);
+            return cur_b;
+        } else {
+            printf("target block : %d, fp : %d\n",target);
+            cur = ll_remove(fblist_head,target);
+            if (cur != NULL){
+                printf("retreived %d\n",cur->idx);
+                ll_append(write_head,cur);
+            } else {
+                cur = ll_findidx(write_head,target);
+            }
+        }
+    } else { //initial case :: cur_b == NULL. find new block
+        printf("[INIT]target block : %d\n",target);
+        cur = ll_remove(fblist_head,target);
+        if (cur != NULL){
+            ll_append(write_head,cur);
+        } else {
+            cur = ll_findidx(write_head,target);
+        }
+    }//if state is different, get another write block
+    return cur;
+}
 block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
                      FILE* fp_w, IO* IOqueue, block* cur_target, int wflag){
-
     //makes write job according to workload and task parameter
+
+    //params
     block *cur, *temp;
     int lpa;
     int ppa_dest[tasks[taskidx].wn];  //array to store target ppa
@@ -111,8 +144,15 @@ block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     int cur_offset;
     int bnum = 0;
     float exec_sum = 0.0, period = tasks[taskidx].wp;
-    //find a target block whenever job initializes
-    //do not actually update the write block in job_start phase
+   
+    //initialize type & lpa for I/O requests.
+    for (int i=0;i<tasks[taskidx].wn;i++){
+        lpa = IOget(fp_w);
+        IOqueue[i].type = WR;
+        IOqueue[i].lpa = lpa;
+    }
+
+    //initialize write block for newly written pages
     if(wflag == 1){
         cur = assign_write_ctrl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
     }
@@ -134,11 +174,13 @@ block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             cur = cur_target;
         }
     }
+
     //save the destination ppa for each write
     //ONLY update blockmanager (reserve free page)
     //page mapping updated later
     cur_offset = PPB - cur->fpnum;
     for (int i=0;i<tasks[taskidx].wn;i++){
+        //if currently picked block does not have free page, choose another
         while(cur->fpnum==0){
             temp = ll_remove(write_head,cur->idx);
             if(temp!=NULL){
@@ -166,15 +208,13 @@ block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         cur_offset++;
         cur->fpnum--;
     }
-    //generate I/O requests.
+
+    //assign destination & update execution time
     for (int i=0;i<tasks[taskidx].wn;i++){
-        lpa = IOget(fp_w);
-        IOqueue[i].type = WR;
-        IOqueue[i].lpa = lpa;
         IOqueue[i].ppa = ppa_dest[i];
         exec_sum += w_exec(ppa_state[i]);
-        //printf("gen:%d\n",lpa,ppa_dest[i]);
     }
+
     //append current block to freeblock list
     metadata->runutils[0][taskidx] = exec_sum / period; 
     return cur;
@@ -185,16 +225,20 @@ void write_job_end(rttask task, meta* metadata, IO* IOqueue, int* total_fp){
     int lpa, ppa, old_ppa, old_block;
     int idx = task.idx;
     for(int i=0;i<task.wn;i++){
-        //printf("[T%d][WQ_E]lpa:%d,ppa:%d\n",task.idx,IOqueue[i].lpa,IOqueue[i].ppa);
-        //invalidate old ppa
         lpa = IOqueue[i].lpa;
         ppa = IOqueue[i].ppa;
         old_ppa = metadata->pagemap[lpa];
         old_block = (int)(old_ppa/PPB);
-        metadata->invnum[old_block]++;
-        metadata->invmap[old_ppa] = 1;
+    
+        //invalidate old ppa
+        metadata->rmap[old_ppa] = -1;
         metadata->vmap_task[old_ppa] = -1;
         metadata->total_invalid++;
+        if(metadata->invmap[old_ppa]==0){
+            metadata->invmap[old_ppa] = 1;
+            metadata->invnum[old_block]++;
+        }
+
         //validate new ppa
         metadata->pagemap[lpa] = ppa;
         metadata->rmap[ppa] = lpa;
@@ -211,9 +255,9 @@ void read_job_start(rttask task, meta* metadata, FILE* fp_r, IO* IOqueue){
     float exec_sum = 0.0, period = task.rp;
     for(int i=0;i<task.rn;i++){
         IOqueue[i].lpa = lpa;
-        IOqueue[i].ppa = -1;
+        IOqueue[i].ppa = metadata->pagemap[lpa];
         IOqueue[i].type = RD;
-        target_block[i] = lpa/PPB;
+        target_block[i] = IOqueue[i].ppa/PPB;
         exec_sum += r_exec(metadata->state[target_block[i]]);
     }
     metadata->runutils[1][task.idx] = exec_sum / period;
@@ -296,6 +340,9 @@ void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             gc_exec += r_exec(metadata->state[vic->idx])+w_exec(metadata->state[rsv->idx]);
         }
     }
+    if(vp_count != PPB - metadata->invnum[vic->idx]){
+        printf("[WTF-GC]%d, %d\n",vp_count,PPB - metadata->invnum[vic->idx]);
+    }
     for(int i=vp_count;i<PPB;i++){
         IOqueue[i].type = -1;
     }
@@ -325,12 +372,19 @@ void gc_job_end(rttask* tasks, int taskidx, int tasknum, meta* metadata, IO* IOq
             old_lpa = IOqueue[i].gc_old_lpa;
             new_ppa = IOqueue[i].gc_tar_ppa;
             old_ppa = IOqueue[i].gc_vic_ppa;
-            if(metadata->pagemap[old_lpa] == old_ppa){
+            if((metadata->pagemap[old_lpa] == old_ppa) && (metadata->rmap[old_ppa] == old_lpa)){
                 metadata->pagemap[old_lpa] = new_ppa;
                 metadata->rmap[new_ppa] = old_lpa;
                 metadata->invmap[new_ppa] = 0;
                 metadata->vmap_task[new_ppa] = metadata->vmap_task[old_ppa];
+                
+                //invalidate original page
+                metadata->rmap[old_ppa] = -1;
+                metadata->invmap[old_ppa] = 1;
+                metadata->vmap_task[old_ppa] = -1;
+
                 vp_count++;
+
             } else{//if data is updated, skip pagemap update
                 metadata->rmap[new_ppa] = -1;
                 metadata->invmap[new_ppa] = 1;
@@ -367,7 +421,6 @@ void gc_job_end(rttask* tasks, int taskidx, int tasknum, meta* metadata, IO* IOq
     //release the block to blocklist.
     ll_append(fblist_head,cur_GC->cur_rsv);
     ll_append(rsvlist_head,cur_GC->cur_vic);
-    
 }
 
 void RR_job_start(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
@@ -469,6 +522,9 @@ void RR_job_start(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head
     }
     printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
     printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
+    if((v1_cnt != PPB-metadata->invnum[vic1]) || (v2_cnt != PPB-metadata->invnum[vic2])){
+        printf("[WTF]%d, %d, %d, %d\n",v1_cnt,PPB-metadata->invnum[vic1],v2_cnt,PPB-metadata->invnum[vic2]);
+    }
 }
 
 void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head, 
@@ -476,7 +532,7 @@ void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head,
     int old_lpa, new_ppa, old_ppa;
     int vb1 = cur_RR->cur_vic1->idx, vb2 = cur_RR->cur_vic2->idx;
     int vb1_count=0, vb2_count=0;
-
+    int tot_inv = 0, tot_inv2 = 0;
     printf("[RR_E]passed value : %d, %d\n",vb1,vb2);
     printf("[RR_E](bef)fp : %d, inv : %d\n",*total_fp,metadata->total_invalid);
     metadata->invnum[vb1] = 0;
@@ -518,14 +574,26 @@ void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head,
         metadata->invmap[vb2*PPB+i] = 0;
         metadata->vmap_task[vb2*PPB+i] = -1;
     }
-    printf("[RR_E]%d + %d, %d + %d\n",vb1_count, cur_RR->cur_vic1->fpnum, vb2_count,cur_RR->cur_vic2->fpnum);
+    
     metadata->total_invalid -= PPB - vb1_count;
     metadata->total_invalid -= PPB - vb2_count;
     *total_fp = *total_fp + cur_RR->cur_vic1->fpnum;
     *total_fp = *total_fp + cur_RR->cur_vic2->fpnum;
-    printf("[RR_E](aft)mfp : %d, inv : %d\n",*total_fp,metadata->total_invalid);
     metadata->state[vb1] += 1;
     metadata->state[vb2] += 1;
+    //debug
+    printf("[RR_E]%d + %d, %d + %d\n",vb1_count, cur_RR->cur_vic1->fpnum, vb2_count,cur_RR->cur_vic2->fpnum);
+    printf("[RR_E](aft)mfp : %d, inv : %d\n",*total_fp,metadata->total_invalid);
+    for(int i=0;i<PPB;i++){
+        if(metadata->invmap[vb1*PPB+i] == 1){
+            tot_inv++;
+        }
+        if(metadata->invmap[vb2*PPB+i] == 1){
+            tot_inv2++;
+        }
+    }
+    printf("[RR_E]check invnum, %d vs %d, %d vs %d\n",tot_inv,metadata->invnum[vb1],tot_inv2,metadata->invnum[vb2]);
+    
 
     if(cur_RR->cur_vic1->fpnum != 0){      
         ll_append(fblist_head,cur_RR->cur_vic1);

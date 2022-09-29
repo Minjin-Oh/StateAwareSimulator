@@ -76,3 +76,25 @@ void IO_open(int tasknum, FILE** wfpp, FILE** rfpp){
         rfpp[i] = fopen(name2,"r");
     }
 }
+
+void lat_open(int tasknum, FILE** wlpp, FILE** rlpp){
+    for(int i=0;i<tasknum;i++){
+        char name[20];
+        sprintf(name,"lat_w%d.csv",i);
+        wlpp[i] = fopen(name,"w");
+    }
+    for(int i=0;i<tasknum;i++){
+        char name2[20];
+        sprintf(name2,"lat_r%d.csv",i);
+        rlpp[i] = fopen(name2,"w");
+    }
+}
+
+void lat_close(int tasknum, FILE** wlpp, FILE** rlpp){
+    for(int i=0;i<tasknum;i++){
+        fflush(wlpp[i]);
+        fflush(rlpp[i]);
+        fclose(wlpp[i]);
+        fclose(rlpp[i]);
+    }
+}

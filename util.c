@@ -189,6 +189,40 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
     return total_u;
 }
 
+float find_cur_util(rttask* tasks, int tasknum, meta* metadata, int old){
+    float total_u = 0.0;
+    for(int j=0;j<tasknum;j++){//0 = write, 2 = GC
+        total_u += metadata->runutils[0][j];
+        total_u += metadata->runutils[1][j];
+        total_u += metadata->runutils[2][j];
+        //printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
+    }
+    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    return total_u;
+}
+
+int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util){
+    float total_u = 0.0;
+    
+    total_u = find_cur_util(tasks,tasknum,metadata,old);
+    if(type == WR){
+        total_u -= metadata->runutils[0][taskidx];
+    } else if (type == RD){
+        total_u -= metadata->runutils[1][taskidx];
+    } else if (type == GC){
+        total_u -= metadata->runutils[2][taskidx];
+    }
+    total_u += util;
+    if (total_u <= 1.0){
+        return 0;
+    } else if (total_u > 1.0){
+        return -1;
+    } else {
+        printf("util safety check failed\n");
+        abort();
+    }
+}
+
 int util_check_main(){
     //exec function test
     printf("[exec time scaling]\n");

@@ -25,7 +25,11 @@ FILE* open_file_bycase(int gcflag, int wflag, int rrflag){
     }
     else if (gcflag == 0 && wflag == 0 && rrflag == 0){
         fp = fopen("SA_prof_none.csv","w");
-    } else {
+    }
+    else if (gcflag == 2 && wflag == 2 && rrflag == 0){
+        fp = fopen("SA_prof_greedy.csv","w");
+    }
+    else {
         fp = fopen("SA_prof_motiv.csv","w");
     }
     return fp;
@@ -45,14 +49,52 @@ void update_read_worst(meta* metadata, int tasknum){
     }
 }
 
+float calc_readlatency(meta* metadata, int taskidx){
+    //calculated expected read latency using read count history.
+    //formula : sum(rc of page p / rc of task t * read exec of page p)
+    int ppa, lpa;
+    float read_prob;
+    float exp_read_latency = 0.0;
+    for(int i=0;i<NOP;i++){
+        if(metadata->vmap_task[i]==taskidx){
+            lpa = metadata->rmap[i];
+            ppa = metadata->pagemap[lpa];
+            printf("lpa : %d, ppa : %d\n",lpa, ppa);
+            read_prob = (float)metadata->read_cnt[lpa] / (float)metadata->read_cnt_task[taskidx];
+            exp_read_latency += read_prob * metadata->state[ppa/PPB];
+        }
+    }
+    printf("exp_read_latency : %f\n",exp_read_latency);
+    return exp_read_latency;
+}
+
+float calib_readlatency(meta* metadata, int taskidx, float cur_exp_lat, int old_ppa, int new_ppa){
+    //calibrate expected read latency change resulted from page relocation
+    int lpa = metadata->rmap[old_ppa];
+    float new_exp_lat = cur_exp_lat;
+    float read_prob = (float)metadata->read_cnt[lpa] / (float)metadata->read_cnt_task[taskidx];
+    new_exp_lat = new_exp_lat - read_prob * metadata->state[old_ppa/PPB] + read_prob * metadata->state[new_ppa/PPB];
+}
+
+float get_totutil(rttask* tasks, int tasknum, int taskidx, meta* metadata, int old){
+    float total_u=0.0;
+    for(int j=0;j<tasknum;j++){//0 = write, 2 = GC
+        total_u += metadata->runutils[0][j];
+        total_u += metadata->runutils[1][j];
+        total_u += metadata->runutils[2][j];
+    }
+    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    return total_u;
+}
+
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state,int getfp){
     //init params
     int cur_read_worst[tasknum];
-    
+    float total_u = 0.0;
+    float total_u_noblock = 0.0;
     //find worst case util w.r.t system-wise worst block
     float worst_util = find_worst_util(tasks,tasknum,metadata);
-
     //find worst block for each task
     for(int k=0;k<tasknum;k++){
         cur_read_worst[k] = 0;
@@ -68,19 +110,21 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     }
     //printf("system worst : %d\n",old);
     //find current util w.r.t actual blocks
-    float total_u=0.0;
+    
     for(int j=0;j<tasknum;j++){//0 = write, 2 = GC
         total_u += metadata->runutils[0][j];
         total_u += metadata->runutils[1][j];
         total_u += metadata->runutils[2][j];
+        //printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
     }
+    total_u_noblock = total_u;
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
     //print all infos
-    fprintf(fp,"%ld,%d,%f,%f,%f,%f,%f,%d,%d,%d,%d,%d\n",
+    fprintf(fp,"%ld,%d,%f,%f,%f, %f,%f,%f,%d,%d,%d,%d,%d\n",
     cur_cp,taskidx,
-    worst_util,total_u,
+    worst_util,total_u, total_u_noblock,
     metadata->runutils[0][taskidx],
-    __calc_ru(&(tasks[taskidx]),cur_read_worst[taskidx]),
+    metadata->runutils[1][taskidx],
     metadata->runutils[2][taskidx],
     old,yng,cur_gc_idx,cur_gc_state,getfp); 
     return total_u;

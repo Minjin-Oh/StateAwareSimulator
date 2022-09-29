@@ -100,6 +100,10 @@ typedef struct _IO{
     int gc_valid_count; //carries number of valid page for GC
     int rr_valid_count; //carries number of valid page for WL
     int islastreq;      //checks if this is final req of current job
+    char init;          //set this 1 if req is initial I/O req (WR, RD)
+    char last;          //set this 1 if req is last I/O req (WR, RD)
+    long IO_start_time;
+    long IO_end_time;
 }IO;
 
 typedef struct _IOhead{
@@ -121,7 +125,7 @@ typedef struct _RRBlock{
     int vic2_acc;
     long cur;
     long period;
-    long rrcheck;
+    long rrcheck;         //emul_main use this value as absolute deadline
 }RRblock;
 
 typedef struct _bhead{
@@ -137,10 +141,15 @@ typedef struct _meta{
     int invmap[NOP];
     int state[NOB];
     int access_window[NOB];
+    int read_cnt[NOP];
+    int* read_cnt_task;
+    int write_cnt[NOP];
+    int* write_cnt_task;
     int total_invalid;
     int total_fp;
     float** runutils;
     char** access_tracker;
     int* cur_read_worst;
     char vmap_task[NOP];
+
 }meta;
