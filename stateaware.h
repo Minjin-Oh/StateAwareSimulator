@@ -90,7 +90,7 @@ block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadat
 block* assign_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b, int* lpas);
 
-                         
+
 //refactored simulation functions
 block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
@@ -124,7 +124,7 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
 FILE* open_file_bycase(int gcflag, int wflag, int rrflag);
 void open_files_misc(FILE* fplife, FILE* fpwrite, FILE* fpread, FILE* fprr);
 void update_read_worst(meta* metadata, int tasknum);
-float calc_readlatency(meta* metadata, int taskidx);
+float calc_readlatency(rttask* tasks, meta* metadata, int taskidx);
 float calib_readlatency(meta* metadata, int taskidx, float cur_exp_lat, int old_ppa, int new_ppa);
 float get_totutil(rttask* tasks, int tasknum, int taskidx, meta* metadata, int old);
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 

@@ -7,6 +7,12 @@ void set_scheme_flags(char* argv[],
         *gcflag = 1;
     } else if (strcmp(argv[1],"GREEDYGC")==0){
         *gcflag = 2;
+    } else if (strcmp(argv[1],"LIMITGC")==0){
+        *gcflag = 3;
+    } else if (strcmp(argv[1],"YOUNGGC")==0){
+        *gcflag = 4;
+    } else {
+        *gcflag = 0;
     }
 
     //wflag
@@ -14,6 +20,10 @@ void set_scheme_flags(char* argv[],
         *wflag = 1;
     } else if (strcmp(argv[2],"GREEDYW")==0){
         *wflag = 2;
+    } else if (strcmp(argv[2],"LIMITW")==0){
+        *wflag = 3;
+    } else{
+        wflag = 0;
     }
 
     //rrflag,rrcond

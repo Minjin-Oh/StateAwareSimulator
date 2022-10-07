@@ -86,6 +86,10 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     //assign page write destination
      //generate I/O requests.
     for (int i=0;i<tasks[taskidx].wn;i++){
+        metadata->write_cnt[lpa]++;
+        metadata->write_cnt_phy[ppa_dest[i]] = metadata->write_cnt[lpa];
+        metadata->write_cnt_task[taskidx]++;
+        metadata->tot_write_cnt++;
         IO* req = (IO*)malloc(sizeof(IO));
         lpa = lpas[i];
         req->type = WR;
@@ -108,12 +112,12 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             req->last = 0;
         }
         //printf("tp:%d,lpa:%d,ppa:%d,dl:%ld,exec:%ld\n",req->type,req->lpa,req->ppa,req->deadline,req->exec);
-        metadata->write_cnt[lpa]++;
-        metadata->write_cnt_task[taskidx]++;
+        
     }
         
     //update runtime utilization
-    metadata->runutils[0][taskidx] = exec_sum / period; 
+    metadata->runutils[0][taskidx] = exec_sum / period;
+    //sleep(1);
     return cur;
 }
 
@@ -147,6 +151,7 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
         }
         metadata->read_cnt[lpa]++;
         metadata->read_cnt_task[taskidx]++;
+        metadata->tot_read_cnt++;
     }
     metadata->runutils[1][taskidx] = exec_sum / period;
 }
@@ -178,6 +183,12 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);
     }
     else if (gcflag == 2){
+        gc_limit = find_gcctrl_greedy(tasks,taskidx,tasknum,metadata,full_head);
+    }
+    else if (gcflag == 3){
+        gc_limit = find_gcctrl_limit(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
+    }
+    else if (gcflag == 4){
         gc_limit = find_gcctrl_yng(tasks,taskidx,tasknum,metadata,full_head);
     }
 
@@ -191,7 +202,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             cur = cur->next;
         }
     }
-    else if (gcflag == 1 || gcflag == 2){
+    else if (gcflag == 1 || gcflag == 2 || gcflag == 3 || gcflag == 4){
         printf("target block : %d\n",gc_limit);
         while(cur != NULL){
             if(cur->idx == gc_limit){

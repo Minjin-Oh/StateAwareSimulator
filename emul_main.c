@@ -215,6 +215,11 @@ int main(int argc, char* argv[]){
         newmeta->pagemap[g_cur] = i;
         newmeta->rmap[i] = g_cur;
         newmeta->total_fp--;
+        for(int j=0;j<tasknum;j++){
+            if(i < tasks[j].addr_ub && i >= tasks[j].addr_lb){
+                newmeta->vmap_task[i] = j;
+            }
+        }
         cur_fb->fpnum--;
         g_cur++;
     }

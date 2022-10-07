@@ -33,7 +33,7 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata){
             }
         }
         //printf("[WR-fin]lpa : %d, invalid targ:%d,inv?:%d,block : %d,cur_inv:%d, check : %d\n",lpa, old_ppa,metadata->invmap[old_ppa],old_block,metadata->invnum[old_block], tot_inv);
-    } 
+    }
 }
 
 void finish_RD(rttask* tasks, IO* cur_IO, meta* metadata){

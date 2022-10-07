@@ -143,8 +143,11 @@ typedef struct _meta{
     int access_window[NOB];
     int read_cnt[NOP];
     int* read_cnt_task;
+    int tot_read_cnt;
     int write_cnt[NOP];
     int* write_cnt_task;
+    int tot_write_cnt;
+    int write_cnt_phy[NOP];
     int total_invalid;
     int total_fp;
     float** runutils;

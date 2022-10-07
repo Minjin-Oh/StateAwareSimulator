@@ -29,6 +29,9 @@ FILE* open_file_bycase(int gcflag, int wflag, int rrflag){
     else if (gcflag == 2 && wflag == 2 && rrflag == 0){
         fp = fopen("SA_prof_greedy.csv","w");
     }
+    else if (gcflag == 3 && wflag == 0 && rrflag == 0){
+        fp = fopen("SA_prof_gclimit.csv","w");
+    }
     else {
         fp = fopen("SA_prof_motiv.csv","w");
     }
@@ -49,22 +52,42 @@ void update_read_worst(meta* metadata, int tasknum){
     }
 }
 
-float calc_readlatency(meta* metadata, int taskidx){
+float calc_readlatency(rttask* tasks, meta* metadata, int taskidx){
     //calculated expected read latency using read count history.
     //formula : sum(rc of page p / rc of task t * read exec of page p)
     int ppa, lpa;
     float read_prob;
+
+    int cnt_sum = 0;
+    float prob_sum = 0.0;
     float exp_read_latency = 0.0;
+
+    for(int i=tasks[taskidx].addr_lb;i<tasks[taskidx].addr_ub;i++){
+        read_prob = (float)metadata->read_cnt[i] / (float)metadata->read_cnt_task[taskidx];
+        cnt_sum += metadata->read_cnt[i];
+        prob_sum += read_prob;
+        exp_read_latency += read_prob * r_exec(metadata->state[metadata->pagemap[i]/PPB]);
+    }
+    /*
     for(int i=0;i<NOP;i++){
-        if(metadata->vmap_task[i]==taskidx){
+        if(metadata->vmap_task[i]==taskidx && metadata->invmap[i]==0){
             lpa = metadata->rmap[i];
             ppa = metadata->pagemap[lpa];
-            printf("lpa : %d, ppa : %d\n",lpa, ppa);
+            //printf("lpa : %d, ppa : %d\n",lpa, ppa);
             read_prob = (float)metadata->read_cnt[lpa] / (float)metadata->read_cnt_task[taskidx];
+            cnt_sum += metadata->read_cnt[lpa];
+            prob_sum += read_prob;
             exp_read_latency += read_prob * metadata->state[ppa/PPB];
         }
     }
+    */
+    printf("[debug]cnt, task sum, probability sum : %d, %d ,%f\n",
+    cnt_sum,metadata->read_cnt_task[taskidx],prob_sum);
     printf("exp_read_latency : %f\n",exp_read_latency);
+    //edge case handling
+    if(metadata->read_cnt_task[taskidx] == 0){
+        exp_read_latency = (float)STARTR;
+    }
     return exp_read_latency;
 }
 
@@ -72,8 +95,15 @@ float calib_readlatency(meta* metadata, int taskidx, float cur_exp_lat, int old_
     //calibrate expected read latency change resulted from page relocation
     int lpa = metadata->rmap[old_ppa];
     float new_exp_lat = cur_exp_lat;
+    //edge case handling
+    if (metadata->read_cnt[lpa] == 0 || metadata->read_cnt_task[taskidx]==0){
+        //printf(" edge case : no calibration\n");
+        return new_exp_lat;
+    }
     float read_prob = (float)metadata->read_cnt[lpa] / (float)metadata->read_cnt_task[taskidx];
+    //printf(" rmap lpa : %d, old : %d, new : %d\n",lpa,old_ppa,new_ppa);
     new_exp_lat = new_exp_lat - read_prob * metadata->state[old_ppa/PPB] + read_prob * metadata->state[new_ppa/PPB];
+    return new_exp_lat;
 }
 
 float get_totutil(rttask* tasks, int tasknum, int taskidx, meta* metadata, int old){
@@ -87,6 +117,15 @@ float get_totutil(rttask* tasks, int tasknum, int taskidx, meta* metadata, int o
     return total_u;
 }
 
+float calc_gclatency(rttask* tasks, meta* metadata, int taskidx){
+    //calculated expected gc latency using write count history
+    int ppa,lpa;
+    float gc_prob;      //a weight value for gc latency
+    float exp_gc_latency = 0.0;
+
+    //calc gc prob as follows, using write hotness
+
+}
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state,int getfp){
     //init params

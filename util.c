@@ -202,6 +202,8 @@ float find_cur_util(rttask* tasks, int tasknum, meta* metadata, int old){
 }
 
 int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util){
+    //check if current I/O job does not violate util test along with recently released other jobs.
+    
     float total_u = 0.0;
     
     total_u = find_cur_util(tasks,tasknum,metadata,old);
@@ -212,7 +214,9 @@ int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int task
     } else if (type == GC){
         total_u -= metadata->runutils[2][taskidx];
     }
+    printf("tot_u without cur task : %f ",total_u);
     total_u += util;
+    printf("tot_u : %f\n",total_u);
     if (total_u <= 1.0){
         return 0;
     } else if (total_u > 1.0){
