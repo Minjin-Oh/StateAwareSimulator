@@ -11,6 +11,10 @@ void set_scheme_flags(char* argv[],
         *gcflag = 3;
     } else if (strcmp(argv[1],"YOUNGGC")==0){
         *gcflag = 4;
+    } else if (strcmp(argv[1],"WEIGHTGC")==0){
+        *gcflag = 5;
+    } else if (strcmp(argv[1],"UTILGC")==0){
+        *gcflag = 6;
     } else {
         *gcflag = 0;
     }
@@ -22,8 +26,14 @@ void set_scheme_flags(char* argv[],
         *wflag = 2;
     } else if (strcmp(argv[2],"LIMITW")==0){
         *wflag = 3;
-    } else{
-        wflag = 0;
+    } else if (strcmp(argv[2],"WEIGHTW")==0){
+        *wflag = 4;
+    } else if (strcmp(argv[2],"FIXW")==0){
+        *wflag = 5;
+    } else if (strcmp(argv[2],"HOTW")==0){
+        *wflag = 6;
+    } else {
+        *wflag = 0;
     }
 
     //rrflag,rrcond

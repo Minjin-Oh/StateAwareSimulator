@@ -117,7 +117,7 @@ int find_gcctrl_yng(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
     printf("slack : %f, gcutil : %f, curutil : %f\n",slack,metadata->runutils[2][taskidx],find_cur_util(task,tasknum,metadata,get_blockstate_meta(metadata,OLD)));
     int expected_idx = -1;
     while(cur != NULL){
-        if(metadata->invnum[cur->idx]>= MINRC){
+        if(metadata->invnum[cur->idx] >= MINRC){
             new_rc = metadata->invnum[cur->idx];
             cur_state = metadata->state[cur->idx];
             gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(cur_state))+e_exec(cur_state);
@@ -220,176 +220,231 @@ int find_gcctrl_limit(rttask* task, int taskidx, int tasknum, meta* metadata, bh
         }
     }
     return best_idx;
-
 }
-int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head){
-    //find a optimized value for worst case utilization
+
+int find_gcweighted(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head){
+    //find gc victim considering expected read util change & write util change
     
-    //init params
-    int yng, old, ret, iter;
-    float cur_worst, cur_write, new_write, margin;
-    int cyc[NOB];
-    float rw_util[NOB];
-    yng = get_blockstate_meta(metadata,YOUNG);
-    old = get_blockstate_meta(metadata,OLD);
-    cur_worst = find_worst_util(task,tasknum,metadata);
-    iter = 0;
-    //find a worst read block for task
-    //FIXME:: we can add worst-block for task in metadata array.
-    int cur_read_worst = 0;
-    for(int i=0;i<NOP;i++){
-        if(metadata->vmap_task[i] == taskidx){
-            int cur_b = i/PPB;
-            if(metadata->state[cur_b] >= cur_read_worst){
-                cur_read_worst = metadata->state[cur_b];
+    //params
+    int cur_ppa;
+    
+    int new_rc;
+    int cur_state;
+    int copyblock_state;
+    int gcskipfactor;
+    float ru, wu, gcu;
+    float calib_read_lat;
+    float gc_exec, gc_period, gc_util;
+    block* cur = full_head->head;
+    int best_idx = -1;
+    int best_invalid = 0;
+    int old = get_blockstate_meta(metadata,OLD);
+    float cur_best_util = 1.0;
+    float cur_read_lat = calc_readlatency(task, metadata, taskidx);
+
+    //search through full blocks to find gc block
+    while(cur != NULL){
+        //restriction 1. util
+        cur_state = metadata->state[cur->idx];
+        copyblock_state = metadata->state[rsvlist_head->head->idx];
+        new_rc = metadata->invnum[cur->idx];
+        gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+        gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
+        gc_util = gc_exec/gc_period;
+        if(find_util_safe(task,tasknum,metadata,old,taskidx,GC,gc_util) == -1){
+            cur = cur->next;
+            continue;
+        }
+
+        //restriction 2. MINRC
+        if(metadata->invnum[cur->idx] < MINRC){
+            cur = cur->next;
+            continue;
+        }
+
+        //if restriction is met, check if block is optimal
+        //calculate expected read util change
+        calib_read_lat = cur_read_lat;
+        for(int i=0;i<PPB;i++){
+            cur_ppa = cur->idx*PPB + i;
+            if(metadata->vmap_task[cur_ppa] == taskidx){
+                //printf("calibration : %d(%d), %d(%d)\n",
+                //cur_ppa, metadata->state[cur_ppa/PPB],
+                //rsvlist_head->head->idx*PPB,metadata->state[rsvlist_head->head->idx]);
+                //printf("before calib : %f, ",calib_read_lat);
+                calib_read_lat = calib_readlatency(metadata,taskidx,calib_read_lat,cur_ppa,(rsvlist_head->head->idx)*PPB);
+                //printf("calib result : %f\n",calib_read_lat);
             }
         }
-    }
-    printf("task read worst : %d, system worst : %d\n",cur_read_worst,old);
-
-    //draw a write-read profile according to cur_read_worst
-    //printf("state(util):");
-    for(int i=yng;i<=old;i++){
-        cyc[iter] = i;
-        if(i<cur_read_worst){
-            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),cur_read_worst) + __calc_gcu(&task[taskidx],MINRC,yng,i,i);
-        }
-        else if (i >= cur_read_worst){
-            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),i) + __calc_gcu(&task[taskidx],MINRC,yng,i,i);;
-        }
-        //printf("%d(%f) ",i,rw_util[iter]);
-        iter++;   
-    }
-    printf("\n");
-    //find a suitable block for best utilization
-    block* cur = fblist_head->head;
-    float cur_util = -1.0;
-    int best_idx;
-    int cur_state;
-    //printf("cur bnum : %d\n",fblist_head->blocknum);
-    while(cur != NULL){
-        //check if the block is OK for write
-        cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state)) == -1){
-            cur = cur->next;
-            continue;
-        }
-        //if block is OK, test of it is optimal block
-        //printf("[F]candidate : %d, %d, %d, %f\n",cur->idx,cur_state,cur->fpnum,rw_util[cur_state-yng]);
-        if(cur_util == -1.0 || cur_util >= rw_util[cur_state-yng]){
-            cur_util = rw_util[cur_state-yng];
+        ru = cur_read_lat * task[taskidx].rn / task[taskidx].rp;
+        //calculate expected write util change
+        wu = __calc_wu(&(task[taskidx]),metadata->state[cur->idx]);
+        //calculate expected gc util, considering GC skip.
+        //gcskipfactor = new_rc / task[taskidx].wn;
+        gcskipfactor = 1;
+        //printf("[%d]rc : %d, wnum : %d, skipfactor : %d\n",cur->idx,new_rc,task[taskidx].wn,gcskipfactor);
+        gcu = gc_util / (float)gcskipfactor;
+        //check if current util value is optimal
+        if (ru+wu+gcu <= cur_best_util){
+            cur_best_util = ru+wu+gcu;
             best_idx = cur->idx;
         }
         cur = cur->next;
-    }//!fblist search end
-
-    cur = write_head->head;
-    //printf("cur bnum : %d\n",write_head->blocknum);
-    while(cur != NULL){
-        //check if the block is OK for write
-        cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(task,cur_state)) == -1){
+    }
+    //EDGE CASE HANDLING!!
+    if(best_idx == -1){
+        cur = full_head->head;
+        best_invalid = metadata->invnum[cur->idx];
+        while(cur != NULL){
+            if(metadata->invnum[cur->idx] >= best_invalid){
+                best_idx = cur->idx;
+                best_invalid = metadata->invnum[cur->idx];
+            }
             cur = cur->next;
-            continue;
         }
-        //printf("[W]candidate : %d, %d, %d, %f\n",cur->idx,cur_state,cur->fpnum,rw_util[cur_state-yng]);
-        if(cur_util == -1.0 || cur_util >= rw_util[cur_state-yng]){
-            cur_util = rw_util[cur_state-yng];
-            best_idx = cur->idx;
-        }
-        cur = cur->next;
-    }//!writelist search end
-    printf("best block : %d, state : %d, util : %f\n",best_idx,metadata->state[best_idx],cur_util);
+    }
     return best_idx;
 }
 
-int find_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* lpas){
-    //use expected read utilization & GC utilization to caculate value for each flash block
 
-    //params
-    int cur_state;
-    float ru, gcu;
-    block* cur;
-    float cur_best_util = 1.0;
-    int best_idx = -1;
-    int yng = get_blockstate_meta(metadata,YOUNG);
-    int old = get_blockstate_meta(metadata,OLD);
-    float cur_read_lat = calc_readlatency(task, metadata, taskidx);
+int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head){
     
-    cur = fblist_head->head;
+    //sort the victim blocks in order of utilization
+    //allocate victim block to GC task proportionally with GC period
+    
+    int* gc_period_sort = (int*)malloc(sizeof(int)*tasknum);                //array for task sorting
+    int* task_order = (int*)malloc(sizeof(int)*tasknum);                    //array for task sorting
+    int* vic_arr = (int*)malloc(sizeof(int)*full_head->blocknum);           //array for victim candidate
+    float* gc_exec_arr = (float*)malloc(sizeof(float)*full_head->blocknum); //array for victim candidate
+    int vic_num = 0;                                                        //number of victim
+    int proportion_sum = 0;                                                 //allocated proportion for task
+    int proportion_tot = 0;                                                 //sum of gc period
+    int old = get_blockstate_meta(metadata,OLD);                            //oldest block for system
+
+    int cur_state, copyblock_state, new_rc;                                 //gc util calc params
+    float gc_exec, gc_period, gc_util;                                      //gc util calc params
+    int temp, cur_priority;                                                 //param for sorting & param for proportion check
+    float cur_offset;                                                       //proportion of current task
+    int cur_offset_int;                                                     //proportion of current task in victim block list
+    
+    int best_invalid = 0;                                                   //edge case handling param
+    int best_idx = -1;                                                      //return value
+
+    for(int i=0;i<full_head->blocknum;i++){
+        vic_arr[i] = -1;
+    }
+    //init gc period list
+    for(int i=0;i<tasknum;i++){
+        gc_period_sort[i] = task[i].gcp;
+        task_order[i] = i;
+        proportion_tot += gc_period_sort[i];
+    }
+    //sort gc period
+    for(int i=tasknum-1;i>0;i--){
+        for(int j=0;j<i;j++){
+            if(gc_period_sort[j] > gc_period_sort[j+1]){
+                temp = gc_period_sort[j];
+                gc_period_sort[j] = gc_period_sort[j+1];
+                gc_period_sort[j+1] = temp;
+                temp = task_order[j];
+                task_order[j] = task_order[j+1];
+                task_order[j+1] = temp;
+            }
+        }
+    }
+    //find priority of cur gc
+    for(int i=0;i<tasknum;i++){
+        if(task_order[i] == taskidx){
+            cur_priority = i;
+        }
+    }
+    //find start offset of cur gc
+    for(int i=0;i<cur_priority-1;i++){
+        proportion_sum += gc_period_sort[i];
+    }
+    printf("[UGC]test sorting result\n");
+    for(int i=0;i<tasknum;i++){
+        printf("[1] task %d(%d) --> %d(%d)\n",i,task[i].gcp,task_order[i],gc_period_sort[i]);
+    }
+    printf("[UGC]test end\n");
+    
+    cur_offset = (float)proportion_sum / (float)proportion_tot;
+    
+    //build up candidate block list first
+    block* cur = NULL;
+    cur = full_head->head;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        
-        //check if current block is OK for write operation w.r.t util restriction
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state))== -1){
-            printf("block: %d, util check fail\n",cur->idx);
+        copyblock_state = metadata->state[rsvlist_head->head->idx];
+        new_rc = metadata->invnum[cur->idx];
+        gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+        gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
+        gc_util = gc_exec/gc_period;
+        //restriction 1. util
+        if(find_util_safe(task,tasknum,metadata,old,taskidx,GC,gc_util) == -1){
             cur = cur->next;
             continue;
         }
-        
-        //calc new expected read util : assume invalidated pages are all moved to new block
-        for(int i=0;i<task[taskidx].wn;i++){
-            //printf("given lpa : %d", lpas[i]);
-            cur_read_lat = calib_readlatency(metadata,taskidx,cur_read_lat,metadata->pagemap[lpas[i]],cur->idx*PPB);
-        }
-        ru = cur_read_lat * (float)task[taskidx].rn / (float)task[taskidx].rp;
-        
-        //calc expected gc util : assume that target block joined candidate pool with minimum invalids.
-        gcu = __calc_gcu(&(task[taskidx]),MINRC,0,cur_state,cur_state);
-        //printf("block %d, ru+gcu : %f\n",cur->idx,ru+gcu);
-        //summate read util + GC util. compare with optimal block.
-        if(cur_best_util >= ru+gcu){
-            cur_best_util = ru+gcu;
-            best_idx = cur->idx;
-            printf("block %d is updated\n",cur->idx);
-        } else {
-            printf("block %d is passed\n",cur->idx);
-        }
-        //iterate through all blocks and check thier values.
-        cur = cur->next;
-    }//!fblist search end
 
-    cur = write_head->head;
-    while(cur != NULL){
-        cur_state = metadata->state[cur->idx];
-        
-        //check if current block is OK for write operation w.r.t util restriction
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state))== -1){
-            printf("block: %d, util check fail\n",cur->idx);
+        //restriction 2. MINRC
+        if(metadata->invnum[cur->idx] < MINRC){
             cur = cur->next;
             continue;
         }
-        
-        //calc new expected read util : assume invalidated pages are all moved to new block
-        for(int i=0;i<task[taskidx].wn;i++){
-            cur_read_lat = calib_readlatency(metadata,taskidx,cur_read_lat,metadata->rmap[lpas[i]],cur->idx*PPB);
-        }
-        ru = cur_read_lat * (float)task[taskidx].rn / (float)task[taskidx].rp;
-        
-        //calc expected gc util : assume that target block joined candidate pool with minimum invalids.
-        gcu = __calc_gcu(&(task[taskidx]),MINRC,0,cur_state,cur_state);
-        printf("block %d, ru+gcu : %f\n",cur->idx,ru+gcu);
-        //summate read util + GC util. compare with optimal block.
-        if(cur_best_util >= ru+gcu){
-            cur_best_util = ru+gcu;
-            best_idx = cur->idx;
-            printf("block %d is updated\n",cur->idx);
-        } else {
-            printf("block %d is passed\n",cur->idx);
-        }
-        //iterate through all blocks and check thier values.
+        gc_exec_arr[vic_num] = gc_exec;
+        vic_arr[vic_num] = cur->idx;
+        vic_num++;
+        //printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
         cur = cur->next;
-    }//!writelist search end
-
-    if(best_idx == -1){
-        cur = write_head->head;
-        if(cur->fpnum == 0){
-            cur = fblist_head->head;
-        }
-        best_idx = cur->idx;
-        return best_idx;
     }
     
-    printf("best block : %d, state : %d\n",best_idx,metadata->state[best_idx]);
+    //sort candidate block list
+    for(int i=vic_num-1;i>0;i--){
+        for(int j=0;j<i;j++){
+            if(gc_exec_arr[j] > gc_exec_arr[j+1]){
+                temp = gc_exec_arr[j];
+                gc_exec_arr[j] = gc_exec_arr[j+1];
+                gc_exec_arr[j+1] = temp;
+                temp = vic_arr[j];
+                vic_arr[j] = vic_arr[j+1];
+                vic_arr[j+1] = temp;
+            }
+        }
+    }
+    printf("[UGC]sorted result\n");
+    for(int i=0;i<vic_num;i++){
+        printf("[UGC]sorted block %d(%d,%d,%f)\n",vic_arr[i],metadata->state[vic_arr[i]],new_rc,gc_exec_arr[i]);
+    }
+    
+    //using offset factor, choose best block
+    cur_offset_int = (int)(cur_offset * (float)vic_num);
+    printf("proportion : %f, range : %d~\n",cur_offset,cur_offset_int);
+    /*
+    printf("[UGC]check proportion for each task\n");
+    for(int i=0;i<tasknum;i++){
+        int test_prop = 0;
+        for(int j=0;j<i;j++){
+            test_prop += gc_period_sort[j];
+        }
+        float test_prop_float = (float)test_prop / (float)proportion_tot;
+        int test_prop_int = (int)((float)vic_num * test_prop_float);
+        printf("[%d,%d]%f, %d\n",task_order[i],gc_period_sort[i],test_prop_float,test_prop_int);
+    }
+    abort();
+    */
+  
+    best_idx = vic_arr[cur_offset_int];
+    //edge case handling!
+    if(best_idx == -1){
+        cur = full_head->head;
+        best_invalid = metadata->invnum[cur->idx];
+        while(cur != NULL){
+            if(metadata->invnum[cur->idx] >= best_invalid){
+                best_idx = cur->idx;
+                best_invalid = metadata->invnum[cur->idx];
+            }
+            cur = cur->next;
+        }
+    }
     return best_idx;
 }

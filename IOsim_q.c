@@ -27,25 +27,28 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     //do not actually update the write block in job_start phase
     if(wflag == 1){
         cur = assign_write_ctrl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-    }
-    else if (wflag == 0){
+    } else if (wflag == 0){
         if(cur_target == NULL){
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         }
         else{ 
             cur = cur_target;
         }
-    } 
-    else if(wflag == 2){
+    } else if(wflag == 2){
         if(cur_target == NULL){
             cur = assign_write_greedy(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         }
         else {
             cur = cur_target;
         }
-    }
-    else if (wflag == 3){
+    } else if (wflag == 3){
         cur = assign_writelimit(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas);
+    } else if (wflag == 4){
+        cur = assign_writeweighted(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas, 0);
+    } else if (wflag == 5){
+        cur = assign_writefixed(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
+    } else if (wflag == 6){
+        cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0]);
     }
 
     //save the destination ppa for each write
@@ -60,15 +63,18 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             }
             if(wflag == 1){
                 cur = assign_write_ctrl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            }
-            else if (wflag == 0){
+            } else if (wflag == 0){
                 cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            }
-            else if (wflag == 2){
+            } else if (wflag == 2){
                 cur = assign_write_greedy(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            }
-            else if (wflag == 3){
+            } else if (wflag == 3){
                 cur = assign_writelimit(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas);
+            } else if (wflag == 4){
+                cur = assign_writeweighted(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas, i);
+            } else if (wflag == 5){
+                cur = assign_writefixed(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
+            } else if (wflag == 6){
+                cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i]);
             }
             if(cur==NULL){
                 printf("noFP available\n, totalfp : %d\n");
@@ -87,7 +93,6 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
      //generate I/O requests.
     for (int i=0;i<tasks[taskidx].wn;i++){
         metadata->write_cnt[lpa]++;
-        metadata->write_cnt_phy[ppa_dest[i]] = metadata->write_cnt[lpa];
         metadata->write_cnt_task[taskidx]++;
         metadata->tot_write_cnt++;
         IO* req = (IO*)malloc(sizeof(IO));
@@ -181,16 +186,18 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     //find gc target
     if (gcflag == 1){
         gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);
-    }
-    else if (gcflag == 2){
+    } else if (gcflag == 2){
         gc_limit = find_gcctrl_greedy(tasks,taskidx,tasknum,metadata,full_head);
-    }
-    else if (gcflag == 3){
+    } else if (gcflag == 3){
         gc_limit = find_gcctrl_limit(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
-    }
-    else if (gcflag == 4){
+    } else if (gcflag == 4){
         gc_limit = find_gcctrl_yng(tasks,taskidx,tasknum,metadata,full_head);
+    } else if (gcflag == 5){
+        gc_limit = find_gcweighted(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
+    } else if (gcflag == 6){
+        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
     }
+    
 
     if (gcflag == 0){
         while(cur != NULL){
@@ -202,7 +209,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             cur = cur->next;
         }
     }
-    else if (gcflag == 1 || gcflag == 2 || gcflag == 3 || gcflag == 4){
+    else if (gcflag == 1 || gcflag == 2 || gcflag == 3 || gcflag == 4 || gcflag == 5 || gcflag == 6){
         printf("target block : %d\n",gc_limit);
         while(cur != NULL){
             if(cur->idx == gc_limit){
@@ -212,6 +219,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             }
             cur = cur->next;
         }
+        //sleep(1);
     }
 
     //edge cases

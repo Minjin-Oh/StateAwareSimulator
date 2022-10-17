@@ -14,6 +14,8 @@ void init_metadata(meta* metadata, int tasknum){
         metadata->access_window[i] = 0;
     }
     metadata->total_invalid = 0;
+    metadata->tot_read_cnt = 0;
+    metadata->tot_write_cnt = 0;
     metadata->total_fp = NOP-PPB*tasknum;
 
     //REFACTOR::for per-task tracking, malloc these member variables.

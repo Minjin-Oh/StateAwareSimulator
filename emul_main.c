@@ -41,7 +41,7 @@ int main(int argc, char* argv[]){
     FILE* w_workloads[tasknum];
     FILE* r_workloads[tasknum];
     FILE *fp, *fplife, *fpwrite, *fpread, *fprr;
-
+    FILE **fps;
     block* cur_wb[tasknum];
     GCblock cur_GC[tasknum];
     RRblock cur_rr;
@@ -117,11 +117,13 @@ int main(int argc, char* argv[]){
         while(res >= 1.0){
             if(skewness == -1){
                 rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
-            } else if (skewness == -2){ //manually assign value for taskset(hardcode). edit function itself.
+            } else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
                 rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg);
                 res = 0.5;//just hardcode and pass
             } else if(skewness >= 0){
                 rand_tasks = generate_taskset_skew(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
+            } else if(skewness == -3){ //manually assign w/r utilization for each task. edit parameters for test.
+                rand_tasks = generate_taskset_fixed(max_valid_pg,&res);
             }
             if(res > 1.0){
                 free(rand_tasks);
@@ -166,21 +168,25 @@ int main(int argc, char* argv[]){
     sleep(1);
     
     //init csv files
-    fp = open_file_bycase(gcflag,wflag,rrflag);
+    //fp = open_file_bycase(gcflag,wflag,rrflag);
+    fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
     w_workload = fopen("workload_w.csv","r");
     r_workload = fopen("workload_r.csv","r");
     rr_profile = fopen("rr_prof.csv","w");
     fplife = fopen("lifetime.csv","a");
-    fpwrite = fopen("writeselection.csv","w");
-    fpread = fopen("readworst.csv","w");
-    fprr = fopen("relocperiod.csv","w"); 
+    //fpwrite = fopen("writeselection.csv","w");
+    //fpread = fopen("readworst.csv","w");
+    //fprr = fopen("relocperiod.csv","w"); 
     finish_log = fopen("log.csv","w");
     IO_open(tasknum, w_workloads,r_workloads);
     lat_open(tasknum, lat_log_w,lat_log_r);
     
-    fprintf(fp,"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp");
+    //fprintf(fp,"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp");
+    for(int i=0;i<tasknum;i++){
+        fprintf(fps[i],"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp,w_idx,w_state,fb,w");
+    }
     fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
-    fprintf(fpread,"%s\n","timestamp");
+    //fprintf(fpread,"%s\n","timestamp");
     if(gcflag == 1 && wflag == 1 && rrflag == 1){
         fprintf(fplife,"\n"); 
     }
@@ -248,10 +254,13 @@ int main(int argc, char* argv[]){
                 //printf(" tot_u : %f\n",get_totutil(tasks,tasknum,cur_IO->taskidx,newmeta,oldest));
                 //update util
                 if(cur_IO->type == GCER){
-                    total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fp,yngest,oldest,cur_cp,
-                                            cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],newmeta->total_fp);
+                    total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fps[cur_IO->taskidx],yngest,oldest,cur_cp,
+                                            cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
+                                            cur_wb[cur_IO->taskidx],fblist_head,write_head,
+                                            newmeta->total_fp);
                     if(total_u > 1.0){
-                        printf("[%ld]utilization overflow, util : %f",cur_cp, total_u);
+                        printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
+                        fprintf(fplife,"%ld,",cur_cp);
                         sleep(3);
                         return 1;
                     }

@@ -159,6 +159,47 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
     return tasks;
 }
 
+rttask* generate_taskset_fixed(int addr, float* result_util){
+    rttask* tasks;
+    float w_util[3];
+    float r_util[3];
+    int wnum[3];
+    int rnum[3];
+    int wp[3];
+    int rp[3];
+    int gcp[3];
+    w_util[0] = 0.1;
+    r_util[0] = 0.01;
+    w_util[1] = 0.01;
+    r_util[1] = 0.15;
+    w_util[2] = 0.01;
+    r_util[2] = 0.01;
+    tasks = (rttask*)malloc(sizeof(rttask)*3);
+    for (int i=0;i<3;i++){
+        wnum[i] = rand()%30 + 1;
+        rnum[i] = rand()%100 + 1;
+        wp[i] = (int)((float)(wnum[i]*STARTW) / w_util[i]);
+        rp[i] = (int)((float)(rnum[i]*STARTR) / r_util[i]);
+        gcp[i] = __calc_gcmult(wp[i],wnum[i],MINRC);   
+    }
+    init_task(&(tasks[0]),0,wp[0],wnum[0],rp[0],rnum[0],gcp[0],addr/6 * 0, addr/6 * 1);
+    init_task(&(tasks[1]),1,wp[1],wnum[1],rp[1],rnum[1],gcp[1],addr/6 * 1, addr/6 * 2);
+    init_task(&(tasks[2]),2,wp[2],wnum[2],rp[2],rnum[2],gcp[2],addr/6 * 2, addr);
+
+    float checker = 0.0;
+    for(int i=0;i<3;i++){
+        checker += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
+        checker += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
+        checker += __calc_gcu(&(tasks[i]),MINRC,0,0,0);
+        
+    }
+    checker += (float)STARTE/(float)_find_min_period(tasks,3);
+    *result_util = checker;
+    printf("tot_u : %f\n",checker);
+    sleep(1);
+    return tasks;
+
+}
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile){
     rttask* rand_tasks = tasks;
     for(int i=0;i<tasknum;i++){

@@ -214,9 +214,9 @@ int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int task
     } else if (type == GC){
         total_u -= metadata->runutils[2][taskidx];
     }
-    printf("tot_u without cur task : %f ",total_u);
+    //printf("tot_u without cur task : %f ",total_u);
     total_u += util;
-    printf("tot_u : %f\n",total_u);
+    //printf("tot_u : %f\n",total_u);
     if (total_u <= 1.0){
         return 0;
     } else if (total_u > 1.0){

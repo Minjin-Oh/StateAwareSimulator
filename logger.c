@@ -38,6 +38,59 @@ FILE* open_file_bycase(int gcflag, int wflag, int rrflag){
     return fp;
 }
 
+FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
+    FILE** fps;
+    fps = (FILE**)malloc(sizeof(FILE*)*tasknum);
+    char name[100];
+    if(wflag == 5){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_FIX_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+    } else if (wflag == 1 && gcflag == 0){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_do_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+    }  else if (wflag == 0 && gcflag == 0){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_no_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+    } else if (wflag == 3 && gcflag == 0){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_h1_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+    } else if (wflag == 4 && gcflag == 0){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_h2_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+    } else if (wflag == 6 && gcflag == 0){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_hot_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+    } else if (gcflag == 1 && wflag == 0){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_DOgc_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+    } else if (gcflag == 4 && wflag == 0){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_ygc_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+    } else {
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_new_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+    }
+    return fps;
+}
+
 void update_read_worst(meta* metadata, int tasknum){
     for(int i=0;i<tasknum;i++){
         metadata->cur_read_worst[i] = 0;
@@ -117,17 +170,68 @@ float get_totutil(rttask* tasks, int tasknum, int taskidx, meta* metadata, int o
     return total_u;
 }
 
-float calc_gclatency(rttask* tasks, meta* metadata, int taskidx){
+float calc_weightedread(rttask* tasks, meta* metadata, block* tar, int taskidx, int* lpas){
+    float weighted_read = 0.0;
+    float read_prob;
+    for(int i=0;i<tasks[taskidx].wn;i++){
+        read_prob = (float)metadata->read_cnt[lpas[i]] / (float)metadata->read_cnt_task[taskidx];
+        weighted_read += read_prob * metadata->state[tar->idx];
+    }
+    return weighted_read;
+}   
+
+float calc_weightedgc(rttask* tasks, meta* metadata, block* tar, int taskidx, int* lpas, int w_start_idx, float OP){
     //calculated expected gc latency using write count history
-    int ppa,lpa;
-    float gc_prob;      //a weight value for gc latency
-    float exp_gc_latency = 0.0;
+    
+    int ppa,lpa;                  //physical, logical page address
+    int write_avg;                //average write count of all valid pages
+    float gc_prob;                //a weight value for gc latency
+    int b_hot = 0;                //a temperature of block
+    int w_left = tasks[taskidx].wn - w_start_idx;
+    int blockidx = tar->idx;
+    int cur_vp = PPB;
+    float exp_gc_latency = 0.0;   //expected gc latency
 
     //calc gc prob as follows, using write hotness
+    write_avg = metadata->tot_write_cnt / (int)((1.0-OP)*(float)NOP);
+    for(int i=0;i<PPB;i++){
+        if(metadata->invmap[blockidx*PPB+i]==1){
+            b_hot += write_avg;
+        } else if(metadata->write_cnt[blockidx*PPB+i] > write_avg){
+            b_hot += metadata->write_cnt[blockidx*PPB+i];
+        }
+    }
+    if(b_hot == 0.0){
+        gc_prob = 0.0;
+    } else if ((float)metadata->tot_write_cnt == 0){
+        gc_prob = 1.0;   
+    } else {
+        gc_prob = (float)b_hot / (float)metadata->tot_write_cnt;
+    }
+    //calc gc latency as follows, using write hotness
+    cur_vp -= tar->fpnum;
+    for(int i=0;i<PPB;i++){
+        if(metadata->invmap[blockidx*PPB+i]==1){
+            cur_vp--;
+        } else if(metadata->write_cnt[blockidx*PPB+i] > write_avg){
+            cur_vp--;
+        }
+    }
+    //assume that write left go into target block, within limit of 
+    for(int i=w_start_idx;i<tasks[taskidx].wn;i++){
+        if(metadata->write_cnt[lpas[i]] + 1 >= write_avg){
+            /*do nothing*/
+        } else if (metadata->write_cnt[lpas[i]] < write_avg){
+            cur_vp++;
+        }
+    }
+    exp_gc_latency = (float)cur_vp*(r_exec(metadata->state[blockidx])+w_exec(0)) + e_exec(metadata->state[blockidx]);
 
+    //return weighted gc latency
+    return (gc_prob * exp_gc_latency);
 }
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
-                   int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state,int getfp){
+                   int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead*write_head, int getfp){
     //init params
     int cur_read_worst[tasknum];
     float total_u = 0.0;
@@ -159,13 +263,16 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     total_u_noblock = total_u;
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
     //print all infos
-    fprintf(fp,"%ld,%d,%f,%f,%f, %f,%f,%f,%d,%d,%d,%d,%d\n",
+    fprintf(fp,"%ld,%d, %f,%f,%f,%f,%f,%f, %d,%d, %d,%d,%d, %d,%d, %d,%d\n",
     cur_cp,taskidx,
     worst_util,total_u, total_u_noblock,
     metadata->runutils[0][taskidx],
     metadata->runutils[1][taskidx],
     metadata->runutils[2][taskidx],
-    old,yng,cur_gc_idx,cur_gc_state,getfp); 
+    old,yng,
+    cur_gc_idx,cur_gc_state,getfp,
+    cur_wb->idx,metadata->state[cur_wb->idx],
+    fblist_head->blocknum,write_head->blocknum); 
     return total_u;
 }
 

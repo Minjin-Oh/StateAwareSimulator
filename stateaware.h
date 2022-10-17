@@ -80,7 +80,7 @@ int is_idx_in_list(bhead* head, int tar);
 //lpsolver
 int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,int low, int high);
 
-//block assignment functions
+//write block assignment functions 
 block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b);
 block* assign_write_ctrl(rttask* task, int taskidx, int tasknum, meta* metadata, 
@@ -89,7 +89,12 @@ block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadat
                            bhead* fblist_head, bhead* write_head, block* cur_b);
 block* assign_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b, int* lpas);
-
+block* assign_writeweighted(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                         bhead* fblist_head, bhead* write_head, block* cur_b, int* lpas, int task_start_idx);
+block* assign_writefixed(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                         bhead* fblist_head, bhead* write_head, block* cur_b);
+block* assign_writehotness(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                         bhead* fblist_head, bhead* write_head, block* cur_b, int lpa);
 
 //refactored simulation functions
 block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
@@ -120,15 +125,22 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
                   IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp);
 
-//checker & profiler
+//file open 
 FILE* open_file_bycase(int gcflag, int wflag, int rrflag);
+FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum);
 void open_files_misc(FILE* fplife, FILE* fpwrite, FILE* fpread, FILE* fprr);
 void update_read_worst(meta* metadata, int tasknum);
+
+//expected value calculator for each design
 float calc_readlatency(rttask* tasks, meta* metadata, int taskidx);
 float calib_readlatency(meta* metadata, int taskidx, float cur_exp_lat, int old_ppa, int new_ppa);
+float calc_weightedread(rttask* tasks, meta* metadata, block* tar, int taskidx, int* lpas);
+float calc_weightedgc(rttask* tasks, meta* metadata, block* tar, int taskidx, int* lpas, int w_start_idx, float OP);
+
+//profiler
 float get_totutil(rttask* tasks, int tasknum, int taskidx, meta* metadata, int old);
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
-                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, int getfp);
+                   int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead* write_head, int getfp);
 float print_profile_best(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state);
 void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, long cur_cp, FILE* fp, FILE* fplife);
@@ -138,5 +150,6 @@ void check_block(float tot_u, meta* metadata, rttask* tasks, int tasknum, long c
 rttask* generate_taskset(int tasknum, float util, int addr, float* result_util, int cycle);
 rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
 rttask* generate_taskset_hardcode(int tasknum, int addr);
+rttask* generate_taskset_fixed(int addr, float* result_util);
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile);
 void randtask_statechecker(int tasknum,int addr);
