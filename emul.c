@@ -24,8 +24,8 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata){
     metadata->total_fp--;
     
     //update access profile
-    metadata->access_tracker[task->idx][ppa/PPB] = 1;
-    metadata->vmap_task[ppa] = task->idx;
+    metadata->access_tracker[cur_IO->taskidx][ppa/PPB] = 1;
+    metadata->vmap_task[ppa] = cur_IO->taskidx;
     if((old_block == 1) || (old_block == 6)){
         for(int i=0;i<PPB;i++){
             if(metadata->invmap[old_block*PPB+i] == 1){

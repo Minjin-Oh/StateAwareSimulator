@@ -55,7 +55,7 @@ int main(int argc, char* argv[]){
     int yngest;
     int over_avg = 0;
     long rr_check = (long)100000;
-    long runtime = 8400000000;
+    long runtime = 16800000000;
     //long runtime = 2100000000L;
     IO* cur_IO = NULL;
     IOhead* wq[tasknum];
@@ -96,13 +96,14 @@ int main(int argc, char* argv[]){
                    &genflag, &taskflag,
                    &skewness, &sploc, &tploc, &skewnum,
                    &OPflag, &OP, &MINRC);
-    
-    printf("[ SCHEMES ] %d, %d, %d, %d\n",wflag,gcflag,rrflag,rrcond);
-    printf("[EXEC-main] %d, %d\n",genflag,taskflag);
-    printf("[EXEC-task] %d, %f\n",tasknum,totutil);
-    printf("[EXEC-skew] %d, %f, %f, %d\n",skewness,sploc,tploc,skewnum);
-    printf("[EXEC-OP  ] %d, %f, %d\n",OPflag, OP, MINRC);
-    sleep(1);
+    //add scheme flags for flexible write policy change
+
+    //printf("[ SCHEMES ] %d, %d, %d, %d\n",wflag,gcflag,rrflag,rrcond);
+    //printf("[EXEC-main] %d, %d\n",genflag,taskflag);
+    //printf("[EXEC-task] %d, %f\n",tasknum,totutil);
+    //printf("[EXEC-skew] %d, %f, %f, %d\n",skewness,sploc,tploc,skewnum);
+    //printf("[EXEC-OP  ] %d, %f, %d\n",OPflag, OP, MINRC);
+    //sleep(1);
    
     //MINRC is now a configurable value, which can be adjusted like OP
     //reference :: RTGC mechanism (2004, li pin chang et al.) 
@@ -152,7 +153,8 @@ int main(int argc, char* argv[]){
         } else if(OPflag == 1){
             get_task_from_file_recalc(rand_tasks,tasknum,file_taskparam,max_valid_pg);
         }
-        IOgen(tasknum,rand_tasks,8400000000,0,sploc,tploc);
+        int hotspace = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc);
+        IOgen(tasknum,rand_tasks,16800000000,hotspace/2,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
         return 0;
@@ -165,7 +167,7 @@ int main(int argc, char* argv[]){
     get_task_from_file(rand_tasks,tasknum,main_taskparam);
     fclose(main_taskparam);
     tasks = rand_tasks;
-    sleep(1);
+    //sleep(1);
     
     //init csv files
     //fp = open_file_bycase(gcflag,wflag,rrflag);
@@ -231,7 +233,7 @@ int main(int argc, char* argv[]){
     }
     printf("total fp after dummy : %d\n",newmeta->total_fp);
     ll_append(fblist_head,cur_fb);
-    sleep(1);
+    //sleep(1);
     //!!finish initial writing
     
     while(cur_cp <= runtime){
@@ -254,6 +256,11 @@ int main(int argc, char* argv[]){
                 //printf(" tot_u : %f\n",get_totutil(tasks,tasknum,cur_IO->taskidx,newmeta,oldest));
                 //update util
                 if(cur_IO->type == GCER){
+                    //for(int i=0;i<4;i++){
+                    //    print_hotdist_profile(fps[tasknum+i],tasks,cur_cp, newmeta,-1,i);
+                    //}
+                    //print_freeblock_profile(fps[tasknum+4],cur_cp,newmeta,fblist_head,write_head);
+                    //print_invalid_profile(fps[tasknum+4+1],cur_cp,newmeta);
                     total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fps[cur_IO->taskidx],yngest,oldest,cur_cp,
                                             cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                             cur_wb[cur_IO->taskidx],fblist_head,write_head,
@@ -261,7 +268,7 @@ int main(int argc, char* argv[]){
                     if(total_u > 1.0){
                         printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                         fprintf(fplife,"%ld,",cur_cp);
-                        sleep(3);
+                        sleep(1);
                         return 1;
                     }
                 }
@@ -272,7 +279,7 @@ int main(int argc, char* argv[]){
                         lat_close(tasknum,lat_log_w,lat_log_r);
                         fprintf(fp,"last cp, %ld\n",cur_cp);
                         fflush(fp);
-                        sleep(3);
+                        sleep(1);
                         return 1;
                     }
                 }
@@ -399,6 +406,6 @@ int main(int argc, char* argv[]){
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
     fprintf(fplife,"%ld,",cur_cp);
     fflush(fplife);
-    //sleep(1);
+    sleep(1);
     return 0;
 }

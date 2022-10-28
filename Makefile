@@ -4,7 +4,7 @@ TARGET = statesimul.out
 OBJS =  init.o parse.o misc.o util.o \
 		list.o IOlist.o \
 		gen_task.o  IOgen.o \
-		findRR.o findGC.o findW.o\
+		findRR.o findGC.o assignW.o findW.o\
 	   	IOsimul.o IOsim_q.o rrsim_q.o emul.o hot.o \
 		emul_logger.o logger.o \
 		emul_main.o

@@ -426,3 +426,144 @@ int find_write_hotness(rttask* task, int taskidx, int tasknum, meta* metadata, b
    
     return best_idx;
 }
+
+int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int lpa, int policy){
+    block* cur;
+    int best_state,  cur_state;
+    int avg_w_cnt;
+    int avg_r_cnt;
+    int hotness = -1;
+    int best_idx = -1;
+    int logi_pg = (int)((1.0-OP)*(float)NOP);
+    int old = get_blockstate_meta(metadata,OLD);
+    avg_w_cnt = (int)((float)metadata->tot_write_cnt / (float)(logi_pg));
+    avg_r_cnt = (int)((float)metadata->tot_read_cnt / (float)(logi_pg));
+    
+    //distinguish hotness first
+    if(metadata->read_cnt[lpa] >= avg_r_cnt || metadata->write_cnt[lpa] >= avg_w_cnt){    
+        hotness = 1;
+    }
+    //init cur if possible
+    cur = fblist_head->head;
+    if(cur != NULL){
+        best_state = metadata->state[cur->idx];
+        best_idx = cur->idx;
+    }
+    while(cur != NULL){
+        /* select block */
+        cur_state = metadata->state[cur->idx];
+        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state))== -1){
+            printf("block: %d, util check fail\n",cur->idx);
+            cur = cur->next;
+            continue;
+        }
+        if(policy == 8){
+            if(hotness == 1){
+                //find youngest block possible
+                if(metadata->state[cur->idx] < best_state){
+                    best_state = metadata->state[cur->idx];
+                    best_idx = cur->idx;
+                }
+            } else {
+                if(metadata->state[cur->idx] >= best_state){
+                    best_state = metadata->state[cur->idx];
+                    best_idx = cur->idx;
+                }
+            } 
+        } else if (policy == 9){
+            if(hotness == 1){
+                //find oldest block possible
+                if(metadata->state[cur->idx] > best_state){
+                    best_state = metadata->state[cur->idx];
+                    best_idx = cur->idx;
+                }
+            } else {
+                if(metadata->state[cur->idx] <= best_state){
+                    best_state = metadata->state[cur->idx];
+                    best_idx = cur->idx;
+                }
+            } 
+        } else if (policy == 10){
+            if(metadata->state[cur->idx] >= best_state){
+                best_state = metadata->state[cur->idx];
+                best_idx = cur->idx;
+            }
+        } else if (policy == 11){
+            if(metadata->state[cur->idx] <= best_state){
+                best_state = metadata->state[cur->idx];
+                best_idx = cur->idx;
+            }
+        }
+        cur = cur->next;
+    }//!fblist search end
+
+    //init cur if possible
+    cur = write_head->head;
+    if(cur != NULL && best_idx == -1){
+        best_state = metadata->state[cur->idx];
+        best_idx = cur->idx;
+    }
+    while(cur != NULL){
+        /* select block */
+        cur_state = metadata->state[cur->idx];
+        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state))== -1){
+            printf("block: %d, util check fail\n",cur->idx);
+            cur = cur->next;
+            continue;
+        }
+        
+        if(policy == 8){
+            if(hotness == 1){
+                //find youngest block possible
+                if(metadata->state[cur->idx] < best_state){
+                    best_state = metadata->state[cur->idx];
+                    best_idx = cur->idx;
+                }
+            } else {
+                if(metadata->state[cur->idx] >= best_state){
+                    best_state = metadata->state[cur->idx];
+                    best_idx = cur->idx;
+                }
+            } 
+        } else if (policy == 9){
+            if(hotness == 1){
+                //find oldest block possible
+                if(metadata->state[cur->idx] > best_state){
+                    best_state = metadata->state[cur->idx];
+                    best_idx = cur->idx;
+                }
+            } else {
+                if(metadata->state[cur->idx] <= best_state){
+                    best_state = metadata->state[cur->idx];
+                    best_idx = cur->idx;
+                }
+            } 
+        } else if (policy == 10){
+            if(metadata->state[cur->idx] >= best_state){
+                best_state = metadata->state[cur->idx];
+                best_idx = cur->idx;
+            }
+        } else if (policy == 11){
+            if(metadata->state[cur->idx] <= best_state){
+                best_state = metadata->state[cur->idx];
+                best_idx = cur->idx;
+            }
+        }
+        cur = cur->next;
+    }//!writelist search end
+
+    //edge case handling(all alloc fail)
+    if(best_idx == -1){
+        printf("wnum, fbnum : %d, %d\n",write_head->blocknum,fblist_head->blocknum);
+        cur = write_head->head;
+        if(cur == NULL){
+            cur = fblist_head->head;
+        }
+        best_idx = cur->idx;
+        return best_idx;
+    }
+    
+    printf("best block : %d, state : %d\n",best_idx,metadata->state[best_idx]);
+   
+    return best_idx;
+}

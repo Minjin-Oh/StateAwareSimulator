@@ -81,20 +81,6 @@ int is_idx_in_list(bhead* head, int tar);
 int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,int low, int high);
 
 //write block assignment functions 
-block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                         bhead* fblist_head, bhead* write_head, block* cur_b);
-block* assign_write_ctrl(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                         bhead* fblist_head, bhead* write_head, block* cur_b);
-block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadata,
-                           bhead* fblist_head, bhead* write_head, block* cur_b);
-block* assign_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                         bhead* fblist_head, bhead* write_head, block* cur_b, int* lpas);
-block* assign_writeweighted(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                         bhead* fblist_head, bhead* write_head, block* cur_b, int* lpas, int task_start_idx);
-block* assign_writefixed(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                         bhead* fblist_head, bhead* write_head, block* cur_b);
-block* assign_writehotness(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                         bhead* fblist_head, bhead* write_head, block* cur_b, int lpa);
 
 //refactored simulation functions
 block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
@@ -145,10 +131,14 @@ float print_profile_best(rttask* tasks, int tasknum, int taskidx, meta* metadata
                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state);
 void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, long cur_cp, FILE* fp, FILE* fplife);
 void check_block(float tot_u, meta* metadata, rttask* tasks, int tasknum, long cur_cp, FILE* fp, FILE* fplife);
+void print_hotdist_profile(FILE* fp, rttask* tasks, int cur_cp, meta* metadata, int taskidx, int hotness_rw);
+void print_freeblock_profile(FILE* fp, int cur_cp, meta* metadata, bhead* fblist_head, bhead* write_head);
+void print_invalid_profile(FILE* fp, int cur_cp, meta* metadata);
 
 //gen_task
 rttask* generate_taskset(int tasknum, float util, int addr, float* result_util, int cycle);
 rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
+rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
 rttask* generate_taskset_hardcode(int tasknum, int addr);
 rttask* generate_taskset_fixed(int addr, float* result_util);
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile);

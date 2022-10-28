@@ -32,7 +32,18 @@ void set_scheme_flags(char* argv[],
         *wflag = 5;
     } else if (strcmp(argv[2],"HOTW")==0){
         *wflag = 6;
-    } else {
+    } else if (strcmp(argv[2],"OLDW")==0){
+        *wflag = 7;
+    } else if (strcmp(argv[2],"MOTIVWY")==0){
+        *wflag = 8;
+    } else if (strcmp(argv[2],"MOTIVWO")==0){
+        *wflag = 9;
+    } else if (strcmp(argv[2],"MOTIVALLO")==0){
+        *wflag = 10;
+    } else if (strcmp(argv[2],"MOTIVALLY")==0){
+        *wflag = 11;
+    }
+    else {
         *wflag = 0;
     }
 

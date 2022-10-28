@@ -1,5 +1,5 @@
 #include "stateaware.h"
-
+#include "init.h"
 extern int MINRC;
 
 rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_util, int cycle){
@@ -84,6 +84,8 @@ rttask* generate_taskset_hardcode(int tasknum, int addr){
 
 rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle){
     /*assign 90% of utilization to certain amount of tasks*/
+    /*let certain task to have utilization over threshold*/
+
     float utils[tasknum];
     float util_task[2];
     int util_ratio[tasknum];
@@ -159,6 +161,61 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
     return tasks;
 }
 
+rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle){
+    float utils[tasknum];
+    float offset = 0.05;
+    float rand_portion = 0.03;
+    float r_util, w_util;
+    int wp, rp, gcp, wnum, rnum;
+    char pass = 0;
+    rttask* tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
+
+    
+    //generate util for each task
+    for(int i=0;i<tasknum;i++){
+        if(i<skewnum){
+            float rand_u = (float)(rand()%(int)(rand_portion*1000)) / 1000.0;
+            utils[i] = rand_u + offset;
+        } else {
+            utils[i] = (float)(rand()%(int)(rand_portion*1000)) / 1000.0;
+        }
+    }
+    //assign 90% of util for write if task is write-intensive
+    for(int i=0;i<tasknum;i++){
+        if(i<skewnum){
+            if(type == 0){
+                r_util = 0.9 * utils[i];
+                w_util = 0.1 * utils[i];
+            } else if (type == 1){
+                r_util = 0.1 * utils[i];
+                w_util = 0.9 * utils[i];
+            }
+        } else {
+            r_util = 0.5 * utils[i];
+            w_util = 0.5 * utils[i];
+        }
+        wnum = rand()%30 + 1;
+        rnum = rand()%100 + 1;
+        wp = (int)((float)(wnum*STARTW) / w_util);
+        rp = (int)((float)(rnum*STARTR) / r_util);
+        gcp = __calc_gcmult(wp,wnum,MINRC);
+        init_task(&(tasks[i]),i,wp,wnum,rp,rnum,gcp,addr/tasknum*i,addr/tasknum*(i+1)-1);
+        printf("wp: %d, wn : %d, rp : %d, rn : %d, gcp : %d wu: %f, ru: %f, gcu : %f\n",
+            wp,wnum,rp,rnum,gcp,w_util,r_util,__calc_gcu(&(tasks[i]),MINRC,0,0,0));
+    }
+    float checker = 0.0;
+    for(int i=0;i<tasknum;i++){
+        checker += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
+        checker += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
+        checker += __calc_gcu(&(tasks[i]),MINRC,0,0,0);
+    }
+    checker += (float)STARTE/(float)_find_min_period(tasks,tasknum);
+    printf("checker : %f\n",checker);
+    *result_util = checker;
+    sleep(1);
+    return tasks;
+}
+
 rttask* generate_taskset_fixed(int addr, float* result_util){
     rttask* tasks;
     float w_util[3];
@@ -169,9 +226,9 @@ rttask* generate_taskset_fixed(int addr, float* result_util){
     int rp[3];
     int gcp[3];
     w_util[0] = 0.1;
-    r_util[0] = 0.01;
+    r_util[0] = 0.15;
     w_util[1] = 0.01;
-    r_util[1] = 0.15;
+    r_util[1] = 0.01;
     w_util[2] = 0.01;
     r_util[2] = 0.01;
     tasks = (rttask*)malloc(sizeof(rttask)*3);

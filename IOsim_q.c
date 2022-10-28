@@ -1,11 +1,11 @@
 #include "stateaware.h"
 #include "findGC.h"
 #include "findRR.h"
+#include "assignW.h"
 #include "rrsim_q.h"
 #include "IOgen.h"
 
 extern int rrflag;
-
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
                      FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp){
@@ -30,15 +30,13 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     } else if (wflag == 0){
         if(cur_target == NULL){
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        }
-        else{ 
+        } else { 
             cur = cur_target;
         }
     } else if(wflag == 2){
         if(cur_target == NULL){
             cur = assign_write_greedy(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        }
-        else {
+        } else {
             cur = cur_target;
         }
     } else if (wflag == 3){
@@ -49,6 +47,20 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         cur = assign_writefixed(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
     } else if (wflag == 6){
         cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0]);
+    } else if (wflag == 7){
+        if(cur_target == NULL){
+            cur = assign_write_old(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
+        } else {
+            cur = cur_target;
+        }
+    } else if (wflag == 8){//write motiv policies
+        cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
+    } else if (wflag == 9){//write motiv policies
+        cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
+    } else if (wflag == 10){//write motiv policies
+        cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
+    } else if (wflag == 11){//write motiv policies
+        cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
     }
 
     //save the destination ppa for each write
@@ -75,6 +87,16 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                 cur = assign_writefixed(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
             } else if (wflag == 6){
                 cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i]);
+            } else if (wflag == 7){
+                cur = assign_write_old(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
+            } else if (wflag == 8){
+                cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
+            } else if (wflag == 9){
+                cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
+            } else if (wflag == 10){//write motiv policies
+                cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
+            } else if (wflag == 11){//write motiv policies
+                cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
             }
             if(cur==NULL){
                 printf("noFP available\n, totalfp : %d\n");
@@ -198,7 +220,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
     }
     
-
+    //if gc baseline, select most invalid block
     if (gcflag == 0){
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
@@ -209,6 +231,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             cur = cur->next;
         }
     }
+    //if not, choose a victim block from full_block list using index
     else if (gcflag == 1 || gcflag == 2 || gcflag == 3 || gcflag == 4 || gcflag == 5 || gcflag == 6){
         printf("target block : %d\n",gc_limit);
         while(cur != NULL){
@@ -221,8 +244,6 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
         //sleep(1);
     }
-
-    //edge cases
     printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
 
     if(vic==NULL){
