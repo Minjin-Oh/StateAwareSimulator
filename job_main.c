@@ -315,8 +315,9 @@ int main(int argc, char* argv[]){
                         WU = find_worst_util(tasks,tasknum,newmeta);
                         if(rrcond==1){//case1
                             slack_util = 1.0 - WU;
-                            if(slack_util >= 0.05)
+                            if(slack_util >= 0.05){
                                 slack_util = (float)0.05;
+                            }
                         } else if (rrcond==2){//case2
                             slack_util = 1.0 - WU;
                             if(slack_util >= 0.1)

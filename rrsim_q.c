@@ -1,7 +1,7 @@
 #include "rrsim_q.h"
 
 //make read request
-long gen_read_rr(int vic1, int vic2, int cur_cp, int rrp, meta* metadata, IOhead* rrq){
+long gen_read_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhead* rrq){
     long tot_exec = 0;
     int v1_offset = PPB*vic1;
     int v2_offset = PPB*vic2;
@@ -34,7 +34,7 @@ long gen_read_rr(int vic1, int vic2, int cur_cp, int rrp, meta* metadata, IOhead
 }
 
 //make write request
-long gen_write_rr(int vic1, int vic2, int cur_cp, int rrp, meta* metadata, IOhead* rrq){
+long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhead* rrq){
     long tot_exec = 0;
     int v1_offset = PPB*vic1;
     int v2_offset = PPB*vic2;
@@ -107,7 +107,7 @@ long gen_write_rr(int vic1, int vic2, int cur_cp, int rrp, meta* metadata, IOhea
     return tot_exec;
 }
 
-long gen_erase_rr(int vic1, int vic2, int cur_cp, int rrp, meta* metadata, IOhead* rrq){
+long gen_erase_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhead* rrq){
     long tot_exec = 0;
 
     IO* er = (IO*)malloc(sizeof(IO));

@@ -72,7 +72,7 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
         }
     }
     
-    printf("expected target %d, inv : %d, util : %f, state : %d\n",expected_idx,cur_invalid,cur_minutil,metadata->state[expected_idx]);
+    //printf("expected target %d, inv : %d, util : %f, state : %d\n",expected_idx,cur_invalid,cur_minutil,metadata->state[expected_idx]);
     return expected_idx;
 }
 
@@ -101,7 +101,7 @@ int find_gcctrl_greedy(rttask* task, int taskidx, int tasknum, meta* metadata, b
         }
         cur = cur->next;
     }
-    printf("expected target %d, inv : %d, state : %d\n",expected_idx,cur_invalid,metadata->state[expected_idx]);
+    //printf("expected target %d, inv : %d, state : %d\n",expected_idx,cur_invalid,metadata->state[expected_idx]);
     return expected_idx;
 }
 
@@ -114,7 +114,7 @@ int find_gcctrl_yng(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
     int new_rc = -1, cur_state = -1, cur_invalid = -1;
     float gc_exec, gc_period, gc_util;
     float slack = 1.0 - find_cur_util(task,tasknum,metadata,get_blockstate_meta(metadata,OLD)) + metadata->runutils[2][taskidx];
-    printf("slack : %f, gcutil : %f, curutil : %f\n",slack,metadata->runutils[2][taskidx],find_cur_util(task,tasknum,metadata,get_blockstate_meta(metadata,OLD)));
+    //printf("slack : %f, gcutil : %f, curutil : %f\n",slack,metadata->runutils[2][taskidx],find_cur_util(task,tasknum,metadata,get_blockstate_meta(metadata,OLD)));
     int expected_idx = -1;
     while(cur != NULL){
         if(metadata->invnum[cur->idx] >= MINRC){
@@ -132,7 +132,7 @@ int find_gcctrl_yng(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
         }
         cur = cur->next;
     }
-    printf("expected target %d, inv : %d, state : %d\n",expected_idx,metadata->invnum[expected_idx],metadata->state[expected_idx]);
+    //printf("expected target %d, inv : %d, state : %d\n",expected_idx,metadata->invnum[expected_idx],metadata->state[expected_idx]);
     //EDGE CASE HANDLING!!
     if(expected_idx == -1){
         cur = full_head->head;
@@ -144,7 +144,7 @@ int find_gcctrl_yng(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
             }
             cur = cur->next;
         }
-        printf("[edge]expected target %d, inv : %d, state : %d\n",expected_idx,metadata->invnum[expected_idx],metadata->state[expected_idx]);
+        //printf("[edge]expected target %d, inv : %d, state : %d\n",expected_idx,metadata->invnum[expected_idx],metadata->state[expected_idx]);
     }
     return expected_idx;
 }
@@ -362,11 +362,11 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     for(int i=0;i<cur_priority-1;i++){
         proportion_sum += gc_period_sort[i];
     }
-    printf("[UGC]test sorting result\n");
+    //printf("[UGC]test sorting result\n");
     for(int i=0;i<tasknum;i++){
-        printf("[1] task %d(%d) --> %d(%d)\n",i,task[i].gcp,task_order[i],gc_period_sort[i]);
+        //printf("[1] task %d(%d) --> %d(%d)\n",i,task[i].gcp,task_order[i],gc_period_sort[i]);
     }
-    printf("[UGC]test end\n");
+    //printf("[UGC]test end\n");
     
     cur_offset = (float)proportion_sum / (float)proportion_tot;
     
@@ -411,14 +411,14 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             }
         }
     }
-    printf("[UGC]sorted result\n");
+    //printf("[UGC]sorted result\n");
     for(int i=0;i<vic_num;i++){
-        printf("[UGC]sorted block %d(%d,%d,%f)\n",vic_arr[i],metadata->state[vic_arr[i]],new_rc,gc_exec_arr[i]);
+        //printf("[UGC]sorted block %d(%d,%d,%f)\n",vic_arr[i],metadata->state[vic_arr[i]],new_rc,gc_exec_arr[i]);
     }
     
     //using offset factor, choose best block
     cur_offset_int = (int)(cur_offset * (float)vic_num);
-    printf("proportion : %f, range : %d~\n",cur_offset,cur_offset_int);
+    //printf("proportion : %f, range : %d~\n",cur_offset,cur_offset_int);
     /*
     printf("[UGC]check proportion for each task\n");
     for(int i=0;i<tasknum;i++){

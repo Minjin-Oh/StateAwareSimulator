@@ -199,6 +199,17 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         }
         fps[tasknum+4] = fopen("prof_ourall_fbdist.csv","w");
         fps[tasknum+4+1] = fopen("prof_ourall_invdist.csv","w");
+    } else {
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_new_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+        for(int i=0;i<4;i++){
+            sprintf(name,"prof_new_hdist%d.csv",i);
+            fps[tasknum+i] = fopen(name,"w");
+        }
+        fps[tasknum+4] = fopen("prof_new_fbdist.csv","w");
+        fps[tasknum+4+1] = fopen("prof_new_invdist.csv","w");
     }
     return fps;
 }

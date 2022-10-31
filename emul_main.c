@@ -55,7 +55,7 @@ int main(int argc, char* argv[]){
     int yngest;
     int over_avg = 0;
     long rr_check = (long)100000;
-    long runtime = 16800000000;
+    long runtime = 320000000000;
     //long runtime = 2100000000L;
     IO* cur_IO = NULL;
     IOhead* wq[tasknum];
@@ -154,7 +154,7 @@ int main(int argc, char* argv[]){
             get_task_from_file_recalc(rand_tasks,tasknum,file_taskparam,max_valid_pg);
         }
         int hotspace = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc);
-        IOgen(tasknum,rand_tasks,16800000000,hotspace/2,sploc,tploc);
+        IOgen(tasknum,rand_tasks,168000000000,hotspace/2,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
         return 0;
@@ -276,9 +276,10 @@ int main(int argc, char* argv[]){
                 if(cur_IO->last == 1){
                     check_latency(lat_log_w,lat_log_r,cur_IO,cur_cp);
                     if(check_dl_violation(tasks,cur_IO,cur_cp)==1){
-                        lat_close(tasknum,lat_log_w,lat_log_r);
-                        fprintf(fp,"last cp, %ld\n",cur_cp);
-                        fflush(fp);
+                        //lat_close(tasknum,lat_log_w,lat_log_r);
+                        fprintf(fplife,"%ld,",cur_cp);
+                        fflush(fplife);
+                        printf("dl miss detected,");
                         sleep(1);
                         return 1;
                     }
@@ -318,8 +319,8 @@ int main(int argc, char* argv[]){
         }
         //release WL jobs
         if((cur_cp % rr_check == 0) && (rr->head == NULL) && (cur_cp >= cur_rr.rrcheck) && (rrflag != -1)){
-            rrutil = 1.0 - find_cur_util(tasks,tasknum,newmeta,oldest);
-            printf("[WL]util allowed : %lf\n",(double)rrutil);
+            rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
+            //printf("[WL]rrcheck : %ld, cur_cp : %ld, util allowed : %lf\n",cur_rr.rrcheck, cur_cp, (double)rrutil);
             if(rrutil >= 0.05){
                 RR_job_start_q(tasks, tasknum, newmeta,
                               fblist_head, full_head,
@@ -342,7 +343,7 @@ int main(int argc, char* argv[]){
             //operation priority is RR > GC > W > R.
             //note that deadline is updated when dl is "less than " cur_dl
             if(rr->head != NULL){
-                if(rr->head->deadline < cur_dl){
+                if(rr->head->deadline <= cur_dl){
                     target_type = RR;
                     cur_dl = rr->head->deadline;
                 }
@@ -391,7 +392,14 @@ int main(int argc, char* argv[]){
             //if something's popped out, update cur_IO_end
             if(cur_IO != NULL){
                 cur_IO_end = cur_cp + cur_IO->exec;
-                //printf("popping %d, map: %d to %d, exec time : %d\n",cur_IO->type, cur_IO->lpa, cur_IO->ppa,cur_IO->exec);
+                /*
+                for(int a=0;a<tasknum;a++){
+                    if(rq[a]->head != NULL && rr->head != NULL){
+                        printf("RR : %ld, Rd : %ld\n",rr->head->deadline, rq[a]->head->deadline);
+                    }
+                }
+                printf("popping %d\n",target_type);
+                */
             }
         }
         

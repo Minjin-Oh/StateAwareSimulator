@@ -359,7 +359,7 @@ int find_write_hotness(rttask* task, int taskidx, int tasknum, meta* metadata, b
         /* select block */
         cur_state = metadata->state[cur->idx];
         if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state))== -1){
-            printf("block: %d, util check fail\n",cur->idx);
+            //printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
         }
@@ -390,7 +390,7 @@ int find_write_hotness(rttask* task, int taskidx, int tasknum, meta* metadata, b
         /* select block */
         cur_state = metadata->state[cur->idx];
         if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state))== -1){
-            printf("block: %d, util check fail\n",cur->idx);
+            //printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
         }
@@ -413,7 +413,7 @@ int find_write_hotness(rttask* task, int taskidx, int tasknum, meta* metadata, b
 
     //edge case handling(all alloc fail)
     if(best_idx == -1){
-        printf("wnum, fbnum : %d, %d\n",write_head->blocknum,fblist_head->blocknum);
+        //printf("wnum, fbnum : %d, %d\n",write_head->blocknum,fblist_head->blocknum);
         cur = write_head->head;
         if(cur == NULL){
             cur = fblist_head->head;
@@ -422,7 +422,7 @@ int find_write_hotness(rttask* task, int taskidx, int tasknum, meta* metadata, b
         return best_idx;
     }
     
-    printf("best block : %d, state : %d\n",best_idx,metadata->state[best_idx]);
+    //printf("best block : %d, state : %d\n",best_idx,metadata->state[best_idx]);
    
     return best_idx;
 }

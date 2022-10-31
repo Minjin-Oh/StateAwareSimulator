@@ -114,11 +114,11 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     //assign page write destination
      //generate I/O requests.
     for (int i=0;i<tasks[taskidx].wn;i++){
+        IO* req = (IO*)malloc(sizeof(IO));
+        lpa = lpas[i];
         metadata->write_cnt[lpa]++;
         metadata->write_cnt_task[taskidx]++;
         metadata->tot_write_cnt++;
-        IO* req = (IO*)malloc(sizeof(IO));
-        lpa = lpas[i];
         req->type = WR;
         req->taskidx = taskidx;
         req->lpa = lpa;
@@ -233,7 +233,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     }
     //if not, choose a victim block from full_block list using index
     else if (gcflag == 1 || gcflag == 2 || gcflag == 3 || gcflag == 4 || gcflag == 5 || gcflag == 6){
-        printf("target block : %d\n",gc_limit);
+        //printf("target block : %d\n",gc_limit);
         while(cur != NULL){
             if(cur->idx == gc_limit){
                 cur_vic_idx = cur->idx;
@@ -244,7 +244,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
         //sleep(1);
     }
-    printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
+    //printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
 
     if(vic==NULL){
         printf("[GC]no feasible block\n");
@@ -327,15 +327,15 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     }
     //cancel WL
     if(vic1 == -1 || vic2 == -1){
-        printf("skiprr\n");
+        //printf("skiprr\n");
         return;
     }
     if(metadata->state[vic1] - metadata->state[vic2] <= THRESHOLD){
-        printf("skiprr, state difference small\n");
+        //printf("skiprr, state difference small\n");
         return;
     }
     if(metadata->access_window[vic1] - metadata->state[vic2] <= 100){
-        printf("skiprr, access different small\n");
+        //printf("skiprr, access different small\n");
         return;
     }
 
@@ -406,7 +406,11 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     cur_RR->cur_vic2 = vb2;
     cur_RR->execution_time = execution_time;
     cur_RR->rrcheck = cur_cp + rrp;
-    //printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
-    //printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
+    if(rrutil <= 0.0){
+        cur_RR->rrcheck = cur_cp + find_RR_period(vic1,vic2,v1_cnt,v2_cnt,0.025,metadata);
+    }
+    printf("[RR_S]util : %f, exec : %ld, period : %d, cur_cp : %ld, rrcheck : %ld\n",rrutil,execution_time,rrp,cur_cp,cur_cp+rrp);
+    printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
+    printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
 
 }

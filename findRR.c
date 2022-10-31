@@ -95,8 +95,8 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
             /*do nothing*/
         }
     }
-    printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",high,metadata->access_window[high],metadata->state[high]);
-    printf("[WL]vic2 %d(cnt:%d)(cyc:%d)\n",low,metadata->access_window[low],metadata->state[low]);
+    //printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",high,metadata->access_window[high],metadata->state[high]);
+    //printf("[WL]vic2 %d(cnt:%d)(cyc:%d)\n",low,metadata->access_window[low],metadata->state[low]);
     //return high/low value.
     
     //free
@@ -192,8 +192,8 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
         }
     }
     
-    printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",vic1,metadata->access_window[vic1],metadata->state[vic1]);
-    printf("[WL]vic2 %d(cnt:%d)(cyc:%d)\n",vic2,metadata->access_window[vic2],metadata->state[vic2]);
+    //printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",vic1,metadata->access_window[vic1],metadata->state[vic1]);
+    //printf("[WL]vic2 %d(cnt:%d)(cyc:%d)\n",vic2,metadata->access_window[vic2],metadata->state[vic2]);
     //return high/low value.
     
     //free

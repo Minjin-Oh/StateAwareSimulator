@@ -203,20 +203,20 @@ block* assign_writehotness(rttask* task, int taskidx, int tasknum, meta* metadat
         if(metadata->state[target] == metadata->state[cur_b->idx] && cur_b->fpnum > 0){
         //don't have to change wb? just return current block pointer.
         //remember that when current block runs out of fp, we must change block
-            printf("do not change wb, left fp : %d\n",cur_b->fpnum);
+            //printf("do not change wb, left fp : %d\n",cur_b->fpnum);
             return cur_b;
         } else {
-            printf("target block : %d\n",target);
+            //printf("target block : %d\n",target);
             cur = ll_remove(fblist_head,target);
             if (cur != NULL){
-                printf("retreived %d\n",cur->idx);
+                //printf("retreived %d\n",cur->idx);
                 ll_append(write_head,cur);
             } else {
                 cur = ll_findidx(write_head,target);
             }
         }
     } else { //initial case :: cur_b == NULL. find new block
-        printf("[INIT]target block : %d\n",target);
+        //printf("[INIT]target block : %d\n",target);
         cur = ll_remove(fblist_head,target);
         if (cur != NULL){
             ll_append(write_head,cur);
@@ -233,7 +233,7 @@ block* assign_write_old(rttask* task, int taskidx, int tasknum, meta* metadata,
     block* cur = NULL;
     if(cur_b != NULL){
         if(cur_b->fpnum > 0){
-            printf("do not change wb, left fp : %d\n",cur_b->fpnum);
+            //printf("do not change wb, left fp : %d\n",cur_b->fpnum);
             return cur_b;
         } else {
             cur = ll_condremove(metadata,fblist_head,OLD);
@@ -243,7 +243,7 @@ block* assign_write_old(rttask* task, int taskidx, int tasknum, meta* metadata,
                 cur = write_head->head;
             }
             target = cur->idx;
-            printf("target block : %d\n",target);
+            //printf("target block : %d\n",target);
         }
     } else { //initial case :: cur_b == NULL. find new block
         cur = ll_condremove(metadata,fblist_head,OLD);
@@ -253,7 +253,7 @@ block* assign_write_old(rttask* task, int taskidx, int tasknum, meta* metadata,
             cur = write_head->head;
         }
         target = cur->idx;
-        printf("[INIT]target block : %d\n",target);
+        //printf("[INIT]target block : %d\n",target);
     }//if state is different, get another write block
     return cur;
 }

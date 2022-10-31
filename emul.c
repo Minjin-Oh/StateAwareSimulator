@@ -81,7 +81,7 @@ void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
     metadata->state[vicidx]++;
     metadata->total_invalid -= PPB - cur_IO->gc_valid_count;
     metadata->total_fp += PPB - cur_IO->gc_valid_count;
-    printf("idx check : vic %d, rsv %d\n",vicidx,rsvidx);
+    //printf("idx check : vic %d, rsv %d\n",vicidx,rsvidx);
     if(cur_GC->cur_rsv == NULL){
         printf("rsv null!\n");
         abort();

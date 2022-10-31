@@ -169,7 +169,7 @@ block* ll_condremove(meta* metadata, bhead* head, int cond){
     cur = head->head;
     tar = cur;
     while(cur != NULL){
-        printf("[ll]traversing %d(%d)\n",cur->idx, metadata->state[cur->idx]);
+        //printf("[ll]traversing %d(%d)\n",cur->idx, metadata->state[cur->idx]);
         if(cond == YOUNG){
             if(metadata->state[cur->idx] <= metadata->state[tar->idx]){
                 tar = cur;
@@ -202,7 +202,7 @@ block* ll_condremove(meta* metadata, bhead* head, int cond){
         tar->prev->next = NULL;
     }
     head->blocknum--;
-    printf("[ll]blocknum:%d, tar : %d\n",head->blocknum,tar->idx);
+    //printf("[ll]blocknum:%d, tar : %d\n",head->blocknum,tar->idx);
     tar->prev = NULL;
     tar->next = NULL;
     return tar;
