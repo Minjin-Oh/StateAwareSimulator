@@ -98,11 +98,11 @@ int main(int argc, char* argv[]){
                    &OPflag, &OP, &MINRC);
     //add scheme flags for flexible write policy change
 
-    //printf("[ SCHEMES ] %d, %d, %d, %d\n",wflag,gcflag,rrflag,rrcond);
-    //printf("[EXEC-main] %d, %d\n",genflag,taskflag);
-    //printf("[EXEC-task] %d, %f\n",tasknum,totutil);
-    //printf("[EXEC-skew] %d, %f, %f, %d\n",skewness,sploc,tploc,skewnum);
-    //printf("[EXEC-OP  ] %d, %f, %d\n",OPflag, OP, MINRC);
+    printf("[ SCHEMES ] %d, %d, %d, %d\n",wflag,gcflag,rrflag,rrcond);
+    printf("[EXEC-main] %d, %d\n",genflag,taskflag);
+    printf("[EXEC-task] %d, %f\n",tasknum,totutil);
+    printf("[EXEC-skew] %d, %f, %f, %d\n",skewness,sploc,tploc,skewnum);
+    printf("[EXEC-OP  ] %d, %f, %d\n",OPflag, OP, MINRC);
     //sleep(1);
    
     //MINRC is now a configurable value, which can be adjusted like OP

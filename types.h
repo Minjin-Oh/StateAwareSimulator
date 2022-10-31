@@ -7,7 +7,7 @@
 #define RRWR 7
 #define RRER 8
 
-#define NOB 1000
+#define NOB 100
 #define PPB 128
 #define NOP NOB*PPB
 #define _OP 0.32
@@ -18,7 +18,7 @@
 
 //lifetime params
 #define _MINRC 35
-#define MAXPE 1000
+#define MAXPE 100
 #define MARGIN 3 
 #define THRESHOLD 5
 #define OLD 0
@@ -148,6 +148,7 @@ typedef struct _meta{
     int* write_cnt_task;
     int tot_write_cnt;
     int write_cnt_phy[NOP];
+    int tot_gc_cnt;
     int total_invalid;
     int total_fp;
     float** runutils;

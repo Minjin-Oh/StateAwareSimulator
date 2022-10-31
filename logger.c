@@ -45,7 +45,7 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
     FILE** fps;
     fps = (FILE**)malloc(sizeof(FILE*)*(tasknum+4+2));
     char name[100];
-    if(wflag == 0 && gcflag == 0){
+    if(wflag == 0 && gcflag == 0 && rrflag == -1){
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_no_t%d.csv",i);
             fps[i] = fopen(name,"w");
@@ -199,6 +199,17 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         }
         fps[tasknum+4] = fopen("prof_ourall_fbdist.csv","w");
         fps[tasknum+4+1] = fopen("prof_ourall_invdist.csv","w");
+    } else if (rrflag == 0){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_rr_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+        for(int i=0;i<4;i++){
+            sprintf(name,"prof_rr_hdist%d.csv",i);
+            fps[tasknum+i] = fopen(name,"w");
+        }
+        fps[tasknum+4] = fopen("prof_rr_fbdist.csv","w");
+        fps[tasknum+4+1] = fopen("prof_rr_invdist.csv","w");
     } else {
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_new_t%d.csv",i);
@@ -357,6 +368,9 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead*write_head, int getfp){
     //init params
     int cur_read_worst[tasknum];
+    int state_tot = 0;
+    double state_avg = 0.0;
+    double state_var = 0.0;
     float total_u = 0.0;
     float total_r = 0.0;
     float total_w = 0.0;
@@ -390,10 +404,19 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
         total_gc += metadata->runutils[2][j];
         //printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
     }
+    for(int i=0;i<NOB;i++){
+        state_tot += metadata->state[i];
+    }
+    state_avg = (double)state_tot / (double)NOB;
+    for(int i=0;i<NOB;i++){
+        state_var += pow((double)metadata->state[i] - (double)state_avg ,2.0);
+    }
+    state_var = state_var / NOB;
+    state_var = sqrt(state_var);
     total_u_noblock = total_u;
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
     //print all infos
-    fprintf(fp,"%ld,%d, %f,%f,%f,%f,%f,%f, %d,%d, %d,%d,%d, %d,%d, %d,%d, %f,%f,%f\n",
+    fprintf(fp,"%ld,%d, %f,%f,%f,%f,%f,%f, %d,%d, %d,%d,%d, %d,%d, %d,%d, %f,%f,%f, %f, %lf\n",
     cur_cp,taskidx,
     worst_util,total_u, total_u_noblock,
     metadata->runutils[0][taskidx],
@@ -403,7 +426,8 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     cur_gc_idx,cur_gc_state,getfp,
     cur_wb->idx,metadata->state[cur_wb->idx],
     fblist_head->blocknum,write_head->blocknum,
-    total_w,total_r,total_gc); 
+    total_w,total_r,total_gc,
+    state_avg, state_var); 
     return total_u;
 }
 
