@@ -102,7 +102,7 @@ long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
     //printf("[RRWR-summ]invnum : %d, %d\n",metadata->invnum[vic1],metadata->invnum[vic2]);
     //printf("[RRWR-summ]lastreqflag :%d, %d\n",lastgen1,lastgen2);
     if((v1_cnt != PPB-metadata->invnum[vic1]) || (v2_cnt != PPB-metadata->invnum[vic2])){
-        abort();
+        //abort();
     }
     return tot_exec;
 }

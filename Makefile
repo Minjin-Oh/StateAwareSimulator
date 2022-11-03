@@ -10,7 +10,7 @@ OBJS =  init.o parse.o misc.o util.o \
 		emul_main.o
 
 $(TARGET): $(OBJS)
-	$(CC) -o $@ $(OBJS) -lm -ldl -lglpk
+	$(CC) -o $@ $(OBJS) -lm -ldl
 
 clean:
 	rm -f *.o

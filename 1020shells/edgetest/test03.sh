@@ -1,6 +1,6 @@
 for var in $(seq 1)
 do
-	../../statesimul.out NO NO NO TASKGEN 4 0.2 0 0.05 0.95 2
+#	../../statesimul.out NO NO NO TASKGEN 4 0.3 -1 0.05 0.95
 	../../statesimul.out NO NO NO WORKGEN 4 0.3 -1 0.05 0.95
 	../../statesimul.out NO NO SKIPRR nogen 4 0.2 -1 -1 -1
 #	../../statesimul.out NO OLDW SKIPRR nogen 4 0.2 -1 -1 -1

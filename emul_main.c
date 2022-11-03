@@ -103,6 +103,7 @@ int main(int argc, char* argv[]){
     printf("[EXEC-task] %d, %f\n",tasknum,totutil);
     printf("[EXEC-skew] %d, %f, %f, %d\n",skewness,sploc,tploc,skewnum);
     printf("[EXEC-OP  ] %d, %f, %d\n",OPflag, OP, MINRC);
+    printf("[NOB MAXPE] : %d, %d\n",NOB,MAXPE);
     //sleep(1);
    
     //MINRC is now a configurable value, which can be adjusted like OP
