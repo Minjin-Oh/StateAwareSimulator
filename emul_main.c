@@ -55,7 +55,7 @@ int main(int argc, char* argv[]){
     int yngest;
     int over_avg = 0;
     long rr_check = (long)100000;
-    long runtime = 320000000000;
+    long runtime = 640000000000;
     //long runtime = 2100000000L;
     IO* cur_IO = NULL;
     IOhead* wq[tasknum];
@@ -155,7 +155,7 @@ int main(int argc, char* argv[]){
             get_task_from_file_recalc(rand_tasks,tasknum,file_taskparam,max_valid_pg);
         }
         int hotspace = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc);
-        IOgen(tasknum,rand_tasks,168000000000,hotspace/2,sploc,tploc);
+        IOgen(tasknum,rand_tasks,640000000000,hotspace/2,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
         return 0;
