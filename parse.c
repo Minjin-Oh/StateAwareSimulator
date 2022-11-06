@@ -132,8 +132,8 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
     if(*skewness >= 0){
         *skewnum = atoi(argv[10]);
     }
-    *
-    /*
+    
+    
     if(argv[11]!=NULL){
         *OPflag = atoi(argv[11]);
     }
@@ -144,5 +144,5 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
         *OP = 0.32;
         *MINRC = 35;
     }
-    */
+    
 }
