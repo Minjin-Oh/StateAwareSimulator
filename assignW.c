@@ -34,6 +34,7 @@ block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadat
 block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b){
     int target;
+    //printf("fbnum : %d, writenum : %d\n",fblist_head->blocknum,write_head->blocknum);
     block* cur = NULL;
     if(cur_b != NULL){
         if(cur_b->fpnum > 0){

@@ -270,7 +270,6 @@ int main(int argc, char* argv[]){
                                &(cur_GC[j]),&(total_fp));
                     //PROFILES
                     total_u = print_profile(tasks,tasknum,j,newmeta,fp,yngest,oldest,cur_cp,cur_gc_idx,cur_gc_state,total_fp-prev_fp);   
-                   
                 }
                 gc_job_start(tasks,j,tasknum,newmeta,
                              fblist_head,full_head,rsvlist_head,-1,

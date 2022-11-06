@@ -51,8 +51,7 @@ IO* ll_pop_IO(IOhead* head){
     if(temp == NULL){
         printf("[IO]head is null\n");
         return NULL;
-    }
-    else{
+    } else{
         if(temp->next != NULL){
         head->head = temp->next;
         head->head->prev = NULL;           

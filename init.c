@@ -1,5 +1,5 @@
 #include "init.h"
-void init_metadata(meta* metadata, int tasknum){
+void init_metadata(meta* metadata, int tasknum, int cycle){
     for (int i=0;i<NOP;i++){
         metadata->pagemap[i] = -1;
         metadata->rmap[i] = -1;
@@ -10,7 +10,8 @@ void init_metadata(meta* metadata, int tasknum){
     }
     for (int i=0;i<NOB;i++){
         metadata->invnum[i] = 0;
-        metadata->state[i] = 0;
+        metadata->state[i] = cycle;
+        metadata->EEC[i]=0;
         metadata->access_window[i] = 0;
     }
     metadata->total_invalid = 0;

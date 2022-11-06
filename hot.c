@@ -15,35 +15,31 @@ void _build_hc_fromlist(bhead* list, meta* metadata, bhead* hotlist, bhead* cold
     }
 }
 
-void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist, int max){
+void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist){
     //this function is called when P/E diff reaches threshold,
     // but hot cold sep is not done yet
 
     //build hot-cold-list with new blocklist. note that blockinfo should be copied.
     // X worry about fpnum. only index will be considered.
+    int tot_ec = 0;
+    float avg_ec;
+    for(int i=0;i<NOB;i++){
+        tot_ec += metadata->state[i];
+    }
+    avg_ec = (float)tot_ec / (float)NOB;
     for(int i=0;i<NOB;i++){
         block* new = (block*)malloc(sizeof(block));
         new->idx = i;
         new->next = NULL;
         new->prev = NULL;
-        if(metadata->state[i]>=max-MARGIN)
+        if((float)metadata->state[i]>=(float)avg_ec)
             ll_append(hotlist,new);
         else   
             ll_append(coldlist,new);
     }
+    /*
     printf("checking. ");
-    block* cur = hotlist->head;
-    while(cur!=NULL){
-        printf("%d(%d) ",metadata->state[cur->idx],cur->idx);
-        cur = cur->next;
-    }
-    printf(" vs ");
-    cur = coldlist->head;
-    while(cur!=NULL){
-        printf("%d(%d) ",metadata->state[cur->idx],cur->idx);
-        cur = cur->next;
-    }
-    printf("\n");
+    */
 }
 
 void swap(int* a, int* b){
@@ -64,13 +60,13 @@ int* _sort_bystate(meta* metadata, bhead* list, int order){
     for(i=size-1;i>0;i--){
         for(j=0;j<i;j++){
             if(order == 0){
-                if(metadata->state[res[j]]<metadata->state[res[j+1]]){//big is first
+                if(metadata->state[res[j]] < metadata->state[res[j+1]]){//big is first
                     int temp = res[j];
                     res[j] = res[j+1];
                     res[j+1] = temp;
                 }
             } else if (order == 1){
-                if(metadata->state[res[j]]>metadata->state[res[j+1]]){//small is first
+                if(metadata->state[res[j]] > metadata->state[res[j+1]]){//small is first
                     int temp = res[j];
                     res[j] = res[j+1];
                     res[j+1] = temp;
@@ -78,14 +74,14 @@ int* _sort_bystate(meta* metadata, bhead* list, int order){
             }
         }
     }
-    printf("[SORT:%d]state(idx): ",order);
-    for(int i=0;i<size;i++) printf("%d(%d) ",metadata->state[res[i]],res[i]);
-    printf("\n");
+    //printf("[SORT:%d]state(idx): ",order);
+    //for(int i=0;i<size;i++) printf("%d(%d) ",metadata->state[res[i]],res[i]);
+    //printf("\n");
     return res;
 }
 
 int get_blkidx_byage(meta* metadata, bhead* list, 
-                     bhead* rsvlist_head, bhead* write_head, 
+                     bhead* full_head, 
                      int param, int any){
     //gives out block index based on age metadata.
     //edge case : when the most worn-out block is not fb or full
@@ -95,13 +91,12 @@ int get_blkidx_byage(meta* metadata, bhead* list,
     int *sorted_idx = _sort_bystate(metadata,list,param);
     if(any==0){//if any == 0, skip blocks which are rsv or write area.
         for(int i=0;i<list->blocknum;i++){
-            if((is_idx_in_list(rsvlist_head,sorted_idx[i])==0) &&
-               (is_idx_in_list(write_head,sorted_idx[i])==0)){
+            if(is_idx_in_list(full_head,sorted_idx[i])==1){
                    res_idx = sorted_idx[i];
                    free(sorted_idx);
                    return res_idx;
             }
-            printf("!!!%d in somewhere else!!!\n",sorted_idx[i]);
+            //printf("!!!%d in somewhere else!!!\n",sorted_idx[i]);
         }
     } else if(any==1){//if any == 1, simply return first block idx.
         res_idx = sorted_idx[0];

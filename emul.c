@@ -3,6 +3,7 @@
 
 void finish_WR(rttask* task, IO* cur_IO, meta* metadata){
     int lpa, ppa, old_ppa, old_block;
+    int target_block;
     int tot_inv=0;
     lpa = cur_IO->lpa;
     ppa = cur_IO->ppa;
@@ -34,12 +35,13 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata){
         }
         //printf("[WR-fin]lpa : %d, invalid targ:%d,inv?:%d,block : %d,cur_inv:%d, check : %d\n",lpa, old_ppa,metadata->invmap[old_ppa],old_block,metadata->invnum[old_block], tot_inv);
     }
+    target_block = metadata->pagemap[cur_IO->lpa] / PPB;
+    metadata->access_window[target_block]++;
 }
 
 void finish_RD(rttask* tasks, IO* cur_IO, meta* metadata){
     int target_block;
     target_block = metadata->pagemap[cur_IO->lpa] / PPB;
-    metadata->access_window[target_block]++;
 }
 
 void finish_GC(rttask* task, IO* cur_IO, meta* metadata){
@@ -78,7 +80,9 @@ void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
     }
     //reset metadata for block
     metadata->invnum[vicidx] = 0;
+    metadata->access_window[vicidx] = 0;
     metadata->state[vicidx]++;
+    metadata->EEC[vicidx]++;
     metadata->total_invalid -= PPB - cur_IO->gc_valid_count;
     metadata->total_fp += PPB - cur_IO->gc_valid_count;
     //printf("idx check : vic %d, rsv %d\n",vicidx,rsvidx);
@@ -111,6 +115,7 @@ void finish_RRER(rttask* task, IO* cur_IO, meta* metadata){
     }
     //update block state
     metadata->state[vicidx]++;
+    metadata->access_window[vicidx] = 0;
 }
 
 void finish_RRWR(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, bhead* full_head, RRblock* cur_RR){
@@ -150,12 +155,15 @@ void finish_RRWR(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
         //printf("[RRWR-fin]move completed,tar:%d,invnum:%d\n",taridx,metadata->invnum[taridx]);
         
         //if vic1->vic2 movement is completed,
+        printf("cur->tar : %d, vic1 : %d, vic2 : %d\n",cur_IO->tar_idx, cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx);
         if(cur_RR->cur_vic2->idx == cur_IO->tar_idx){    
             if(cur_IO->rr_valid_count == PPB){
                 ll_append(full_head,cur_RR->cur_vic2);
+                printf("app %d to full, fullnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
             } 
             else {
                 ll_append(fblist_head,cur_RR->cur_vic2);
+                printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
             }
             
         } 
@@ -163,9 +171,11 @@ void finish_RRWR(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
         else if (cur_RR->cur_vic1->idx == cur_IO->tar_idx){
             if(cur_IO->rr_valid_count == PPB){
                 ll_append(full_head,cur_RR->cur_vic1);
+                printf("app %d to full, fullnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
             } 
             else {
                 ll_append(fblist_head,cur_RR->cur_vic1);
+                printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
             }
         }
     }

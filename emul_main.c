@@ -34,9 +34,10 @@ int main(int argc, char* argv[]){
     long cur_IO_end = __LONG_MAX__;             //absolute time when current req finishes
     int wl_init = 0;                 //flag for wear-leveling initiation
     float WU;                        //worst-case utilization tracker.
-
-    FILE* w_workload;                             //init profile result file
-    FILE* r_workload;
+    int do_rr = 0;
+    int rr_finished = 1;
+    int hot_cold_list = 0;
+    int cycle = 0;
     FILE* rr_profile;
     FILE* w_workloads[tasknum];
     FILE* r_workloads[tasknum];
@@ -55,8 +56,10 @@ int main(int argc, char* argv[]){
     int yngest;
     int over_avg = 0;
     long rr_check = (long)100000;
-    long runtime = 640000000000;
-    //long runtime = 2100000000L;
+    //long runtime = 160000000000;
+    //long init_runtime = 160000000000;
+    long runtime = 200000000L;
+    long init_runtime = 200000000L;
     IO* cur_IO = NULL;
     IOhead* wq[tasknum];
     IOhead* rq[tasknum];
@@ -123,7 +126,7 @@ int main(int argc, char* argv[]){
                 rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg);
                 res = 0.5;//just hardcode and pass
             } else if(skewness >= 0){
-                rand_tasks = generate_taskset_skew(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
+                rand_tasks = generate_taskset_skew2(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
             } else if(skewness == -3){ //manually assign w/r utilization for each task. edit parameters for test.
                 rand_tasks = generate_taskset_fixed(max_valid_pg,&res);
             }
@@ -155,7 +158,7 @@ int main(int argc, char* argv[]){
             get_task_from_file_recalc(rand_tasks,tasknum,file_taskparam,max_valid_pg);
         }
         int hotspace = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc);
-        IOgen(tasknum,rand_tasks,640000000000,hotspace/2,sploc,tploc);
+        IOgen(tasknum,rand_tasks,runtime,hotspace/2,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
         return 0;
@@ -173,8 +176,6 @@ int main(int argc, char* argv[]){
     //init csv files
     //fp = open_file_bycase(gcflag,wflag,rrflag);
     fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
-    w_workload = fopen("workload_w.csv","r");
-    r_workload = fopen("workload_r.csv","r");
     rr_profile = fopen("rr_prof.csv","w");
     fplife = fopen("lifetime.csv","a");
     //fpwrite = fopen("writeselection.csv","w");
@@ -195,11 +196,13 @@ int main(int argc, char* argv[]){
     }
     
     //initialize blocklist for blockmanage.
-    init_metadata(newmeta,tasknum);
+    init_metadata(newmeta,tasknum, INITCYC);
     fblist_head = init_blocklist(0, NOB-tasknum-1);
     rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);
     full_head = init_blocklist(0,-1);//generate 0 component ll.
     write_head = init_blocklist(0,-1);
+    hotlist = init_blocklist(0,-1);
+    coldlist = init_blocklist(0,-1);
 
     //init data access & distribution tracker
     for(int i=0;i<tasknum;i++){
@@ -236,18 +239,39 @@ int main(int argc, char* argv[]){
     ll_append(fblist_head,cur_fb);
     //sleep(1);
     //!!finish initial writing
-    
+    FILE* u_check = fopen("rrchecker.csv","w");
     while(cur_cp <= runtime){
-        
+        if((double)cur_cp >= (double)runtime * 0.95){
+            long prev_run;
+            printf("curcp:%ld,runtime:%ld\n",cur_cp,runtime);
+            for(int i=0;i<tasknum;i++){
+                rewind(r_workloads[i]);
+                rewind(w_workloads[i]);
+            }
+            prev_run = runtime;
+            runtime = runtime + init_runtime;
+            printf("rewind check, prev run : %ld, next run : %ld\n",prev_run, runtime);
+           // sleep(1);
+        }
         yngest = get_blockstate_meta(newmeta,YOUNG);
         oldest = get_blockstate_meta(newmeta,OLD);
-       
+        if(cur_cp % 100000L == 0){
+            total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
+            if(total_u >= 1.0){
+                printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
+                fprintf(fplife,"%ld,",cur_cp);
+                sleep(1);
+                return 1;
+            }
+        }
         //execution order must be (req completion --> job release --> req pick)
-
+        
         //req completion logic
         if(cur_IO_end == cur_cp){
             if(cur_IO != NULL){
-
+                if(cur_IO->type == RRWR && cur_IO->vic_idx == 35){
+                    printf("tar : %d, vic : %d, order : %d, islastreq : %d\n",cur_IO->tar_idx,cur_IO->vic_idx,cur_IO->order, cur_IO->islastreq);
+                }
                 //print cur qsize
                 //printf("cur_cp : %ld, qsize :",cur_cp);
                 //for(int i=0;i<tasknum;i++){
@@ -263,9 +287,9 @@ int main(int argc, char* argv[]){
                     //print_freeblock_profile(fps[tasknum+4],cur_cp,newmeta,fblist_head,write_head);
                     //print_invalid_profile(fps[tasknum+4+1],cur_cp,newmeta);
                     total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fps[cur_IO->taskidx],yngest,oldest,cur_cp,
-                                            cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
-                                            cur_wb[cur_IO->taskidx],fblist_head,write_head,
-                                            newmeta->total_fp);
+                                    cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
+                                    cur_wb[cur_IO->taskidx],fblist_head,write_head,
+                                    newmeta->total_fp);
                     if(total_u > 1.0){
                         printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                         fprintf(fplife,"%ld,",cur_cp);
@@ -285,13 +309,21 @@ int main(int argc, char* argv[]){
                         return 1;
                     }
                 }
-
+                
                 //finish request q
                 finish_req(tasks, cur_IO, newmeta, 
                            fblist_head, rsvlist_head, full_head, 
                            &(cur_GC[cur_IO->taskidx]),&(cur_rr));
-                
+                //set flags for rr
+                if(rr->reqnum == 0){
+                    rr_finished = 1;
+                }
+
+                if(cur_IO->type == WR){
+                    do_rr = 1;
+                }
                 //reset I/O pointer and IO end time tracker
+                
                 cur_IO = NULL;
                 cur_IO_end = __LONG_MAX__;
             }
@@ -319,18 +351,31 @@ int main(int argc, char* argv[]){
             }
         }
         //release WL jobs
-        if((cur_cp % rr_check == 0) && (rr->head == NULL) && (cur_cp >= cur_rr.rrcheck) && (rrflag != -1)){
-            rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
-            //printf("[WL]rrcheck : %ld, cur_cp : %ld, util allowed : %lf\n",cur_rr.rrcheck, cur_cp, (double)rrutil);
-            if(rrutil >= 0.05){
-                RR_job_start_q(tasks, tasknum, newmeta,
-                              fblist_head, full_head,
-                              rr,&(cur_rr),0.05,cur_cp);
-            } else {
-                RR_job_start_q(tasks, tasknum, newmeta,
-                              fblist_head, full_head,
-                              rr,&(cur_rr),(double)rrutil,cur_cp);
+        if(oldest-yngest >= THRESHOLD){//wl start signal
+            wl_init = 1;
+        }
+        //if((cur_cp % rr_check == 0) && (rr->head == NULL) && (cur_cp >= cur_rr.rrcheck) && (rrflag != -1)){
+        //if(cur_cp >= 760000000){
+            //printf("[%ld][rrcond]do_rr:%d,rr_finished:%d,rrreq:%d\n",cur_cp,do_rr,rr_finished,rr->reqnum);
+        //}
+        if((do_rr == 1) && (rr_finished == 1) && (rr->head == NULL) && (rrflag != -1) && (wl_init == 1)){
+            printf("blocklist stat : full %d, rsv %d, fb %d, wr %d\n",full_head->blocknum, rsvlist_head->blocknum,fblist_head->blocknum,write_head->blocknum);
+            //if(full_head->blocknum + rsvlist_head->blocknum + fblist_head->blocknum + write_head->blocknum < NOB - 2){abort();}
+            if(hot_cold_list == 0){
+                build_hot_cold(newmeta,hotlist,coldlist);
+                hot_cold_list = 1;
             }
+            //rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
+            rrutil = -1.0; //override util so that WL always run in background mode.
+            //printf("[WL]rrcheck : %ld, cur_cp : %ld, util allowed : %lf\n",cur_rr.rrcheck, cur_cp, (double)rrutil);
+            RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
+                            rr,&(cur_rr),(double)rrutil,cur_cp);
+            if(rr->reqnum != 0){
+                rr_finished = 0;
+            } else {
+                rr_finished = 1;
+            }
+            do_rr = 0;
         }
 
         //req pick logic

@@ -71,8 +71,8 @@ void ll_append_IO(IOhead* head, IO* new);
 IO* ll_pop_IO(IOhead* head);
 
 //hot cold seperation functions.
-void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist, int max);
-int get_blkidx_byage(meta* metadata, bhead* list, bhead* rsvlist_head, bhead* write_head, int param, int any);
+void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist);
+int get_blkidx_byage(meta* metadata, bhead* list, bhead* full_head, int param, int any);
 int get_blockstate_meta(meta* metadata, int param);
 int is_idx_in_list(bhead* head, int tar);
 
@@ -108,7 +108,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
                   int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp);
-void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
+void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
                   IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp);
 
 //file open 
@@ -134,7 +134,7 @@ void check_block(float tot_u, meta* metadata, rttask* tasks, int tasknum, long c
 void print_hotdist_profile(FILE* fp, rttask* tasks, int cur_cp, meta* metadata, int taskidx, int hotness_rw);
 void print_freeblock_profile(FILE* fp, int cur_cp, meta* metadata, bhead* fblist_head, bhead* write_head);
 void print_invalid_profile(FILE* fp, int cur_cp, meta* metadata);
-
+float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* fp, int yng, int old,long cur_cp);
 //gen_task
 rttask* generate_taskset(int tasknum, float util, int addr, float* result_util, int cycle);
 rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);

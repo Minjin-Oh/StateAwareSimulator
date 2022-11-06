@@ -691,3 +691,33 @@ float print_profile_best(rttask* tasks, int tasknum, int taskidx, meta* metadata
     old,yng,cur_gc_idx,cur_gc_state); 
     return total_u;
 }
+
+float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* fp, 
+                   int yng, int old,long cur_cp){
+    //init params
+    int cur_read_worst[tasknum];
+    int state_tot = 0;
+    double state_avg = 0.0;
+    double state_var = 0.0;
+    float total_u = 0.0;
+    float total_r = 0.0;
+    float total_w = 0.0;
+    float total_gc = 0.0;
+    float total_u_noblock = 0.0;
+    //find worst case util w.r.t system-wise worst block
+    
+    for(int j=0;j<tasknum;j++){//0 = write, 2 = GC
+        total_u += metadata->runutils[0][j];
+        total_w += metadata->runutils[0][j];
+        total_u += metadata->runutils[1][j];
+        total_r += metadata->runutils[1][j];
+        total_u += metadata->runutils[2][j];
+        total_gc += metadata->runutils[2][j];
+        //printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
+    }
+    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    //print all infos
+    fprintf(fp,"%ld,%f,%d,%d\n",
+    cur_cp,total_u,old,yng); 
+    return total_u;
+}

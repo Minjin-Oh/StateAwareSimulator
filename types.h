@@ -20,10 +20,10 @@
 #define _MINRC 35
 #define MAXPE 1000
 #define MARGIN 3 
-#define THRESHOLD 5
+#define THRESHOLD 40
 #define OLD 0
 #define YOUNG -1
-
+#define INITCYC 200
 //sorting
 #define ASC 0
 #define DES 1
@@ -100,10 +100,12 @@ typedef struct _IO{
     int gc_valid_count; //carries number of valid page for GC
     int rr_valid_count; //carries number of valid page for WL
     int islastreq;      //checks if this is final req of current job
+    int isrrfinish;     //checks if this is final req for RR;
     char init;          //set this 1 if req is initial I/O req (WR, RD)
     char last;          //set this 1 if req is last I/O req (WR, RD)
     long IO_start_time;
     long IO_end_time;
+    int order;
 }IO;
 
 typedef struct _IOhead{
@@ -147,7 +149,7 @@ typedef struct _meta{
     int write_cnt[NOP];
     int* write_cnt_task;
     int tot_write_cnt;
-    int write_cnt_phy[NOP];
+    int EEC[NOB];
     int tot_gc_cnt;
     int total_invalid;
     int total_fp;

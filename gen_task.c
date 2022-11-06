@@ -163,9 +163,10 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
 
 rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle){
     float utils[tasknum];
-    float offset = 0.05;
-    float rand_portion = 0.03;
-    float r_util, w_util;
+    float per_task_portion = 0.05;
+    float offset = 0.04;
+    float rand_portion = 0.01;
+    float r_util[tasknum], w_util[tasknum];
     int wp, rp, gcp, wnum, rnum;
     char pass = 0;
     rttask* tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
@@ -173,35 +174,25 @@ rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* res
     
     //generate util for each task
     for(int i=0;i<tasknum;i++){
+        float rand_u = (float)(rand()%(int)(rand_portion*1000)) / 1000.0;
         if(i<skewnum){
-            float rand_u = (float)(rand()%(int)(rand_portion*1000)) / 1000.0;
-            utils[i] = rand_u + offset;
+            w_util[i] = rand_u + offset;
+            r_util[i] = per_task_portion - w_util[i];
         } else {
-            utils[i] = (float)(rand()%(int)(rand_portion*1000)) / 1000.0;
+            r_util[i] = rand_u + offset;
+            w_util[i] = per_task_portion - r_util[i];
         }
     }
     //assign 90% of util for write if task is write-intensive
     for(int i=0;i<tasknum;i++){
-        if(i<skewnum){
-            if(type == 0){
-                r_util = 0.9 * utils[i];
-                w_util = 0.1 * utils[i];
-            } else if (type == 1){
-                r_util = 0.1 * utils[i];
-                w_util = 0.9 * utils[i];
-            }
-        } else {
-            r_util = 0.5 * utils[i];
-            w_util = 0.5 * utils[i];
-        }
         wnum = rand()%30 + 1;
         rnum = rand()%100 + 1;
-        wp = (int)((float)(wnum*STARTW) / w_util);
-        rp = (int)((float)(rnum*STARTR) / r_util);
+        wp = (int)((float)(wnum*STARTW) / w_util[i]);
+        rp = (int)((float)(rnum*STARTR) / r_util[i]);
         gcp = __calc_gcmult(wp,wnum,MINRC);
         init_task(&(tasks[i]),i,wp,wnum,rp,rnum,gcp,addr/tasknum*i,addr/tasknum*(i+1)-1);
         printf("wp: %d, wn : %d, rp : %d, rn : %d, gcp : %d wu: %f, ru: %f, gcu : %f\n",
-            wp,wnum,rp,rnum,gcp,w_util,r_util,__calc_gcu(&(tasks[i]),MINRC,0,0,0));
+            wp,wnum,rp,rnum,gcp,w_util[i],r_util[i],__calc_gcu(&(tasks[i]),MINRC,0,0,0));
     }
     float checker = 0.0;
     for(int i=0;i<tasknum;i++){

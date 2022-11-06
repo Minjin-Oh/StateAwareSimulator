@@ -308,7 +308,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     //sleep(1);
 }
 
-void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
+void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
                   IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp){
     int vic1, vic2, v1_state, v2_state;
     int v1_offset, v2_offset, v1_cnt=0, v2_cnt=0;
@@ -320,25 +320,17 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     
     //find relocation victim blocks
     if(rrflag == 0){
-        find_RR_target(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
+        find_RR_dualpool(tasks, tasknum, metadata, full_head, hotlist, coldlist, &vic1, &vic2);
     }
     else if (rrflag == 1){
         find_RR_target_util(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
     }
     //cancel WL
     if(vic1 == -1 || vic2 == -1){
-        //printf("skiprr\n");
+        printf("skiprr\n");
         return;
     }
-    if(metadata->state[vic1] - metadata->state[vic2] <= THRESHOLD){
-        //printf("skiprr, state difference small\n");
-        return;
-    }
-    if(metadata->access_window[vic1] - metadata->state[vic2] <= 100){
-        //printf("skiprr, access different small\n");
-        return;
-    }
-
+    
     //if decided to do WL, reset access window for future.
 
     for(int i=0;i<NOB;i++){
@@ -409,8 +401,8 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     if(rrutil <= 0.0){
         cur_RR->rrcheck = cur_cp + find_RR_period(vic1,vic2,v1_cnt,v2_cnt,0.025,metadata);
     }
-    printf("[RR_S]util : %f, exec : %ld, period : %d, cur_cp : %ld, rrcheck : %ld\n",rrutil,execution_time,rrp,cur_cp,cur_cp+rrp);
-    printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
-    printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
+    printf("[RR_S]util : %f, exec : %ld, period : %ld, cur_cp : %ld, rrcheck : %ld\n",rrutil,execution_time,rrp,cur_cp,cur_cp+rrp);
+    //printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
+    //printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
 
 }

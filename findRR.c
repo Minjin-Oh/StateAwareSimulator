@@ -2,6 +2,70 @@
 
 extern int rrflag;
 
+void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_head, bhead* hotlist, bhead* coldlist, int* res1, int* res2){
+    
+    //get relocation target
+    int hot_old = get_blkidx_byage(metadata,hotlist,full_head,0,0);
+    int hot_young = get_blkidx_byage(metadata,hotlist,full_head,1,0);
+    int cold_young = get_blkidx_byage(metadata,coldlist,full_head,1,0);
+    int cold_max_eec, hot_min_eec, cold_evict_idx;
+    printf("hotold : %d(%d), coldyoung : %d(%d)\n",hot_old,metadata->state[hot_old],cold_young,metadata->state[cold_young]);
+    
+    if (cold_young == -1 || hot_old == -1){
+        *res1 = -1;
+        *res2 = -1;
+        return;
+    }
+    if(metadata->state[hot_old] - metadata->state[cold_young] < THRESHOLD){
+        *res1 = -1;
+        *res2 = -1;
+        return;
+    }
+    //update hot-cold pool
+    block* hot_b = ll_remove(hotlist,hot_old);
+    block* cold_b = ll_remove(coldlist,cold_young);
+    ll_append(hotlist,cold_b);
+    ll_append(coldlist,hot_b);
+    metadata->EEC[hot_old] = 0;
+    metadata->EEC[cold_young] = 0;
+
+    //adjust hot-cold pool if necessary
+    //hot pool eviction code
+    if(metadata->state[hot_old] - metadata->state[hot_young] >  2*THRESHOLD){
+        block* hot_evict = ll_remove(hotlist,hot_young);
+        ll_append(coldlist,hot_evict);
+    }
+
+    //cold pool eviction code
+    block* cur = coldlist->head;
+    cold_max_eec = metadata->EEC[cur->idx];
+    cold_evict_idx = cur->idx;
+    while(cur != NULL){
+        if(cold_max_eec < metadata->EEC[cur->idx]){
+            cold_max_eec = metadata->EEC[cur->idx];
+            cold_evict_idx = cur->idx;
+        }
+        cur = cur->next;
+    }
+    cur = hotlist->head;
+    hot_min_eec = metadata->EEC[cur->idx];
+    while(cur != NULL){
+        if(hot_min_eec > metadata->EEC[cur->idx]){
+            hot_min_eec = metadata->EEC[cur->idx];
+        }
+        cur = cur->next;
+    }
+    
+    if(cold_max_eec - hot_min_eec > THRESHOLD){
+        block* cold_evict = ll_remove(coldlist,cold_evict_idx);
+        ll_append(hotlist,cold_evict);
+    }
+    //return value
+    
+    *res1 = hot_old;
+    *res2 = cold_young;
+    return;
+}
 void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
     int access_avg = 0;
     int cycle_avg = 0;
