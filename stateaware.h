@@ -25,7 +25,7 @@ void set_scheme_flags(char* argv[],
 void set_exec_flags(char* argv[], int *tasknum, float *totutil, 
                     int *genflag, int* taskflag,
                     int *skewness, float* sploc, float* tploc, int* skewnum,
-                    int *OPflag, double *OP, int *MINRC);
+                    int *OPflag, int *cyc, double *OP, int *MINRC);
 
 
 //simulator functions(deprecated)

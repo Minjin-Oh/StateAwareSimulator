@@ -101,7 +101,7 @@ void set_scheme_flags(char* argv[],
 void set_exec_flags(char* argv[], int *tasknum, float *totutil, 
                     int *genflag, int* taskflag,
                     int *skewness, float* sploc, float* tploc, int* skewnum,
-                    int *OPflag, double *OP, int *MINRC){
+                    int *OPflag, int *cyc, double *OP, int *MINRC){
     /* 
     interprets 4th ~ 11th argv
     4th : if WORKGEN, we generate workload pattern
@@ -132,17 +132,12 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
     if(*skewness >= 0){
         *skewnum = atoi(argv[10]);
     }
-    
-    
-    if(argv[11]!=NULL){
-        *OPflag = atoi(argv[11]);
+    if (argv[11] != NULL){
+        *cyc = atoi(argv[11]);
     }
-    if(*OPflag == 1){
-        *OP = atof(argv[12]);
-        *MINRC = atoi(argv[13]);
-    } else {
-        *OP = 0.32;
-        *MINRC = 35;
+    else{
+        *cyc = 0;
     }
-    
+    *OP = 0.32;
+    *MINRC = 35;
 }

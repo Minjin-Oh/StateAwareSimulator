@@ -37,7 +37,7 @@ int main(int argc, char* argv[]){
     int do_rr = 0;
     int rr_finished = 1;
     int hot_cold_list = 0;
-    int cycle = 0;
+    int init_cyc = 0;
     FILE* rr_profile;
     FILE* w_workloads[tasknum];
     FILE* r_workloads[tasknum];
@@ -98,7 +98,7 @@ int main(int argc, char* argv[]){
     set_exec_flags(argv, &tasknum, &totutil,
                    &genflag, &taskflag,
                    &skewness, &sploc, &tploc, &skewnum,
-                   &OPflag, &OP, &MINRC);
+                   &OPflag, &init_cyc, &OP, &MINRC);
     //add scheme flags for flexible write policy change
 
     printf("[ SCHEMES ] %d, %d, %d, %d\n",wflag,gcflag,rrflag,rrcond);
@@ -174,18 +174,13 @@ int main(int argc, char* argv[]){
     //sleep(1);
     
     //init csv files
-    //fp = open_file_bycase(gcflag,wflag,rrflag);
     fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
     rr_profile = fopen("rr_prof.csv","w");
     fplife = fopen("lifetime.csv","a");
-    //fpwrite = fopen("writeselection.csv","w");
-    //fpread = fopen("readworst.csv","w");
-    //fprr = fopen("relocperiod.csv","w"); 
     finish_log = fopen("log.csv","w");
     IO_open(tasknum, w_workloads,r_workloads);
     lat_open(tasknum, lat_log_w,lat_log_r);
     
-    //fprintf(fp,"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp");
     for(int i=0;i<tasknum;i++){
         fprintf(fps[i],"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp,w_idx,w_state,fb,w");
     }
@@ -196,7 +191,7 @@ int main(int argc, char* argv[]){
     }
     
     //initialize blocklist for blockmanage.
-    init_metadata(newmeta,tasknum, INITCYC);
+    init_metadata(newmeta,tasknum, init_cyc);
     fblist_head = init_blocklist(0, NOB-tasknum-1);
     rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);
     full_head = init_blocklist(0,-1);//generate 0 component ll.
@@ -255,6 +250,7 @@ int main(int argc, char* argv[]){
         }
         yngest = get_blockstate_meta(newmeta,YOUNG);
         oldest = get_blockstate_meta(newmeta,OLD);
+        //flash state checker
         if(cur_cp % 100000L == 0){
             total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
             if(total_u >= 1.0){
@@ -262,6 +258,17 @@ int main(int argc, char* argv[]){
                 fprintf(fplife,"%ld,",cur_cp);
                 sleep(1);
                 return 1;
+            }
+        }
+        for(int idx=0;idx<NOB;idx++){
+            if(newmeta->state[idx] >= MAXPE){
+                total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
+                printf("[%ld]a block reach maximum P/E, util : %d\n",total_u);
+                fprintf(fplife,"%ld,",cur_cp);
+                sleep(1);
+                return 1;
+            } else {
+                /*do nothing*/
             }
         }
         //execution order must be (req completion --> job release --> req pick)
