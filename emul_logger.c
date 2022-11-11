@@ -1,7 +1,7 @@
 #include "emul_logger.h"
 #include "IOgen.h"
 
-int check_latency(FILE** lat_log_w, FILE** lat_log_r, IO* cur_IO, long cur_cp){
+int check_latency(FILE** lat_log_w, FILE** lat_log_r, FILE** lat_log_gc, IO* cur_IO, long cur_cp){
     //if start_or_end == 0, it means an I/O start flag
     //if start_or_end == 1, it means an I/O end flag
     
@@ -14,6 +14,9 @@ int check_latency(FILE** lat_log_w, FILE** lat_log_r, IO* cur_IO, long cur_cp){
     } 
     else if (cur_IO->type == WR){
         fprintf(lat_log_w[cur_IO->taskidx],"%ld, %ld\n",cur_cp, cur_cp - cur_IO->IO_start_time);
+    }
+    else if (cur_IO->type == GCER){
+        fprintf(lat_log_gc[cur_IO->taskidx], "%ld, %ld\n",cur_cp, cur_cp - cur_IO->IO_start_time);
     }
     return 0;
 }

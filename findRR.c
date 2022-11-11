@@ -9,7 +9,7 @@ void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_hea
     int hot_young = get_blkidx_byage(metadata,hotlist,full_head,1,0);
     int cold_young = get_blkidx_byage(metadata,coldlist,full_head,1,0);
     int cold_max_eec, hot_min_eec, cold_evict_idx;
-    printf("hotold : %d(%d), coldyoung : %d(%d)\n",hot_old,metadata->state[hot_old],cold_young,metadata->state[cold_young]);
+    //printf("hotold : %d(%d), coldyoung : %d(%d)\n",hot_old,metadata->state[hot_old],cold_young,metadata->state[cold_young]);
     
     if (cold_young == -1 || hot_old == -1){
         *res1 = -1;
@@ -180,6 +180,10 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
     int highcnt=0;
     int lowcnt=0;
 
+    int high_cyc, low_cyc, high_idx, low_idx, acc_diff;
+    float benefit, loss, best;
+    int vic1 = -1, vic2 = -1;
+
     //init
     block_vmap = (int**)malloc(sizeof(int*)*tasknum); 
     for(int i=0;i<tasknum;i++){
@@ -220,9 +224,7 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
             lowcnt++;
         }
     }
-    int high_cyc, low_cyc, high_idx, low_idx, acc_diff;
-    float benefit, loss, best;
-    int vic1 = -1, vic2 = -1;
+    
     best = 0.0;
     acc_diff = 0;
     //searching through all combination, check if read has benefit.
@@ -255,11 +257,15 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
             }
         }
     }
-    
-    //printf("[WL]vic1 %d(cnt:%d)(cyc:%d)\n",vic1,metadata->access_window[vic1],metadata->state[vic1]);
-    //printf("[WL]vic2 %d(cnt:%d)(cyc:%d)\n",vic2,metadata->access_window[vic2],metadata->state[vic2]);
     //return high/low value.
-    
+    if(metadata->access_window[vic1] - metadata->access_window[vic2] < 100){
+        vic1 = -1;
+        vic2 = -1;
+    }
+    if (metadata->state[vic1] - metadata->state[vic2] < THRESHOLD){
+        vic1 = -1;
+        vic2 = -1;
+    }
     //free
     for(int i=0;i<tasknum;i++){
         free(block_vmap[i]);

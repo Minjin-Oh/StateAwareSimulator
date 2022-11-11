@@ -36,12 +36,12 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata){
         //printf("[WR-fin]lpa : %d, invalid targ:%d,inv?:%d,block : %d,cur_inv:%d, check : %d\n",lpa, old_ppa,metadata->invmap[old_ppa],old_block,metadata->invnum[old_block], tot_inv);
     }
     target_block = metadata->pagemap[cur_IO->lpa] / PPB;
-    metadata->access_window[target_block]++;
 }
 
 void finish_RD(rttask* tasks, IO* cur_IO, meta* metadata){
     int target_block;
     target_block = metadata->pagemap[cur_IO->lpa] / PPB;
+    metadata->access_window[target_block]++;
 }
 
 void finish_GC(rttask* task, IO* cur_IO, meta* metadata){
@@ -155,15 +155,15 @@ void finish_RRWR(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
         //printf("[RRWR-fin]move completed,tar:%d,invnum:%d\n",taridx,metadata->invnum[taridx]);
         
         //if vic1->vic2 movement is completed,
-        printf("cur->tar : %d, vic1 : %d, vic2 : %d\n",cur_IO->tar_idx, cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx);
+        //printf("cur->tar : %d, vic1 : %d, vic2 : %d\n",cur_IO->tar_idx, cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx);
         if(cur_RR->cur_vic2->idx == cur_IO->tar_idx){    
             if(cur_IO->rr_valid_count == PPB){
                 ll_append(full_head,cur_RR->cur_vic2);
-                printf("app %d to full, fullnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
+                //printf("app %d to full, fullnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
             } 
             else {
                 ll_append(fblist_head,cur_RR->cur_vic2);
-                printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
+                //printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
             }
             
         } 
@@ -171,11 +171,11 @@ void finish_RRWR(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
         else if (cur_RR->cur_vic1->idx == cur_IO->tar_idx){
             if(cur_IO->rr_valid_count == PPB){
                 ll_append(full_head,cur_RR->cur_vic1);
-                printf("app %d to full, fullnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
+                //printf("app %d to full, fullnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
             } 
             else {
                 ll_append(fblist_head,cur_RR->cur_vic1);
-                printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
+                //printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
             }
         }
     }
@@ -218,7 +218,8 @@ long find_closenum(long cur_cp, long period){
     return close_num;
 }
 
-long find_next_time(rttask* tasks, int tasknum, long cur_dl, long rr_check, long cur_cp){
+long find_next_time(rttask* tasks, int tasknum, long cur_dl, long rr_check, long cur_cp, 
+                    long* next_w_release, long* next_r_release, long* next_gc_release){
     //find 
     double mult;
     long periods[tasknum];
@@ -227,16 +228,16 @@ long find_next_time(rttask* tasks, int tasknum, long cur_dl, long rr_check, long
     int res_task = -1;
     //find closest I/O release period (within task)
     for(int i=0;i<tasknum;i++){
-        rp = find_closenum(cur_cp,(long)tasks[i].rp);
-        wp = find_closenum(cur_cp,(long)tasks[i].wp);
-        gcp = find_closenum(cur_cp,(long)tasks[i].gcp);
+        rp = next_r_release[i];
+        wp = next_w_release[i];  
+        gcp = next_gc_release[i];
         temp = wp >= rp ? rp : wp;
         temp2 = temp >= gcp ? gcp : temp;
         periods[i] = temp2;
         //printf("[FNT-task][%d] %ld, %ld %ld %ld\n",i,periods[i],rp,wp,gcp);
     }
     //get closest wear leveling period
-    rrp = find_closenum(cur_cp,rr_check);
+    rrp = find_closenum(cur_cp+1,rr_check);
     
     //find closest I/O release period (within taskset)
     for(int i=0;i<tasknum;i++){
@@ -252,10 +253,11 @@ long find_next_time(rttask* tasks, int tasknum, long cur_dl, long rr_check, long
         }
     }
     task_min = res;
-    
+    //printf("task_min : %ld, cur_dl:%ld,rrp:%ld\n",task_min,cur_dl,rrp);
     //compare with I/O deadline and wear leveling release time
+
     res = res >= rrp ? rrp : res;
     res = res >= cur_dl ? cur_dl : res;
-    
+    //printf("res : %ld\n",res);
     return res;
 }

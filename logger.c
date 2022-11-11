@@ -188,7 +188,7 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         }
         fps[tasknum+4] = fopen("prof_youngall_fbdist.csv","w");
         fps[tasknum+4+1] = fopen("prof_youngall_invdist.csv","w");
-    } else if (gcflag == 6 && wflag == 6){
+    } else if (gcflag == 6 && wflag == 6 && rrflag == 1){
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_ourall_t%d.csv",i);
             fps[i] = fopen(name,"w");
@@ -199,6 +199,17 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         }
         fps[tasknum+4] = fopen("prof_ourall_fbdist.csv","w");
         fps[tasknum+4+1] = fopen("prof_ourall_invdist.csv","w");
+    } else if (gcflag == 6 && wflag == 6 && rrflag == -1){
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_our_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+        for(int i=0;i<4;i++){
+            sprintf(name,"prof_our_hdist%d.csv",i);
+            fps[tasknum+i] = fopen(name,"w");
+        }
+        fps[tasknum+4] = fopen("prof_our_fbdist.csv","w");
+        fps[tasknum+4+1] = fopen("prof_our_invdist.csv","w");
     } else if (rrflag == 0){
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_rr_t%d.csv",i);
@@ -716,8 +727,18 @@ float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* 
         //printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
     }
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    //block state profiling
+    for(int i=0;i<NOB;i++){
+        state_tot += metadata->state[i];
+    }
+    state_avg = (double)state_tot / (double)NOB;
+    for(int i=0;i<NOB;i++){
+        state_var += pow((double)metadata->state[i] - (double)state_avg ,2.0);
+    }
+    state_var = state_var / NOB;
+    state_var = sqrt(state_var);
     //print all infos
-    fprintf(fp,"%ld,%f,%d,%d\n",
-    cur_cp,total_u,old,yng); 
+    fprintf(fp,"%ld,%f,%d,%d,%lf,%lf\n",
+    cur_cp,total_u,old,yng,state_avg,state_var); 
     return total_u;
 }

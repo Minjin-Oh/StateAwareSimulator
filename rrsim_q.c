@@ -71,7 +71,7 @@ long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
         cur = cur->next;
     }
     cur->islastreq = 1;
-    printf("lastreq specified for block%d,reqcount:%d\n",cur->tar_idx,v1_cnt);
+    //printf("lastreq specified for block%d,reqcount:%d\n",cur->tar_idx,v1_cnt);
     for(int i=0;i<PPB;i++){
         if(metadata->invmap[v2_offset+i]==0){
             IO* req2 = (IO*)malloc(sizeof(IO));
@@ -102,7 +102,7 @@ long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
     }
     cur->islastreq = 1;
     cur->isrrfinish = 1;
-    printf("lastreq specified for block%d,reqcount:%d\n",cur->tar_idx,v2_cnt);
+    //printf("lastreq specified for block%d,reqcount:%d\n",cur->tar_idx,v2_cnt);
     //printf("[RRWR-summ]%d with %d\n",vic1,vic2);
     //printf("[RRWR-summ]%d, %d vs %d, %d\n",v1_cnt,v2_cnt,PPB-metadata->invnum[vic1],PPB-metadata->invnum[vic2]);
     //printf("[RRWR-summ]invnum : %d, %d\n",metadata->invnum[vic1],metadata->invnum[vic2]);

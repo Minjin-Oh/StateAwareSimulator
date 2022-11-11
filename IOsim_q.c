@@ -125,7 +125,12 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         req->ppa = ppa_dest[i];
         req->IO_start_time = cur_cp;
         req->deadline = (long)cur_cp + (long)tasks[taskidx].wp;
-        req->exec = (long)floor((double)w_exec(ppa_state[i]));                                       
+        req->exec = (long)floor((double)w_exec(ppa_state[i]));
+        if(i != tasks[taskidx].wn-1){
+            req->islastreq = 0;    
+        } else {
+            req->islastreq = 1;
+        }                           
         ll_append_IO(wq,req);
         exec_sum += w_exec(ppa_state[i]);
         if(i==0){
@@ -187,9 +192,9 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
                   int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp){
     if(gcq->reqnum != 0){
-        printf("[%ld]queue not empty, dl miss detected. task %d GC\n",cur_cp,taskidx);
-        sleep(3);
-        abort();
+        //printf("[%ld]queue not empty, dl miss detected. task %d GC\n",cur_cp,taskidx);
+        //sleep(3);
+        //abort();
     }
     //params
     block* cur = full_head->head;
@@ -271,11 +276,13 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         if(metadata->invmap[vic_offset+i]==0 && metadata->rmap[vic_offset+i]!=-1){
             IO* req = (IO*)malloc(sizeof(IO));
             req->type = GC;
+            req->last = 0;
             req->taskidx = taskidx;
             rtv_lpa = metadata->rmap[vic_offset+i];
             req->gc_old_lpa = rtv_lpa;
             req->gc_tar_ppa = rsv_offset+vp_count;
             req->gc_vic_ppa = vic_offset+i;
+            req->IO_start_time = cur_cp;
             req->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
             req->exec = (long)floor((double)r_exec(metadata->state[vic->idx])) + 
                         (long)floor((double)w_exec(metadata->state[rsv->idx]));
@@ -288,9 +295,11 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     //append erase operation at the end
     IO* er = (IO*)malloc(sizeof(IO));
     er->type = GCER;
+    er->last = 1;
     er->taskidx = taskidx;
     er->vic_idx = vic->idx;
     er->rsv_idx = rsv->idx;
+    er->IO_start_time = cur_cp;
     er->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
     er->exec = (long)floor((double)e_exec(metadata->state[vic->idx]));
     er->gc_valid_count = vp_count;
@@ -327,7 +336,7 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     }
     //cancel WL
     if(vic1 == -1 || vic2 == -1){
-        printf("skiprr\n");
+        //printf("skiprr\n");
         return;
     }
     
@@ -401,7 +410,7 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     if(rrutil <= 0.0){
         cur_RR->rrcheck = cur_cp + find_RR_period(vic1,vic2,v1_cnt,v2_cnt,0.025,metadata);
     }
-    printf("[RR_S]util : %f, exec : %ld, period : %ld, cur_cp : %ld, rrcheck : %ld\n",rrutil,execution_time,rrp,cur_cp,cur_cp+rrp);
+    //printf("[RR_S]util : %f, exec : %ld, period : %ld, cur_cp : %ld, rrcheck : %ld\n",rrutil,execution_time,rrp,cur_cp,cur_cp+rrp);
     //printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
     //printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
 

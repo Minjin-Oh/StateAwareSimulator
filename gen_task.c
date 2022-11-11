@@ -73,12 +73,20 @@ rttask* generate_taskset_hardcode(int tasknum, int addr){
     //hardcoded to a case of 3 taskset
     rttask* tasks;
     tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
-    int gcp_temp = __calc_gcmult(1200000,1,MINRC);
-    int gcp_temp2 = __calc_gcmult(150000,5,MINRC);
-    int gcp_temp3 = __calc_gcmult(75000,11,MINRC);
-    init_task(&(tasks[0]),0,1200000,1,30000,100,gcp_temp,0,addr/tasknum*(1)-1);
-    init_task(&(tasks[1]),1,150000,5,40000,12,gcp_temp2,addr/tasknum*(1),addr/tasknum*(2)-1);
-    init_task(&(tasks[2]),2,75000,11,75000,20,gcp_temp3,addr/tasknum*(2),addr/tasknum*(3)-1);
+    int gcp_temp = __calc_gcmult(200000,8,MINRC);
+    int gcp_temp2 = __calc_gcmult(100000,10,MINRC);
+    int gcp_temp3 = __calc_gcmult(75000,10,MINRC);
+    init_task(&(tasks[0]),0,200000,8,300000,1800,gcp_temp,0,addr/tasknum*(1)-1);
+    init_task(&(tasks[1]),1,100000,10,300000,400,gcp_temp2,addr/tasknum*(1),addr/tasknum*(2)-1);
+    init_task(&(tasks[2]),2,100000,10,800000,200,gcp_temp3,addr/tasknum*(2),addr/tasknum*(3)-1);
+    float checker = 0.0;
+    for(int i=0;i<tasknum;i++){
+        checker += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
+        checker += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
+        checker += __calc_gcu(&(tasks[i]),MINRC,0,0,0);
+    }
+    checker += (float)STARTE/(float)_find_min_period(tasks,tasknum);
+    printf("checker : %f\n", checker);
     return tasks;
 }
 

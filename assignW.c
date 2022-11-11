@@ -16,7 +16,7 @@ block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadat
                 cur = write_head->head;
             }
             target = cur->idx;
-            printf("target block : %d\n",target);
+            //printf("target block : %d\n",target);
         }
     } else { //initial case :: cur_b == NULL. find new block
         cur = ll_condremove(metadata,fblist_head,YOUNG);
@@ -26,7 +26,7 @@ block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadat
             cur = write_head->head;
         }
         target = cur->idx;
-        printf("[INIT]target block : %d\n",target);
+        //printf("[INIT]target block : %d\n",target);
     }//if state is different, get another write block
     return cur;
 }
