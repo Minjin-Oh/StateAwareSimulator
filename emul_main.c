@@ -166,7 +166,7 @@ int main(int argc, char* argv[]){
             get_task_from_file_recalc(rand_tasks,tasknum,file_taskparam,max_valid_pg);
         }
         int hotspace = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc);
-        IOgen(tasknum,rand_tasks,runtime,hotspace/2,sploc,tploc);
+        IOgen(tasknum,rand_tasks,runtime,hotspace,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
         return 0;

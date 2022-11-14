@@ -123,6 +123,7 @@ int find_gcctrl_yng(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
             gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(cur_state))+e_exec(cur_state);
             gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
             gc_util = gc_exec/gc_period;
+            slack = 1.0; //uncomment this to only consider block age
             if(gc_util <= slack){
                 if(metadata->state[cur->idx] <= cur_min_state){
                     cur_min_state = metadata->state[cur->idx];
