@@ -3,6 +3,100 @@
 extern double OP;
 extern int MINRC;
 
+//FIXME:: a temporary solution to expose queue to find_util_safe function.
+extern IOhead** wq;
+extern IOhead** rq;
+extern IOhead** gcq;
+
+int _find_gc_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util, int cur_b, int rsv_b){
+    //check if current I/O job does not violate util test along with recently released other jobs.
+    
+    //init variables
+    IO* cur;
+    int read_b;
+    int valid_cnt = 0;
+    int* lpas;
+    float total_u = 0.0;
+    float old_total_u = 0.0;
+    float wutils[tasknum];
+    float rutils[tasknum];
+    float gcutils[tasknum];
+    /*
+    //test code:: compare with old find_util_safe function
+    old_total_u = find_cur_util(tasks,tasknum,metadata,old);
+    if(type == WR){
+        old_total_u -= metadata->runutils[0][taskidx];
+    } else if (type == RD){
+        old_total_u -= metadata->runutils[1][taskidx];
+    } else if (type == GC){
+        old_total_u -= metadata->runutils[2][taskidx];
+    }
+    old_total_u += util;
+    */
+    //malloc variables
+    lpas = (int*)malloc(sizeof(int)*PPB);
+    for(int i=0;i<PPB;i++){
+        lpas[i] = -1;
+    }
+
+    //allocate current runtime utils on local variable
+    for(int i=0;i<tasknum;i++){
+        wutils[i] = metadata->runutils[0][i];
+        rutils[i] = metadata->runutils[1][i];
+        gcutils[i] = metadata->runutils[2][i];
+    }
+    //get victim block valid lpas.
+    for(int i=0;i<PPB;i++){
+        if(metadata->invmap[cur_b*PPB+i]==0 && metadata->rmap[cur_b*PPB+i]!=-1){
+            lpas[valid_cnt] = metadata->rmap[cur_b*PPB+i];
+            valid_cnt++;
+        }
+    }
+
+    /*write a code which checks if current lpa collides with read.*/
+    /*do not consider collision with write, since worst case is when GC happens after write*/
+    /*when GC happens after write, write reqs are not affected at all.*/
+    /*when write happens after GC, write reqs invalidate relocated page, but write util X change*/
+    
+    for (int i=0;i<tasknum;i++){
+        cur = rq[i]->head;
+        while (cur != NULL){
+            //write a code which compares lpa in lpas collide with read request.
+            //if collision occurs && new block is worse case, update read utilization
+            for(int j=0;j<valid_cnt;j++){
+                if(cur->lpa == lpas[j]){
+                    //printf("collision detected, %d vs %d ",cur->lpa,lpas[j]);
+                    read_b = metadata->pagemap[lpas[j]]/PPB;
+                    //printf("state : %d, %d\n",metadata->state[read_b],metadata->state[rsv_b]);
+                    if(metadata->state[read_b] < metadata->state[rsv_b]){
+                        rutils[i] -= r_exec(metadata->state[read_b]) / (float)tasks[i].rp;
+                        rutils[i] += r_exec(metadata->state[rsv_b]) / (float)tasks[i].rp;
+                    }
+                }
+                
+            }
+            cur = cur->next;
+        }
+    }
+    
+    free(lpas);
+    
+    //now calculate total utilization.
+    for (int j=0;j<tasknum;j++){//0 = write, 2 = GC
+        total_u += wutils[j];
+        total_u += rutils[j];
+        total_u += gcutils[j];
+    }
+    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    total_u -= gcutils[taskidx];
+    total_u += util;
+    if (total_u <= 1.0){
+        return 0;
+    } else if (total_u > 1.0){
+        return -1;
+    }    
+}
+
 int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head){
     //find "the block" which is suitable for GC, considering utilization
     //!!!returns the block number, not limit
@@ -178,7 +272,7 @@ int find_gcctrl_limit(rttask* task, int taskidx, int tasknum, meta* metadata, bh
         gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
         gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
         gc_util = gc_exec/gc_period;
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,GC,gc_util) == -1){
+        if(find_util_safe(task,tasknum,metadata,old,taskidx,GC,gc_util ) == -1){
             cur = cur->next;
             continue;
         }
@@ -252,7 +346,7 @@ int find_gcweighted(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
         gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
         gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
         gc_util = gc_exec/gc_period;
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,GC,gc_util) == -1){
+        if(find_util_safe(task,tasknum,metadata,old,taskidx,GC,gc_util ) == -1){
             cur = cur->next;
             continue;
         }
@@ -382,7 +476,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
         gc_util = gc_exec/gc_period;
         //restriction 1. util
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,GC,gc_util) == -1){
+        if(_find_gc_safe(task,tasknum,metadata,old,taskidx,GC,gc_util,cur->idx,rsvlist_head->head->idx) == -1){
             cur = cur->next;
             continue;
         }
@@ -419,20 +513,6 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     
     //using offset factor, choose best block
     cur_offset_int = (int)(cur_offset * (float)vic_num);
-    //printf("proportion : %f, range : %d~\n",cur_offset,cur_offset_int);
-    /*
-    printf("[UGC]check proportion for each task\n");
-    for(int i=0;i<tasknum;i++){
-        int test_prop = 0;
-        for(int j=0;j<i;j++){
-            test_prop += gc_period_sort[j];
-        }
-        float test_prop_float = (float)test_prop / (float)proportion_tot;
-        int test_prop_int = (int)((float)vic_num * test_prop_float);
-        printf("[%d,%d]%f, %d\n",task_order[i],gc_period_sort[i],test_prop_float,test_prop_int);
-    }
-    abort();
-    */
   
     best_idx = vic_arr[cur_offset_int];
     //edge case handling!

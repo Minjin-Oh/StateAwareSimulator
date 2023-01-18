@@ -23,6 +23,7 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata){
     metadata->pagemap[lpa] = ppa;
     metadata->rmap[ppa] = lpa;
     metadata->total_fp--;
+    metadata->reserved_write--;
     
     //update access profile
     metadata->access_tracker[cur_IO->taskidx][ppa/PPB] = 1;

@@ -42,6 +42,8 @@ void set_scheme_flags(char* argv[],
         *wflag = 10;
     } else if (strcmp(argv[2],"MOTIVALLY")==0){
         *wflag = 11;
+    } else if (strcmp(argv[2], "GRADW")==0){
+        *wflag = 12;
     }
     else {
         *wflag = 0;
@@ -112,7 +114,8 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
     8th : gets a spatial locality of workload (for WORKGEN)
     9th : gets a temporal locality of workload (for WORKGEN)
     10th: gets a number of skewed taskset (use this only when 7th is not -1)
-    11th: gets a OP change factor. 0 = use default OP (0.32), 1 = use custom OP
+    11th: gets a initial cycle count
+    below param is DEPRICATED
     12th: gets a OP value (0.0 ~ 1.0)
     13th: gets a MINRC value (0 ~ PPB)
     */

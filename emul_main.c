@@ -11,6 +11,16 @@ int rrflag = 0;
 int MINRC;
 double OP;
 
+//FIXME::set these as global to expose to find_util_safe function
+IOhead** wq;
+IOhead** rq;
+IOhead** gcq;
+
+//FIXME:: set these as global to expose to find_write_gradient function
+float sploc;
+float tploc;
+int offset;
+
 int main(int argc, char* argv[]){
     //init params
     srand(time(NULL)); 
@@ -22,22 +32,39 @@ int main(int argc, char* argv[]){
     bhead* coldlist;
     meta* newmeta = (meta*)malloc(sizeof(meta));    //metadata structure
 
-    //int vic[tasknum],rsv[tasknum];
-    int g_cur = 0;                   //pointer for current writing page
-    int tasknum = 4;                 //number of task
-    int last_task = tasknum-1;       //index of last I/O task
+    //initialize flag variables first.
+    int gcflag = 0;
+    int wflag = 0;
+    int rrcond = 0; 
+    int tasknum;
+    float totutil;                   //a total utilization of current system
+    int genflag = 0;
+    int taskflag = 0;
     int skewness;                    //skew of utilization(-1 = noskew, 0 = read-skewed, 1 = write-skewed)
     int skewnum;                     //number of skewed task
-    float totutil;                   //a total utilization of current system
+    int OPflag;
+    int init_cyc = 0;
+    
+    //get flags
+    set_scheme_flags(argv,
+                     &gcflag, &wflag, &rrflag, &rrcond);
+    set_exec_flags(argv, &tasknum, &totutil,
+                   &genflag, &taskflag,
+                   &skewness, &sploc, &tploc, &skewnum,
+                   &OPflag, &init_cyc, &OP, &MINRC);
+    
+    //initialize misc variables
+    int g_cur = 0;                   //pointer for current writing page
+    int last_task = tasknum-1;       //index of last I/O task
     float rrutil;                    //a utilization allowed to data relocation job
     long cur_cp = 0;                 //current checkpoint time
-    long cur_IO_end = __LONG_MAX__;             //absolute time when current req finishes
+    long cur_IO_end = __LONG_MAX__;  //absolute time when current req finishes
     int wl_init = 0;                 //flag for wear-leveling initiation
     float WU;                        //worst-case utilization tracker.
     int do_rr = 0;
     int rr_finished = 1;
     int hot_cold_list = 0;
-    int init_cyc = 0;
+    
     FILE* rr_profile;
     FILE* w_workloads[tasknum];
     FILE* r_workloads[tasknum];
@@ -56,14 +83,14 @@ int main(int argc, char* argv[]){
     int yngest;
     int over_avg = 0;
     long rr_check = (long)100000;
-    long runtime = 160000000000;
-    long init_runtime = 160000000000;
-    //long runtime = 200000000L;
-    //long init_runtime = 200000000L;
+    //long runtime = 160000000000;
+    //long init_runtime = 160000000000;
+    long runtime = 200000000L;
+    long init_runtime = 200000000L;
     IO* cur_IO = NULL;
-    IOhead* wq[tasknum];
-    IOhead* rq[tasknum];
-    IOhead* gcq[tasknum];
+    wq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
+    rq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
+    gcq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     IOhead* rr;
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
@@ -75,7 +102,8 @@ int main(int argc, char* argv[]){
     char wjob_finished[tasknum];
     char rjob_finished[tasknum];
     char gcjob_finished[tasknum];
-
+    char wjob_deferred[tasknum];
+    long releasetime_deferred[tasknum];
     for(int i=0;i<tasknum;i++){
         wq[i] = ll_init_IO();
         rq[i] = ll_init_IO();
@@ -86,27 +114,14 @@ int main(int argc, char* argv[]){
         wjob_finished[i] = 1;   //init job-finish as 1, since no job is scheduled at initial time.
         rjob_finished[i] = 1;
         gcjob_finished[i] = 1;
+        wjob_deferred[i] = 0;
     }
     rr = ll_init_IO();
 
-  
-
-    //flag variables
-    int gcflag = 0, wflag = 0, rrcond = 0, genflag = 0, taskflag = 0;
-    float sploc, tploc;
-    int OPflag;
-    
     //only enable following two lines in a case to check util per cycle.
     //randtask_statechecker(tasknum,8000);
     //return;
 
-    //get flags
-    set_scheme_flags(argv,
-                     &gcflag, &wflag, &rrflag, &rrcond);
-    set_exec_flags(argv, &tasknum, &totutil,
-                   &genflag, &taskflag,
-                   &skewness, &sploc, &tploc, &skewnum,
-                   &OPflag, &init_cyc, &OP, &MINRC);
     //add scheme flags for flexible write policy change
 
     printf("[ SCHEMES ] %d, %d, %d, %d\n",wflag,gcflag,rrflag,rrcond);
@@ -157,6 +172,7 @@ int main(int argc, char* argv[]){
     }
     
     //WORKLOAD GENERATOR CODE
+    
     if(genflag == 1){//generate workload and save
         FILE* file_taskparam = fopen("taskparam.csv","r");
         rand_tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
@@ -165,8 +181,8 @@ int main(int argc, char* argv[]){
         } else if(OPflag == 1){
             get_task_from_file_recalc(rand_tasks,tasknum,file_taskparam,max_valid_pg);
         }
-        int hotspace = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc);
-        IOgen(tasknum,rand_tasks,runtime,hotspace,sploc,tploc);
+        offset = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc);
+        IOgen(tasknum,rand_tasks,runtime,offset,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
         return 0;
@@ -240,11 +256,12 @@ int main(int argc, char* argv[]){
     }
     printf("total fp after dummy : %d\n",newmeta->total_fp);
     ll_append(fblist_head,cur_fb);
-    //sleep(1);
+    
     //!!finish initial writing
     FILE* u_check = fopen("rrchecker.csv","w");
     while(cur_cp <= runtime){
-        //printf("curcp : %d\n",cur_cp);
+        
+        //if current time is near end of workload window, rewind to first of workload
         if((double)cur_cp >= (double)runtime * 0.95){
             long prev_run;
             printf("curcp:%ld,runtime:%ld\n",cur_cp,runtime);
@@ -262,21 +279,21 @@ int main(int argc, char* argv[]){
         //flash state checker
         if(cur_cp % 1000000L == 0){
             total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-            /*
+            
             if(total_u >= 1.0){
                 printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                 fprintf(fplife,"%ld,",cur_cp);
                 sleep(1);
                 return 1;
-            }*/
+            }
         }
         for(int idx=0;idx<NOB;idx++){
             if(newmeta->state[idx] >= MAXPE){
-                total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-                printf("[%ld]a block reach maximum P/E, util : %d\n",total_u);
-                fprintf(fplife,"%ld,",cur_cp);
-                sleep(1);
-                return 1;
+                //total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
+                //printf("[%ld]a block reach maximum P/E, util : %d\n",total_u);
+                //fprintf(fplife,"%ld,",cur_cp);
+                //sleep(1);
+                //return 1;
             } else {
                 /*do nothing*/
             }
@@ -286,6 +303,7 @@ int main(int argc, char* argv[]){
         //req completion logic
         if(cur_IO_end == cur_cp){
             if(cur_IO != NULL){
+                /* a logic to handle I/O finish*/
                 if(cur_IO->type == GCER){
                     //for(int i=0;i<4;i++){
                     //    print_hotdist_profile(fps[tasknum+i],tasks,cur_cp, newmeta,-1,i);
@@ -296,32 +314,51 @@ int main(int argc, char* argv[]){
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
                                     newmeta->total_fp);
-                    /*
+                    
                     if(total_u > 1.0){
                         printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                         fprintf(fplife,"%ld,",cur_cp);
                         sleep(1);
                         return 1;
-                    }*/
+                    }
                 }
                 //if last req is finished, do the following
                 if(cur_IO->last == 1){
                     //check I/O latency
                     check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
                     if(check_dl_violation(tasks,cur_IO,cur_cp)==1){
-                        fprintf(fplife,"%ld,",cur_cp);
-                        fflush(fplife);
+                        //fprintf(fplife,"%ld,",cur_cp);
+                        //fflush(fplife);
                         printf("dl miss detected,");
-                        sleep(1);
-                        return 1;
+                        //sleep(1);
+                        //return 1;
                     }
-                    //set finish flags for scheduler
+                    //set finish flags for scheduler, 
+                    //and if current job is delayed, check if next release is possible.
                     if(cur_IO->type == WR){
                         wjob_finished[cur_IO->taskidx] = 1;
+                        if(cur_cp > cur_IO->deadline){
+                            next_w_release[cur_IO->taskidx] = cur_cp;
+                        }
                     } else if (cur_IO->type == RD){
                         rjob_finished[cur_IO->taskidx] = 1;
+                        if(cur_cp > cur_IO->deadline){
+                            next_r_release[cur_IO->taskidx] = cur_cp;
+                        }
                     } else if (cur_IO->type == GCER){
                         gcjob_finished[cur_IO->taskidx] = 1;
+                        if(cur_cp > cur_IO->deadline){
+                            next_gc_release[cur_IO->taskidx] = cur_cp;
+                        }
+                        for(int a=0;a<tasknum;a++){
+                            if(wjob_deferred[a] == 1){
+                                wjob_deferred[a] = 0;
+                                //if current write is delayed, check if write release is possible
+                                if(cur_cp >= cur_IO->deadline){
+                                    next_w_release[a] = cur_cp;
+                                } 
+                            }
+                        }
                     }
                 }
                 //set finish flags of current rr to shedule new WL
@@ -337,17 +374,7 @@ int main(int argc, char* argv[]){
                            fblist_head, rsvlist_head, full_head, 
                            &(cur_GC[cur_IO->taskidx]),&(cur_rr));
 
-                //for the case of late completion, set new release time as now.
-                if(cur_cp > cur_IO->deadline){
-                    if(cur_IO->type == WR){
-                        next_w_release[cur_IO->taskidx] = cur_cp;  
-                    } else if (cur_IO->type == RD){
-                        next_r_release[cur_IO->taskidx] = cur_cp;
-                    } else if (cur_IO->type == GCER){
-                        next_gc_release[cur_IO->taskidx] = cur_cp;  
-                    }
-                }
-                
+
                 //reset I/O pointer and IO end time tracker
                 cur_IO = NULL;
                 cur_IO_end = __LONG_MAX__;
@@ -357,22 +384,35 @@ int main(int argc, char* argv[]){
         //job release logic
         //release I/O task jobs
         for(int j=0;j<tasknum;j++){
-             if(cur_cp == next_w_release[j]){
+            //printf("[%d]fin flags : %d, %d, %d\n",j,wjob_finished[j],rjob_finished[j],gcjob_finished[j]);
+        }
+        for(int j=0;j<tasknum;j++){
+            if(newmeta->total_fp < newmeta->reserved_write + tasks[j].wn){
+                printf("%d task write deferred\n",j);
+                wjob_deferred[j] = 1;
+            }
+            if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){
                 //printf("next w : %ld, cur cp : %ld, wjob : %d\n",next_w_release[j],cur_cp,wjob_finished[j]);
                 cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
                                               fblist_head, full_head, write_head,
                                               w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
                 wjob_finished[j] = 0;
+            } else if (cur_cp == next_w_release[j] && wjob_finished[j] == 0){
+                next_w_release[j] = cur_cp + (long)tasks[j].wp;
+            } else if (cur_cp == next_w_release[j] && wjob_deferred[j] == 1){
+                next_w_release[j] = cur_cp + (long)tasks[j].wp;
             }
-            if(cur_cp == next_r_release[j]){
+            if(cur_cp == next_r_release[j] && rjob_finished[j] == 1){
                 //printf("next r : %ld, cur cp : %ld, rjob : %d\n",next_r_release[j],cur_cp,rjob_finished[j]);
                 read_job_start_q(tasks,j,newmeta,
                                  r_workloads[j],rq[j], cur_cp);
                 next_r_release[j] = cur_cp + (long)tasks[j].rp;
                 rjob_finished[j] = 0;
+            } else if (cur_cp == next_r_release[j] && rjob_finished[j] == 0){
+                next_r_release[j] = cur_cp + (long)tasks[j].rp;
             }
-            if(cur_cp == next_gc_release[j]){
+            if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){
                 //printf("next gc : %ld, cur cp : %ld, gcjob : %d\n",next_gc_release[j],cur_cp,gcjob_finished[j]);
                 if(newmeta->total_invalid >= expected_invalid){
                     gc_job_start_q(tasks, j, tasknum, newmeta,
@@ -384,7 +424,9 @@ int main(int argc, char* argv[]){
                     next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
                     gcjob_finished[j] = 1;
                 }
-            } 
+            } else if (cur_cp == next_gc_release[j] && gcjob_finished[j] == 0){
+                next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
+            }
         }
         //release WL jobs
         if(oldest-yngest >= THRESHOLD){//wl start signal
@@ -468,6 +510,8 @@ int main(int argc, char* argv[]){
             //if something's popped out, update cur_IO_end
             if(cur_IO != NULL){
                 cur_IO_end = cur_cp + cur_IO->exec;
+            } else {
+                cur_IO_end = __LONG_MAX__;
             }
         }
         

@@ -1,3 +1,5 @@
+/*FIXME:: assign function MUST give integer array pointer "lpas"*/
+
 #include "assignW.h"
 #include "findW.h"
 block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadata,
@@ -196,10 +198,10 @@ block* assign_writefixed(rttask* task, int taskidx, int tasknum, meta* metadata,
 }
 
 block* assign_writehotness(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                         bhead* fblist_head, bhead* write_head, block* cur_b, int lpa){
+                         bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas,int idx){
     int target;
     block* cur = NULL;
-    target = find_write_hotness(task,taskidx,tasknum,metadata,fblist_head,write_head,lpa);
+    target = find_write_hotness(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx);
     if(cur_b != NULL){
         if(metadata->state[target] == metadata->state[cur_b->idx] && cur_b->fpnum > 0){
         //don't have to change wb? just return current block pointer.
@@ -268,13 +270,13 @@ block* assign_writehot_motiv(rttask* task, int taskidx, int tasknum, meta* metad
         if(metadata->state[target] == metadata->state[cur_b->idx] && cur_b->fpnum > 0){
         //don't have to change wb? just return current block pointer.
         //remember that when current block runs out of fp, we must change block
-            printf("do not change wb, left fp : %d\n",cur_b->fpnum);
+            //printf("do not change wb, left fp : %d\n",cur_b->fpnum);
             return cur_b;
         } else {
-            printf("target block : %d\n",target);
+            //printf("target block : %d\n",target);
             cur = ll_remove(fblist_head,target);
             if (cur != NULL){
-                printf("retreived %d\n",cur->idx);
+                //printf("retreived %d\n",cur->idx);
                 ll_append(write_head,cur);
             } else {
                 cur = ll_findidx(write_head,target);
@@ -282,6 +284,39 @@ block* assign_writehot_motiv(rttask* task, int taskidx, int tasknum, meta* metad
         }
     } else { //initial case :: cur_b == NULL. find new block
         printf("[INIT]target block : %d\n",target);
+        cur = ll_remove(fblist_head,target);
+        if (cur != NULL){
+            ll_append(write_head,cur);
+        } else {
+            cur = ll_findidx(write_head,target);
+        }
+    }//if state is different, get another write block
+    return cur;
+}
+
+block* assign_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx){
+    int target;
+    block* cur = NULL;
+    target = find_write_gradient(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx);
+    if(cur_b != NULL){
+        if(metadata->state[target] == metadata->state[cur_b->idx] && cur_b->fpnum > 0){
+        //don't have to change wb? just return current block pointer.
+        //remember that when current block runs out of fp, we must change block
+            //printf("do not change wb, left fp : %d\n",cur_b->fpnum);
+            return cur_b;
+        } else {
+            //printf("target block : %d\n",target);
+            cur = ll_remove(fblist_head,target);
+            if (cur != NULL){
+                //printf("retreived %d\n",cur->idx);
+                ll_append(write_head,cur);
+            } else {
+                cur = ll_findidx(write_head,target);
+            }
+        }
+    } else { //initial case :: cur_b == NULL. find new block
+        //printf("[INIT]target block : %d\n",target);
         cur = ll_remove(fblist_head,target);
         if (cur != NULL){
             ll_append(write_head,cur);

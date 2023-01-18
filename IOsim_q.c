@@ -20,6 +20,8 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     int bnum = 0;
     float exec_sum = 0.0, period = (float)tasks[taskidx].wp;
 
+    //if current fp cannot handle reserved write + current write, abort releasing new write job.
+    
     for(int i=0;i<tasks[taskidx].wn;i++){
         lpas[i] = IOget(fp_w);
     }
@@ -42,11 +44,11 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     } else if (wflag == 3){
         cur = assign_writelimit(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas);
     } else if (wflag == 4){
-        cur = assign_writeweighted(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas, 0);
+        cur = assign_writeweighted(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0);
     } else if (wflag == 5){
         cur = assign_writefixed(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
     } else if (wflag == 6){
-        cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0]);
+        cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0);
     } else if (wflag == 7){
         if(cur_target == NULL){
             cur = assign_write_old(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
@@ -61,8 +63,9 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
     } else if (wflag == 11){//write motiv policies
         cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
+    } else if (wflag == 12){
+        cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0);
     }
-
     //save the destination ppa for each write
     //ONLY update blockmanager (reserve free page)
     //page mapping updated later
@@ -86,7 +89,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             } else if (wflag == 5){
                 cur = assign_writefixed(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
             } else if (wflag == 6){
-                cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i]);
+                cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i);
             } else if (wflag == 7){
                 cur = assign_write_old(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
             } else if (wflag == 8){
@@ -97,6 +100,8 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                 cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
             } else if (wflag == 11){//write motiv policies
                 cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
+            } else if (wflag == 12){
+                cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i);
             }
             if(cur==NULL){
                 printf("noFP available\n, totalfp : %d\n");
@@ -119,6 +124,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         metadata->write_cnt[lpa]++;
         metadata->write_cnt_task[taskidx]++;
         metadata->tot_write_cnt++;
+        metadata->reserved_write++;
         req->type = WR;
         req->taskidx = taskidx;
         req->lpa = lpa;
