@@ -143,3 +143,6 @@ rttask* generate_taskset_hardcode(int tasknum, int addr);
 rttask* generate_taskset_fixed(int addr, float* result_util);
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile);
 void randtask_statechecker(int tasknum,int addr);
+
+//a proportion profiler for lpas
+void _find_rank_lpa(rttask* tasks, int tasknum);

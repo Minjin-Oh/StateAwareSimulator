@@ -527,5 +527,11 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             cur = cur->next;
         }
     }
+
+    //free malloc arrays
+    free(gc_period_sort) ;   //array for task sorting
+    free(task_order);        //array for task sorting
+    free(vic_arr);           //array for victim candidate
+    free(gc_exec_arr);       //array for victim candidate
     return best_idx;
 }

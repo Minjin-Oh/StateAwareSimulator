@@ -21,6 +21,10 @@ float sploc;
 float tploc;
 int offset;
 
+//FIXME:: set these as global to expose proportion array to find_write_gradient function
+double* w_prop;
+double* r_prop;
+
 int main(int argc, char* argv[]){
     //init params
     srand(time(NULL)); 
@@ -31,7 +35,7 @@ int main(int argc, char* argv[]){
     bhead* hotlist;                                 //(for WL) overlaps previous blocklist
     bhead* coldlist;
     meta* newmeta = (meta*)malloc(sizeof(meta));    //metadata structure
-
+    
     //initialize flag variables first.
     int gcflag = 0;
     int wflag = 0;
@@ -76,7 +80,8 @@ int main(int argc, char* argv[]){
 
     rttask* rand_tasks = NULL;
     rttask* tasks = NULL;
-
+    w_prop = (double*)malloc(sizeof(double)*tasknum*2);
+    r_prop = (double*)malloc(sizeof(double)*tasknum*2);
     //simulate I/O(init related params)
     float total_u;
     int oldest;
@@ -181,7 +186,7 @@ int main(int argc, char* argv[]){
         } else if(OPflag == 1){
             get_task_from_file_recalc(rand_tasks,tasknum,file_taskparam,max_valid_pg);
         }
-        offset = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc);
+        offset = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc/2.0);
         IOgen(tasknum,rand_tasks,runtime,offset,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
@@ -196,7 +201,8 @@ int main(int argc, char* argv[]){
     fclose(main_taskparam);
     tasks = rand_tasks;
     //sleep(1);
-    
+    _find_rank_lpa(tasks,tasknum);
+    offset = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc/2.0);
     //init csv files
     fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
     rr_profile = fopen("rr_prof.csv","w");
@@ -330,8 +336,8 @@ int main(int argc, char* argv[]){
                         //fprintf(fplife,"%ld,",cur_cp);
                         //fflush(fplife);
                         printf("dl miss detected,");
-                        //sleep(1);
-                        //return 1;
+                        sleep(1);
+                        return 1;
                     }
                     //set finish flags for scheduler, 
                     //and if current job is delayed, check if next release is possible.
