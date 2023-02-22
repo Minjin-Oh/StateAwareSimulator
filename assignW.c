@@ -295,10 +295,10 @@ block* assign_writehot_motiv(rttask* task, int taskidx, int tasknum, meta* metad
 }
 
 block* assign_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx){
+                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, int flag){
     int target;
     block* cur = NULL;
-    target = find_write_gradient(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx);
+    target = find_write_gradient(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,flag);
     printf("fbnum,writenum:%d,%d\n",fblist_head->blocknum,write_head->blocknum);
     if(cur_b != NULL){
         if(metadata->state[target] == metadata->state[cur_b->idx] && cur_b->fpnum > 0){

@@ -44,6 +44,8 @@ void set_scheme_flags(char* argv[],
         *wflag = 11;
     } else if (strcmp(argv[2], "GRADW")==0){
         *wflag = 12;
+    } else if (strcmp(argv[2], "GRADW_MOD")==0){
+        *wflag = 13;
     }
     else {
         *wflag = 0;

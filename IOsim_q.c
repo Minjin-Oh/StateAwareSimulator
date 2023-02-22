@@ -63,8 +63,8 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
     } else if (wflag == 11){//write motiv policies
         cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
-    } else if (wflag == 12){
-        cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0);
+    } else if (wflag == 12 || wflag == 13){
+        cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0,wflag);
     }
     //save the destination ppa for each write
     //ONLY update blockmanager (reserve free page)
@@ -100,8 +100,8 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                 cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
             } else if (wflag == 11){//write motiv policies
                 cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
-            } else if (wflag == 12){
-                cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i);
+            } else if (wflag == 12 || wflag == 13){
+                cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
             }
             if(cur==NULL){
                 printf("noFP available\n, totalfp : %d\n");

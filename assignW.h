@@ -20,4 +20,4 @@ block* assign_write_old(rttask* task, int taskidx, int tasknum, meta* metadata,
 block* assign_writehot_motiv(rttask* task, int taskidx, int tasknum, meta* metadata,
                            bhead* fblist_head, bhead* write_head, block* cur_b, int lpa, int policy);
 block* assign_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                           bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx);
+                           bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, int flag);

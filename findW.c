@@ -793,7 +793,7 @@ int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metad
 }
 
 
-int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx){
+int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, int flag){
     //params
     int* candidate_arr = (int*)malloc(sizeof(int)*(write_head->blocknum+fblist_head->blocknum));
     int* cand_state_arr = (int*)malloc(sizeof(int)*(write_head->blocknum+fblist_head->blocknum));
@@ -894,20 +894,34 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     //using pre-defined proportion, find a proper block index.
     if(w_hot == 1){
         if (whotspace == 1){
-            blockidx = (int)(w_prop[taskidx*2] * candidate_num);
-            //printf("[W]hot part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2],blockidx);
+            if(flag == 12){
+                blockidx = candidate_num - (int)(w_prop[taskidx*2] * candidate_num);
+            } else if (flag == 13){
+                blockidx = (int)(w_prop[taskidx*2] * candidate_num);
+            } else {
+                printf("unknown flag, aborting\n");
+                abort();
+            }
+            printf("[W]hot part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2],blockidx);
         } else if (whotspace == 0){
-            blockidx = (int)(w_prop[taskidx*2+1] * candidate_num);
-            //printf("[W]cold part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2+1],blockidx);
+            if(flag == 12){
+                blockidx = candidate_num - (int)(w_prop[taskidx*2+1] * candidate_num);
+            } else if (flag == 13){
+                blockidx = (int)(w_prop[taskidx*2+1] * candidate_num);
+            } else {
+                printf("unknown flag, aborting\n");
+                abort();
+            }
+            printf("[W]cold part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2+1],blockidx);
         }
     }
     else if (r_hot == 1){
         if (rhotspace == 1){
-            blockidx = candidate_num - (int)(r_prop[taskidx*2] * candidate_num);
-            //printf("[R]hot part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2],blockidx);
+            blockidx = (int)(r_prop[taskidx*2] * candidate_num);
+            printf("[R]hot part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2],blockidx);
         } else if (rhotspace == 0){
-            blockidx = candidate_num - (int)(r_prop[taskidx*2+1] * candidate_num);
-            //printf("[R]cold part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2+1],blockidx);
+            blockidx = (int)(r_prop[taskidx*2+1] * candidate_num);
+            printf("[R]cold part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2+1],blockidx);
         }
     }
     //edgecase:: if blockidx == candidate_num(prop == 1.00), return candidate_num-1, a last possible block.
@@ -918,7 +932,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     //printf("blockidx = %d, max = %d\n",blockidx,candidate_num);
     
     res = candidate_arr[blockidx];
-    //printf("return idx = %d, blockidx = %d\n",res,blockidx);
+    printf("return idx = %d, blockidx = %d\n",res,blockidx);
     free(candidate_arr);
     free(cand_state_arr);
     return res;
