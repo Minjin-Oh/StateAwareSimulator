@@ -100,6 +100,16 @@ int __get_min(int a, int b, int c){
     }
 }
 
+double find_max_double(double a, double b, double c){
+    if (a<b){
+        if (b<c){return c;}
+        else {return b;}
+    } else{
+        if (a<c){return c;}
+        else return a;
+    }
+}
+
 int _find_min_period(rttask* task,int tasknum){
     int ret = -1;
     int min_each_task = -1;

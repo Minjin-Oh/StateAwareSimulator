@@ -299,7 +299,7 @@ block* assign_write_gradient(rttask* task, int taskidx, int tasknum, meta* metad
     int target;
     block* cur = NULL;
     target = find_write_gradient(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,flag);
-    printf("fbnum,writenum:%d,%d\n",fblist_head->blocknum,write_head->blocknum);
+    //printf("fbnum,writenum:%d,%d\n",fblist_head->blocknum,write_head->blocknum);
     if(cur_b != NULL){
         if(metadata->state[target] == metadata->state[cur_b->idx] && cur_b->fpnum > 0){
         //don't have to change wb? just return current block pointer.

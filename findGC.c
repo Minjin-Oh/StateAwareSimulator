@@ -493,6 +493,28 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         cur = cur->next;
     }
     
+    //EDGE CASE HANDLING : if vic_num is 0, ignore find_gc_safe and add victims.
+    if(vic_num == 0){
+        cur = full_head->head;
+        while(cur != NULL){
+            if(metadata->invnum[cur->idx] < MINRC){
+                cur = cur->next;
+                continue;
+            }
+            cur_state = metadata->state[cur->idx];
+            copyblock_state = metadata->state[rsvlist_head->head->idx];
+            new_rc = metadata->invnum[cur->idx];
+            gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+            gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
+            gc_util = gc_exec/gc_period;
+            gc_exec_arr[vic_num] = gc_exec;
+            vic_arr[vic_num] = cur->idx;
+            vic_num++;
+            cur = cur->next;
+        }
+    }
+    //!EDGE CASE HANDLING
+
     //sort candidate block list
     for(int i=vic_num-1;i>0;i--){
         for(int j=0;j<i;j++){
@@ -515,7 +537,9 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     cur_offset_int = (int)(cur_offset * (float)vic_num);
   
     best_idx = vic_arr[cur_offset_int];
-    //edge case handling!
+    
+    /*
+    //edge case handling(deprecated)
     if(best_idx == -1){
         cur = full_head->head;
         best_invalid = metadata->invnum[cur->idx];
@@ -527,6 +551,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             cur = cur->next;
         }
     }
+    */
 
     //free malloc arrays
     free(gc_period_sort) ;   //array for task sorting

@@ -1,5 +1,7 @@
 #include "init.h"
 void init_metadata(meta* metadata, int tasknum, int cycle){
+    FILE* cyc_fp;
+    int cyc_b;
     for (int i=0;i<NOP;i++){
         metadata->pagemap[i] = -1;
         metadata->rmap[i] = -1;
@@ -20,6 +22,14 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
     metadata->total_fp = NOP-PPB*tasknum;
     metadata->reserved_write = 0;
 
+    //if input cyc value is -1, update init cyc as randomly generated value, stored in cyc.csv.
+    if(cycle == -1){
+        cyc_fp = fopen("cyc.csv","r");
+        for(int i=0;i<NOB;i++){
+            fscanf(cyc_fp,"%d,",&cyc_b);
+            metadata->state[i] = cyc_b;
+        }
+    }
     //REFACTOR::for per-task tracking, malloc these member variables.
     //because number of task is declared in main, not header.
     metadata->read_cnt_task = (int*)malloc(sizeof(int)*tasknum);

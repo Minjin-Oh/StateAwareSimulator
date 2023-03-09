@@ -16,6 +16,7 @@ extern IOhead** gcq;
 //FIXME:: a temporary solution to expose proportion to find_write_gradient function.
 extern double* w_prop;
 extern double* r_prop;
+extern double* gc_prop;
 
 //Determine rank of current lpa using task & locality information.
 //assuming that locality is fixed, rank of lpa is determined statically.
@@ -36,11 +37,15 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     int write_idx[tasknum*2];
     double read_intensity[tasknum * 2];
     int read_idx[tasknum*2];
+    double gc_intensity[tasknum * 2];
+    int gc_idx[tasknum*2];
     double wi_sum_arr[tasknum * 2];
     double ri_sum_arr[tasknum * 2];
+    double gci_sum_arr[tasknum * 2];
     double w_proportion[tasknum * 2];
     double r_proportion[tasknum * 2];
-    double w_weight_sum = 0.0, r_weight_sum = 0.0, upper_weight = 0.0;
+    double gc_proportion[tasknum * 2];
+    double w_weight_sum = 0.0, r_weight_sum = 0.0, gc_weight_sum = 0.0, upper_weight = 0.0;
     
     //init index and intensity values
     //intensity is # of access per unit time, calculated as task (I/O speed * address pick probability) 
@@ -49,10 +54,14 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
         write_intensity[(2*i)+1] =  (double)tasks[i].wn / (double)tasks[i].wp * (1.0/(double)((tasks[i].addr_ub - tasks[i].addr_lb - hotspace))) * (1.0 - (double)tploc);
         read_intensity[2*i] = (double)tasks[i].rn / (double)tasks[i].rp * (1/(double)hotspace) * tploc;
         read_intensity[(2*i)+1] = (double)tasks[i].rn / (double)tasks[i].rp * (1/(double)((tasks[i].addr_ub - tasks[i].addr_lb - hotspace))) * (1.0 - (double)tploc);
+        gc_intensity[2*i] = write_intensity[2*i] / (double)MINRC;
+        gc_intensity[(2*i)+1] = write_intensity[(2*i)+1] / (double)MINRC;
         write_idx[2*i] = 2*i;
         write_idx[2*i+1] = 2*i+1;
         read_idx[2*i] = 2*i;
         read_idx[2*i+1] = 2*i+1;
+        gc_idx[2*i] = 2*i;
+        gc_idx[2*i+1] = 2*i+1;
     }
 
 
@@ -81,6 +90,18 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
             }
         }
     }
+    for(int i=tasknum*2-1;i>0;i--){
+        for(int j=0;j<i;j++){
+            if(gc_intensity[j] > gc_intensity[j+1]){
+                temp_d = gc_intensity[j];
+                gc_intensity[j] = gc_intensity[j+1];
+                gc_intensity[j+1] = temp_d;
+                temp_int = gc_idx[j];
+                gc_idx[j] = gc_idx[j+1];
+                gc_idx[j+1] = temp_int;
+            }
+        }
+    }
 
     //check code
     /*
@@ -100,11 +121,15 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
         } else { //coldspace
             wi_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace) * write_intensity[i];
         }
-
         if(read_idx[i] % 2 == 0){
             ri_sum_arr[i] = (double)hotspace * read_intensity[i];
         } else {
             ri_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace) * read_intensity[i];
+        }
+        if(gc_idx[i] % 2 == 0){
+            gci_sum_arr[i] = (double)hotspace * gc_intensity[i];
+        } else {
+            gci_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace) * gc_intensity[i];
         }
     }
     /*for(int i=0;i<tasknum*2;i++){
@@ -118,6 +143,7 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     for(int i=0;i<tasknum*2;i++){
         w_weight_sum += wi_sum_arr[i];
         r_weight_sum += ri_sum_arr[i];
+        gc_weight_sum += gci_sum_arr[i];
     }
 
     for(int i=0;i<tasknum*2;i++){
@@ -132,6 +158,12 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
             upper_weight += ri_sum_arr[j];
         }
         r_proportion[i] = upper_weight / r_weight_sum;
+
+        upper_weight = 0.0;
+        for( int j=i+1;j<tasknum*2;j++){
+            upper_weight += gci_sum_arr[j];
+        }
+        gc_proportion[i] = upper_weight / gc_weight_sum;
     }
     /*
     for(int i=0;i<tasknum*2;i++){
@@ -143,8 +175,10 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     for(int i=0;i<tasknum*2;i++){
         w_prop[write_idx[i]] = w_proportion[i];
         r_prop[read_idx[i]] = r_proportion[i];
+        gc_prop[gc_idx[i]] = gc_proportion[i];
         printf("[W]%d-th section : %f\n",write_idx[i],w_proportion[i]);
         printf("[R]%d-th section : %f\n",read_idx[i],r_proportion[i]);
+        printf("[G]%d-th section : %f\n",gc_idx[i],gc_proportion[i]);
     }
     //as proportion is determined, a task will use (length * proportion)-th flash block for their allocation.
     //e.g., if proportion is 0.5, it will be allocated to (length/2)-th flash block.
@@ -807,13 +841,13 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     int whot_bound = task[taskidx].addr_lb;
     int rhot_bound = task[taskidx].addr_lb + _offset;
     
-    //temp values for intensity comparison.
+    //params for intensity comparison.
     int whotspace = 0, rhotspace = 0;
     int w_hot = 0, r_hot = 0;
-    double w_weight = 0.0, r_weight = 0.0;
-    double w_gradient, r_gradient;
-    
-
+    double w_weight = 0.0, r_weight = 0.0, gc_weight = 0.0;
+    double w_gradient, r_gradient, gc_gradient;
+    double w_intensity, r_intensity, gc_intensity;
+    double max_intensity;
     //init, find & sort candidate block list.
     block* cur = NULL;
     cur = write_head->head;
@@ -855,6 +889,21 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
 
     //EDGECASE: when candidate num is 0 (no feasible block)
     if(candidate_num == 0){
+        //HANDLING: ignore find_write_safe and add candidate block.
+        cur = write_head->head;
+        while(cur!=NULL){
+            candidate_arr[candidate_num] = cur->idx;
+            candidate_num++;
+            cur = cur->next;
+        }
+        cur = fblist_head->head;
+        while(cur!=NULL){
+            candidate_arr[candidate_num] = cur->idx;
+            candidate_num++;
+            cur = cur->next;
+        }
+        /* 
+        //old edge case handling logic (deprecated)
         cur = write_head->head;
         if(cur == NULL){
             cur = fblist_head->head;
@@ -862,8 +911,11 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         free(candidate_arr);
         free(cand_state_arr);
         return cur->idx;
+        */
     }
-    //
+    //!EDGECASE
+    
+    //define weight
     if(w_lpas[idx] < whot_bound + hotspace && w_lpas[idx] > whot_bound){
         whotspace = 1;
     }
@@ -880,19 +932,23 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     } else { 
         r_weight = (double)task[taskidx].rn / (double)task[taskidx].rp * (1/(double)((task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace))) * (1.0 - (double)tploc);  
     }
-    //weight defined
-    //code for checking page characteristic
+    gc_weight = w_weight / MINRC;
+    
+    //check intensity
     w_gradient = (double)(ENDW - STARTW) / (double)MAXPE;
     r_gradient = (double)(ENDR - STARTR) / (double)MAXPE;
-    
-    if (w_gradient * w_weight + r_gradient * r_weight < 0.0){
-        w_hot = 1; //prefers old block
-    } else if (w_gradient * w_weight + r_gradient * r_weight >= 0.0){
-        r_hot = 1; //prefers young block
+    gc_gradient = (double)MINRC * (w_gradient + r_gradient) + (double)(ENDE-STARTE)/(double)MAXPE;
+    w_intensity = w_weight * w_gradient;
+    if(w_intensity < 0.0){
+        w_intensity = -w_intensity;
     }
-    
+    r_intensity = r_weight * r_gradient;
+    gc_intensity = gc_weight * gc_gradient;
+    max_intensity = find_max_double(w_intensity,r_intensity,gc_intensity);
+
     //using pre-defined proportion, find a proper block index.
-    if(w_hot == 1){
+    if(max_intensity == w_intensity){
+        //printf("w focused\n");
         if (whotspace == 1){
             if(flag == 12){
                 blockidx = candidate_num - (int)(w_prop[taskidx*2] * candidate_num);
@@ -902,7 +958,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
                 printf("unknown flag, aborting\n");
                 abort();
             }
-            printf("[W]hot part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2],blockidx);
+            //printf("[W]hot part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2],blockidx);
         } else if (whotspace == 0){
             if(flag == 12){
                 blockidx = candidate_num - (int)(w_prop[taskidx*2+1] * candidate_num);
@@ -912,18 +968,28 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
                 printf("unknown flag, aborting\n");
                 abort();
             }
-            printf("[W]cold part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2+1],blockidx);
+            //printf("[W]cold part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2+1],blockidx);
         }
     }
-    else if (r_hot == 1){
+    else if (max_intensity == r_intensity){
+        //printf("r focused\n");
         if (rhotspace == 1){
             blockidx = (int)(r_prop[taskidx*2] * candidate_num);
-            printf("[R]hot part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2],blockidx);
+            //printf("[R]hot part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2],blockidx);
         } else if (rhotspace == 0){
             blockidx = (int)(r_prop[taskidx*2+1] * candidate_num);
-            printf("[R]cold part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2+1],blockidx);
+            //printf("[R]cold part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2+1],blockidx);
         }
     }
+    else if (max_intensity == gc_intensity){
+        //printf("gc focused\n");
+        if (whotspace == 1){
+            blockidx = (int)(gc_prop[taskidx*2]*candidate_num);
+        } else if (whotspace == 0){
+            blockidx = (int)(gc_prop[taskidx*2+1]*candidate_num);
+        }
+    }
+    
     //edgecase:: if blockidx == candidate_num(prop == 1.00), return candidate_num-1, a last possible block.
     if(blockidx == candidate_num){
         blockidx = candidate_num-1;
@@ -932,7 +998,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     //printf("blockidx = %d, max = %d\n",blockidx,candidate_num);
     
     res = candidate_arr[blockidx];
-    printf("return idx = %d, blockidx = %d\n",res,blockidx);
+    //printf("return idx = %d, blockidx = %d\n",res,blockidx);
     free(candidate_arr);
     free(cand_state_arr);
     return res;

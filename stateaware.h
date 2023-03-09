@@ -135,6 +135,7 @@ void print_hotdist_profile(FILE* fp, rttask* tasks, int cur_cp, meta* metadata, 
 void print_freeblock_profile(FILE* fp, int cur_cp, meta* metadata, bhead* fblist_head, bhead* write_head);
 void print_invalid_profile(FILE* fp, int cur_cp, meta* metadata);
 float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* fp, int yng, int old,long cur_cp);
+
 //gen_task
 rttask* generate_taskset(int tasknum, float util, int addr, float* result_util, int cycle);
 rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
@@ -146,3 +147,6 @@ void randtask_statechecker(int tasknum,int addr);
 
 //a proportion profiler for lpas
 void _find_rank_lpa(rttask* tasks, int tasknum);
+
+//util.c functions
+double find_max_double(double a, double b, double c);

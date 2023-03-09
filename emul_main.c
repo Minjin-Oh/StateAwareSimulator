@@ -24,6 +24,7 @@ int offset;
 //FIXME:: set these as global to expose proportion array to find_write_gradient function
 double* w_prop;
 double* r_prop;
+double* gc_prop;
 
 int main(int argc, char* argv[]){
     //init params
@@ -82,6 +83,7 @@ int main(int argc, char* argv[]){
     rttask* tasks = NULL;
     w_prop = (double*)malloc(sizeof(double)*tasknum*2);
     r_prop = (double*)malloc(sizeof(double)*tasknum*2);
+    gc_prop = (double*)malloc(sizeof(double)*tasknum*2);
     //simulate I/O(init related params)
     float total_u;
     int oldest;
@@ -90,8 +92,8 @@ int main(int argc, char* argv[]){
     long rr_check = (long)100000;
     //long runtime = 160000000000;
     //long init_runtime = 160000000000;
-    long runtime = 200000000L;
-    long init_runtime = 200000000L;
+    long runtime = 8000000000L;
+    long init_runtime = 8000000000L;
     IO* cur_IO = NULL;
     wq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     rq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
@@ -173,6 +175,16 @@ int main(int argc, char* argv[]){
         fprintf(taskparams,"%f\n",res);
         fflush(taskparams);
         fclose(taskparams);
+
+        if(init_cyc == -1){
+            FILE* init_cycs = fopen("cyc.csv","w");
+            for(int i=0;i<NOB;i++){
+                int temp = rand() % ((int)MAXPE/4);
+                fprintf(init_cycs,"%d,",temp);
+            }
+            fflush(init_cycs);
+            fclose(init_cycs);
+        }
         return 0;
     }
     
@@ -333,8 +345,8 @@ int main(int argc, char* argv[]){
                     //check I/O latency
                     check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
                     if(check_dl_violation(tasks,cur_IO,cur_cp)==1){
-                        //fprintf(fplife,"%ld,",cur_cp);
-                        //fflush(fplife);
+                        fprintf(fplife,"%ld,",cur_cp);
+                        fflush(fplife);
                         printf("dl miss detected,");
                         sleep(1);
                         return 1;
