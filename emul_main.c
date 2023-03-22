@@ -73,7 +73,7 @@ int main(int argc, char* argv[]){
     FILE* rr_profile;
     FILE* w_workloads[tasknum];
     FILE* r_workloads[tasknum];
-    FILE *fp, *fplife, *fpwrite, *fpread, *fprr;
+    FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
     FILE **fps;
     block* cur_wb[tasknum];
     GCblock cur_GC[tasknum];
@@ -125,7 +125,21 @@ int main(int argc, char* argv[]){
     }
     rr = ll_init_IO();
 
-    //only enable following two lines in a case to check util per cycle.
+    //overhead tracker params
+    struct timeval algo_start_time;
+    struct timeval algo_end_time;
+    struct timeval tot_start_time;
+    struct timeval tot_end_time;
+    long write_release_num = 0;
+    long gc_release_num = 0;
+    long rr_release_num = 0;
+    long write_ovhd_sum = 0;
+    long gc_ovhd_sum = 0;
+    long rr_ovhd_sum = 0;
+    long tot_runtime;
+    double tot_runtime_readable;
+    double write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg;
+    //enable following two lines in a case to check util per cycle.
     //randtask_statechecker(tasknum,8000);
     //return;
 
@@ -219,6 +233,7 @@ int main(int argc, char* argv[]){
     fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
     rr_profile = fopen("rr_prof.csv","w");
     fplife = fopen("lifetime.csv","a");
+    fpovhd = fopen("overhead.csv","a");
     finish_log = fopen("log.csv","w");
     IO_open(tasknum, w_workloads,r_workloads);
     lat_open(tasknum, lat_log_w,lat_log_r,lat_log_gc);
@@ -277,8 +292,8 @@ int main(int argc, char* argv[]){
     
     //!!finish initial writing
     FILE* u_check = fopen("rrchecker.csv","w");
+    gettimeofday(&(tot_start_time),NULL);
     while(cur_cp <= runtime){
-        
         //if current time is near end of workload window, rewind to first of workload
         if((double)cur_cp >= (double)runtime * 0.95){
             long prev_run;
@@ -300,7 +315,27 @@ int main(int argc, char* argv[]){
             
             if(total_u >= 1.0){
                 printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
+                gettimeofday(&tot_end_time,NULL);
+                tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
+                tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
+                if(write_release_num != 0){
+                    write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
+                } else {
+                    write_ovhd_avg = 0;
+                }
+                if(gc_release_num != 0){
+                    gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
+                } else {
+                    gc_ovhd_avg = 0;
+                }
+                if(rr_release_num != 0){
+                    rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
+                } else {
+                    rr_ovhd_avg = 0;
+                }
                 fprintf(fplife,"%ld,",cur_cp);
+                fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
+                fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                 sleep(1);
                 return 1;
             }
@@ -335,7 +370,27 @@ int main(int argc, char* argv[]){
                     
                     if(total_u > 1.0){
                         printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
+                        gettimeofday(&tot_end_time,NULL);
+                        tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
+                        tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
+                        if(write_release_num != 0){
+                            write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
+                        } else {
+                            write_ovhd_avg = 0;
+                        }
+                        if(gc_release_num != 0){
+                            gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
+                        } else {
+                            gc_ovhd_avg = 0;
+                        }
+                        if(rr_release_num != 0){
+                            rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
+                        } else {
+                            rr_ovhd_avg = 0;
+                        }
                         fprintf(fplife,"%ld,",cur_cp);
+                        fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
+                        fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                         sleep(1);
                         return 1;
                     }
@@ -411,9 +466,13 @@ int main(int argc, char* argv[]){
             }
             if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){
                 //printf("next w : %ld, cur cp : %ld, wjob : %d\n",next_w_release[j],cur_cp,wjob_finished[j]);
+                gettimeofday(&(algo_start_time),NULL);
                 cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
                                               fblist_head, full_head, write_head,
                                               w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
+                write_release_num++;
+                gettimeofday(&(algo_end_time),NULL);
+                write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
                 wjob_finished[j] = 0;
             } else if (cur_cp == next_w_release[j] && wjob_finished[j] == 0){
@@ -433,9 +492,13 @@ int main(int argc, char* argv[]){
             if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){
                 //printf("next gc : %ld, cur cp : %ld, gcjob : %d\n",next_gc_release[j],cur_cp,gcjob_finished[j]);
                 if(newmeta->total_invalid >= expected_invalid){
+                    gettimeofday(&(algo_start_time),NULL);
                     gc_job_start_q(tasks, j, tasknum, newmeta,
                                fblist_head, full_head, rsvlist_head, 0,
                                gcq[j], &(cur_GC[j]), gcflag, cur_cp);
+                    gc_release_num++;
+                    gettimeofday(&(algo_end_time),NULL);
+                    gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                     gcjob_finished[j] = 0;
                     next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
                 } else {
@@ -458,8 +521,13 @@ int main(int argc, char* argv[]){
             //rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
             rrutil = -1.0; //override util so that WL always run in background mode.
             //printf("[WL]rrcheck : %ld, cur_cp : %ld, util allowed : %lf\n",cur_rr.rrcheck, cur_cp, (double)rrutil);
+            gettimeofday(&(algo_start_time),NULL);
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
                             rr,&(cur_rr),(double)rrutil,cur_cp);
+            rr_release_num++;
+            gettimeofday(&(algo_end_time),NULL);
+            rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+            //printf("[RR]%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
             if(rr->reqnum != 0){
                 rr_finished = 0;
             } else {

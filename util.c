@@ -104,9 +104,9 @@ double find_max_double(double a, double b, double c){
     if (a<b){
         if (b<c){return c;}
         else {return b;}
-    } else{
+    }else{
         if (a<c){return c;}
-        else return a;
+        else{return a;}
     }
 }
 

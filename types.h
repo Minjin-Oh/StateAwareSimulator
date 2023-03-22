@@ -7,7 +7,7 @@
 #define RRWR 7
 #define RRER 8
 
-#define NOB 100
+#define NOB 1000
 #define PPB 128
 #define NOP NOB*PPB
 #define _OP 0.32
@@ -18,7 +18,7 @@
 
 //lifetime params
 #define _MINRC 35
-#define MAXPE 100
+#define MAXPE 1000
 #define MARGIN 3
 #define THRESHOLD 10
 #define OLD 0

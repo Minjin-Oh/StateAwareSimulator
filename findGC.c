@@ -407,10 +407,17 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     //sort the victim blocks in order of utilization
     //allocate victim block to GC task proportionally with GC period
     
-    int* gc_period_sort = (int*)malloc(sizeof(int)*tasknum);                //array for task sorting
-    int* task_order = (int*)malloc(sizeof(int)*tasknum);                    //array for task sorting
-    int* vic_arr = (int*)malloc(sizeof(int)*full_head->blocknum);           //array for victim candidate
-    float* gc_exec_arr = (float*)malloc(sizeof(float)*full_head->blocknum); //array for victim candidate
+    //int* gc_period_sort = (int*)malloc(sizeof(int)*tasknum);                //array for task sorting
+    //int* task_order = (int*)malloc(sizeof(int)*tasknum);                    //array for task sorting
+    //int* vic_arr = (int*)malloc(sizeof(int)*full_head->blocknum);           //array for victim candidate
+    //float* gc_exec_arr = (float*)malloc(sizeof(float)*full_head->blocknum); //array for victim candidate
+    struct timeval a;
+    struct timeval b;
+
+    int gc_period_sort[tasknum];
+    int task_order[tasknum];
+    int vic_arr[full_head->blocknum];
+    float gc_exec_arr[full_head->blocknum];
     int vic_num = 0;                                                        //number of victim
     int proportion_sum = 0;                                                 //allocated proportion for task
     int proportion_tot = 0;                                                 //sum of gc period
@@ -468,6 +475,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     //build up candidate block list first
     block* cur = NULL;
     cur = full_head->head;
+    gettimeofday(&a,NULL);
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
         copyblock_state = metadata->state[rsvlist_head->head->idx];
@@ -477,6 +485,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         gc_util = gc_exec/gc_period;
         //restriction 1. util
         if(_find_gc_safe(task,tasknum,metadata,old,taskidx,GC,gc_util,cur->idx,rsvlist_head->head->idx) == -1){
+        //if(0){
             cur = cur->next;
             continue;
         }
@@ -492,7 +501,8 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         //printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
         cur = cur->next;
     }
-    
+    gettimeofday(&b,NULL);
+    //printf("[gcsafe]%d\n",b.tv_sec * 1000000 + b.tv_usec - a.tv_sec * 1000000 - a.tv_usec);
     //EDGE CASE HANDLING : if vic_num is 0, ignore find_gc_safe and add victims.
     if(vic_num == 0){
         cur = full_head->head;
@@ -514,7 +524,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
     //!EDGE CASE HANDLING
-
+    gettimeofday(&a,NULL);
     //sort candidate block list
     for(int i=vic_num-1;i>0;i--){
         for(int j=0;j<i;j++){
@@ -528,6 +538,8 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             }
         }
     }
+    gettimeofday(&b,NULL);
+    //printf("[candsort]%d\n",b.tv_sec * 1000000 + b.tv_usec - a.tv_sec * 1000000 - a.tv_usec);
     //printf("[UGC]sorted result\n");
     for(int i=0;i<vic_num;i++){
         //printf("[UGC]sorted block %d(%d,%d,%f)\n",vic_arr[i],metadata->state[vic_arr[i]],new_rc,gc_exec_arr[i]);
@@ -554,9 +566,9 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     */
 
     //free malloc arrays
-    free(gc_period_sort) ;   //array for task sorting
-    free(task_order);        //array for task sorting
-    free(vic_arr);           //array for victim candidate
-    free(gc_exec_arr);       //array for victim candidate
+    //free(gc_period_sort) ;   //array for task sorting
+    //free(task_order);        //array for task sorting
+    //free(vic_arr);           //array for victim candidate
+    //free(gc_exec_arr);       //array for victim candidate
     return best_idx;
 }

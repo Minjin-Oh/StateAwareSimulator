@@ -854,6 +854,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
         if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+        //if(0){
             cur = cur->next;
             continue;
         }
@@ -865,6 +866,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
         if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+        //if(0){
             cur = cur->next;
             continue;
         }
@@ -889,7 +891,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
 
     //EDGECASE: when candidate num is 0 (no feasible block)
     if(candidate_num == 0){
-        //HANDLING: ignore find_write_safe and add candidate block.
+        //ignore find_write_safe and add candidate block.
         cur = write_head->head;
         while(cur!=NULL){
             candidate_arr[candidate_num] = cur->idx;
@@ -932,7 +934,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     } else { 
         r_weight = (double)task[taskidx].rn / (double)task[taskidx].rp * (1/(double)((task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace))) * (1.0 - (double)tploc);  
     }
-    gc_weight = w_weight / MINRC;
+    gc_weight = w_weight / (double)MINRC;
     
     //check intensity
     w_gradient = (double)(ENDW - STARTW) / (double)MAXPE;

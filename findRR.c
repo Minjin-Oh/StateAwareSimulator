@@ -179,11 +179,15 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
 
     int highcnt=0;
     int lowcnt=0;
-
+    int temp_highcnt=0;
+    int temp_lowcnt=0;
     int high_cyc, low_cyc, high_idx, low_idx, acc_diff;
     float benefit, loss, best;
     int vic1 = -1, vic2 = -1;
 
+    block* cur;
+    struct timeval a;
+    struct timeval b;
     //init
     block_vmap = (int**)malloc(sizeof(int*)*tasknum); 
     for(int i=0;i<tasknum;i++){
@@ -212,6 +216,19 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
     }
 
     //generate temporary block list w.r.t (A.hotness, B.state)
+    cur = full_head->head;
+    while (cur != NULL){
+        if(metadata->state[cur->idx] > cycle_avg){
+            temp_high[highcnt] = cur->idx;
+            highcnt++;
+        } else if(metadata->state[cur->idx] <= cycle_avg){
+            temp_low[lowcnt] = cur->idx;
+            lowcnt++;
+        }
+        cur = cur->next;
+    }
+    /*
+    //old blocklist seperation logic (DEPRECATED)
     for(int i=0;i<NOB;i++){
         if(metadata->state[i] > cycle_avg  && is_idx_in_list(full_head,i)){
             //printf("[HI][RRC]%d, state : %d\n",i,metadata->state[i]);
@@ -224,12 +241,19 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
             lowcnt++;
         }
     }
-    
+    printf("hghcnt:%d, lowcnt:%d\n",highcnt,lowcnt);
+    */
     best = 0.0;
     acc_diff = 0;
     //searching through all combination, check if read has benefit.
     for(int i=0;i<highcnt;i++){
         for(int j=0;j<lowcnt; j++){
+            if(metadata->access_window[i] - metadata->access_window[j] < 100){
+                continue;
+            }
+            if(metadata->state[i] - metadata->state[j] < THRESHOLD){
+                continue;
+            }
             high_cyc = metadata->state[temp_high[i]];
             low_cyc = metadata->state[temp_low[j]];
             high_idx = temp_high[i];

@@ -5,6 +5,7 @@
 #include <malloc.h>
 #include <string.h>
 #include <time.h>
+#include <sys/time.h>
 #include "types.h"
 
 int util_check_main(); //test function for debugging(not used in simulation)
