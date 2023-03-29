@@ -102,7 +102,7 @@ int main(int argc, char* argv[]){
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
-    FILE* finish_log;
+    //FILE* finish_log;
     long next_w_release[tasknum];
     long next_r_release[tasknum];
     long next_gc_release[tasknum];
@@ -139,6 +139,7 @@ int main(int argc, char* argv[]){
     long tot_runtime;
     double tot_runtime_readable;
     double write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg;
+    
     //enable following two lines in a case to check util per cycle.
     //randtask_statechecker(tasknum,8000);
     //return;
@@ -202,8 +203,7 @@ int main(int argc, char* argv[]){
         return 0;
     }
     
-    //WORKLOAD GENERATOR CODE
-    
+    //WORKLOAD GENERATOR CODE  
     if(genflag == 1){//generate workload and save
         FILE* file_taskparam = fopen("taskparam.csv","r");
         rand_tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
@@ -219,22 +219,25 @@ int main(int argc, char* argv[]){
         return 0;
     }
 
-    //init task
-    //!!!rest of the main code uses "tasks", so remember to assign correct pointer. 
+    //init task 
+    tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
     FILE* main_taskparam = fopen("taskparam.csv","r");
-    rand_tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
-    get_task_from_file(rand_tasks,tasknum,main_taskparam);
+    FILE* locfile = fopen("loc.csv","r");
+    get_task_from_file(tasks,tasknum,main_taskparam);
+    get_loc_from_file(tasks,tasknum,locfile);
     fclose(main_taskparam);
-    tasks = rand_tasks;
-    //sleep(1);
+    fclose(locfile);    
+
+    //run gradient tests for write in offline, and assign offset value for WGRAD policy.
     _find_rank_lpa(tasks,tasknum);
-    offset = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc/2.0);
+    offset = (int)((float)(tasks[0].addr_ub - tasks[0].addr_lb)*sploc/2.0);
+
     //init csv files
     fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
     rr_profile = fopen("rr_prof.csv","w");
     fplife = fopen("lifetime.csv","a");
     fpovhd = fopen("overhead.csv","a");
-    finish_log = fopen("log.csv","w");
+    //finish_log = fopen("log.csv","w");
     IO_open(tasknum, w_workloads,r_workloads);
     lat_open(tasknum, lat_log_w,lat_log_r,lat_log_gc);
     
@@ -289,8 +292,9 @@ int main(int argc, char* argv[]){
     }
     printf("total fp after dummy : %d\n",newmeta->total_fp);
     ll_append(fblist_head,cur_fb);
-    
-    //!!finish initial writing
+    //!!finish initialization
+
+    //run simulation
     FILE* u_check = fopen("rrchecker.csv","w");
     gettimeofday(&(tot_start_time),NULL);
     while(cur_cp <= runtime){

@@ -68,6 +68,8 @@ typedef struct _rttask{
     int gcp;
     int addr_lb;
     int addr_ub;
+    float sploc;
+    float tploc;
 }rttask;
 
 

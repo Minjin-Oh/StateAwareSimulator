@@ -33,6 +33,7 @@ void IOgen_task(rttask* task, long runtime, int offset, float _splocal, float _t
         fprintf(w_fp,"%d,",lpa);
     }
     for(int i=0;i<r_size;i++){
+        hot = (float)(rand()%100/100.0);
         if (hot < _tplocal){
             lpa = rand()%hotspace+offset+lb;//offset can be given
         }
@@ -156,14 +157,69 @@ void analyze_IO(FILE* fp){
     printf("\n");
 }
 
+void gen_loc(rttask* task, int rank, float* _sploc, float* _tploc, int* offset){
+    //generate locality parameter for task.
+    //rank ranges from 0 to 3.
+    //if rank is near 0, task has low tploc + high sploc.
+    //if rank is near 3, task has high tploc + low sploc.
+    int rand_param;
+    if(rank == 0){
+        rand_param = rand()%15;
+        *_tploc = (float)0.85 + (float)rand_param / (float)100;
+        *_sploc = 1.0 - *_tploc;
+    }
+    else if (rank == 1){
+        rand_param = rand()%10;
+        *_tploc = (float)0.75 + (float)rand_param / (float)100;
+        *_sploc = 1.0 - *_tploc;
+    }
+    else if (rank == 2){
+        rand_param = rand()%10;
+        *_tploc = (float)0.65 + (float)rand_param / (float)100;
+        *_sploc = 1.0 - *_tploc;
+    }
+    else if (rank == 3){
+        rand_param = rand()%15;
+        *_tploc = (float)0.50 + (float)rand_param / (float)100;
+        *_sploc = 1.0 - *_tploc;
+    }
+    *offset = (int)((float)(task->addr_ub - task->addr_lb)* (*_sploc)/2.0);
+}
 void IOgen(int tasknum, rttask* tasks,long runtime, int offset, float _splocal, float _tplocal){
     //generates a set of target address for write or read workload.
     //Address is generated according to the task parameter and target runtime.
     //FIXME::current IOgen uses hardcoded address area
     //FIXME::current IOgen_new uses hardcoded hot space specification value
-    for(int i=0;i<tasknum;i++){
-        IOgen_task(&(tasks[i]),runtime,offset,_splocal,_tplocal);
-        //IOgen_task_new(&(tasks[i]),runtime,-1,PPB*2,offset,_splocal,_tplocal);
+    float temp_sploc;
+    float temp_tploc;
+    int temp_offset;
+    FILE* locfile;
+    //if locality is specified over 0.0 , all tasks uniformly follow it.
+    if (_splocal > 0.0 && _tplocal > 0.0){
+        locfile = fopen("loc.csv","w");
+        for(int i=0;i<tasknum;i++){
+            IOgen_task(&(tasks[i]),runtime,offset,_splocal,_tplocal);
+            //IOgen_task_new(&(tasks[i]),runtime,-1,PPB*2,offset,_splocal,_tplocal);
+            tasks[i].sploc = _splocal;
+            tasks[i].tploc = _tplocal;
+            fprintf(locfile,"%f, %f\n",_splocal,_tplocal);
+        }
+        fclose(locfile);
+    } 
+    //if locality is specified as -1, randomly generate locality in descending order.
+    else if (_splocal == -1.0 || _tplocal == -1.0){
+        locfile = fopen("loc.csv","w");
+        for (int i=0;i<tasknum;i++){
+            //randomly generate locality for each task
+            gen_loc(&(tasks[i]),i%4,&temp_sploc,&temp_tploc,&temp_offset);
+            //assign offset to each task
+            printf("[task %d]sploc %f,tploc %f,offset %d\n",temp_sploc,temp_tploc,temp_offset);
+            IOgen_task(&(tasks[i]),runtime,temp_offset,temp_sploc,temp_tploc);
+            tasks[i].sploc = temp_sploc;
+            tasks[i].tploc = temp_tploc;
+            fprintf(locfile,"%f, %f\n",temp_tploc,temp_sploc);
+        }
+        fclose(locfile);
     }
     /*
     //IO analyze code::activate if want to print the raw profile of I/O concentration.
@@ -182,6 +238,7 @@ void IOgen(int tasknum, rttask* tasks,long runtime, int offset, float _splocal, 
         fclose(fp_r);
     }
     */
+    
 }
 
 void IO_open(int tasknum, FILE** wfpp, FILE** rfpp){

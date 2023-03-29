@@ -26,10 +26,10 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     //odd idx (2*i)+1 = intensity of cold proportion of task i.
     
     //init params
-    int hotspace = (int)((float)(tasks[0].addr_ub - tasks[0].addr_lb)*sploc);
     double w_gradient = (double)(ENDW - STARTW) / (double)MAXPE;
     double r_gradient = (double)(ENDR - STARTR) / (double)MAXPE;
     int temp_int;
+    int hotspace[tasknum];
     double temp_d;
 
     //init intensity arrays
@@ -47,13 +47,16 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     double gc_proportion[tasknum * 2];
     double w_weight_sum = 0.0, r_weight_sum = 0.0, gc_weight_sum = 0.0, upper_weight = 0.0;
     
+    
     //init index and intensity values
     //intensity is # of access per unit time, calculated as task (I/O speed * address pick probability) 
     for(int i=0;i<tasknum;i++){
-        write_intensity[2*i] =   (double)tasks[i].wn / (double)tasks[i].wp * (1.0/(double)hotspace) * (double)tploc;
-        write_intensity[(2*i)+1] =  (double)tasks[i].wn / (double)tasks[i].wp * (1.0/(double)((tasks[i].addr_ub - tasks[i].addr_lb - hotspace))) * (1.0 - (double)tploc);
-        read_intensity[2*i] = (double)tasks[i].rn / (double)tasks[i].rp * (1/(double)hotspace) * tploc;
-        read_intensity[(2*i)+1] = (double)tasks[i].rn / (double)tasks[i].rp * (1/(double)((tasks[i].addr_ub - tasks[i].addr_lb - hotspace))) * (1.0 - (double)tploc);
+        hotspace[i] = (int)((float)(tasks[i].addr_ub - tasks[i].addr_lb)*tasks[i].sploc);
+        printf("%f, %f, %d\n",tasks[i].tploc,tasks[i].sploc,hotspace[i]);
+        write_intensity[2*i] =   (double)tasks[i].wn / (double)tasks[i].wp * (1.0/(double)hotspace[i]) * (double)tasks[i].tploc;
+        write_intensity[(2*i)+1] =  (double)tasks[i].wn / (double)tasks[i].wp * (1.0/(double)((tasks[i].addr_ub - tasks[i].addr_lb - hotspace[i]))) * (1.0 - (double)tasks[i].tploc);
+        read_intensity[2*i] = (double)tasks[i].rn / (double)tasks[i].rp * (1/(double)hotspace[i]) * tasks[i].tploc;
+        read_intensity[(2*i)+1] = (double)tasks[i].rn / (double)tasks[i].rp * (1/(double)((tasks[i].addr_ub - tasks[i].addr_lb - hotspace[i]))) * (1.0 - (double)tasks[i].tploc);
         gc_intensity[2*i] = write_intensity[2*i] / (double)MINRC;
         gc_intensity[(2*i)+1] = write_intensity[(2*i)+1] / (double)MINRC;
         write_idx[2*i] = 2*i;
@@ -117,19 +120,19 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     //calculate sum of weight for each section. weight of section is calc as (num of lpa * intensity)
     for(int i=0;i<tasknum*2;i++){
         if(write_idx[i] % 2 == 0){//hotspace
-            wi_sum_arr[i] = (double)hotspace * write_intensity[i];
+            wi_sum_arr[i] = (double)hotspace[i/2] * write_intensity[i];
         } else { //coldspace
-            wi_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace) * write_intensity[i];
+            wi_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace[i]) * write_intensity[i];
         }
         if(read_idx[i] % 2 == 0){
-            ri_sum_arr[i] = (double)hotspace * read_intensity[i];
+            ri_sum_arr[i] = (double)hotspace[i/2] * read_intensity[i];
         } else {
-            ri_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace) * read_intensity[i];
+            ri_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace[i]) * read_intensity[i];
         }
         if(gc_idx[i] % 2 == 0){
-            gci_sum_arr[i] = (double)hotspace * gc_intensity[i];
+            gci_sum_arr[i] = (double)hotspace[i/2] * gc_intensity[i];
         } else {
-            gci_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace) * gc_intensity[i];
+            gci_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace[i]) * gc_intensity[i];
         }
     }
     /*for(int i=0;i<tasknum*2;i++){
@@ -836,8 +839,9 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     int cur_state, temp;
     int blockidx;
     int res;
-    int _offset = offset;
-    int hotspace = (int)((float)(task[taskidx].addr_ub - task[taskidx].addr_lb)*sploc);
+    
+    int hotspace = (int)((float)(task[taskidx].addr_ub - task[taskidx].addr_lb)*task[taskidx].sploc);
+    int _offset = (int)((float)(task[taskidx].addr_ub - task[taskidx].addr_lb)*task[taskidx].sploc / 2.0);
     int whot_bound = task[taskidx].addr_lb;
     int rhot_bound = task[taskidx].addr_lb + _offset;
     
@@ -887,7 +891,6 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     //for(int i=0;i<candidate_num;i++){
     //    printf("idx : %d, cyc : %d\n",candidate_arr[i],metadata->state[candidate_arr[i]]);
     //}    
-    //compare the weight of write/read
 
     //EDGECASE: when candidate num is 0 (no feasible block)
     if(candidate_num == 0){
@@ -917,6 +920,9 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     }
     //!EDGECASE
     
+    //printf("addr_lb : %d, addr_ub :%d, addr slize : %d, sploc : %f\n",task[taskidx].addr_lb, task[taskidx].addr_ub, task[taskidx].addr_ub - task[taskidx].addr_lb, task[taskidx].sploc);
+    //printf("whot_bound : %d, hotspace : %d, offset : %d, rhot_bound : %d\n",whot_bound,hotspace,_offset,rhot_bound);
+    
     //define weight
     if(w_lpas[idx] < whot_bound + hotspace && w_lpas[idx] > whot_bound){
         whotspace = 1;
@@ -925,14 +931,14 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         rhotspace = 1;
     }
     if(whotspace == 1){
-        w_weight = (double)task[taskidx].wn / (double)task[taskidx].wp * (1.0/(double)hotspace) * (double)tploc;
+        w_weight = (double)task[taskidx].wn / (double)task[taskidx].wp * (1.0/(double)hotspace) * (double)task[taskidx].tploc;
     } else {
-        w_weight = (double)task[taskidx].wn / (double)task[taskidx].wp * (1.0/(double)((task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace))) * (1.0 - (double)tploc);  
+        w_weight = (double)task[taskidx].wn / (double)task[taskidx].wp * (1.0/(double)((task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace))) * (1.0 - (double)task[taskidx].tploc);  
     }
     if(rhotspace == 1){
-        r_weight = (double)task[taskidx].rn / (double)task[taskidx].rp * (1/(double)hotspace) * tploc;
+        r_weight = (double)task[taskidx].rn / (double)task[taskidx].rp * (1/(double)hotspace) * task[taskidx].tploc;
     } else { 
-        r_weight = (double)task[taskidx].rn / (double)task[taskidx].rp * (1/(double)((task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace))) * (1.0 - (double)tploc);  
+        r_weight = (double)task[taskidx].rn / (double)task[taskidx].rp * (1/(double)((task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace))) * (1.0 - (double)task[taskidx].tploc);  
     }
     gc_weight = w_weight / (double)MINRC;
     

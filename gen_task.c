@@ -258,8 +258,8 @@ rttask* generate_taskset_fixed(int addr, float* result_util){
 }
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile){
     rttask* rand_tasks = tasks;
+    int wn, wp, rn, rp, gcp, lb, ub;
     for(int i=0;i<tasknum;i++){
-        int wn, wp, rn, rp, gcp, lb, ub;
         fscanf(taskfile,"%d,%d,%d,%d,%d,%d,%d\n",&wn,&wp,&rn,&rp,&gcp,&lb,&ub);
         printf("reading %d,%d,%d,%d,%d,%d,%d\n",wn,wp,rn,rp,gcp,lb,ub);
         rand_tasks[i].idx = i;
@@ -273,6 +273,15 @@ void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile){
     }
 }
 
+void get_loc_from_file(rttask* tasks, int tasknum, FILE* locfile){
+    float __tploc, __sploc;
+    for(int i=0;i<tasknum;i++){
+        fscanf(locfile,"%f, %f\n",&__tploc,&__sploc);
+        printf("locality specified, %f, %f\n",__tploc, __sploc);
+        tasks[i].tploc = __tploc;
+        tasks[i].sploc = __sploc;
+    }
+}
 void get_task_from_file_recalc(rttask* tasks, int tasknum, FILE* taskfile, int max_valid_pg){
     //call this function instead of get_task_from_file, when OP changes.
     rttask* rand_tasks = tasks;

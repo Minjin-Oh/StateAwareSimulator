@@ -144,6 +144,7 @@ rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* res
 rttask* generate_taskset_hardcode(int tasknum, int addr);
 rttask* generate_taskset_fixed(int addr, float* result_util);
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile);
+void get_loc_from_file(rttask* tasks, int tasknum, FILE* locfile);
 void randtask_statechecker(int tasknum,int addr);
 
 //a proportion profiler for lpas
