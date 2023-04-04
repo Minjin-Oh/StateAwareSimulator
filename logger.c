@@ -128,7 +128,19 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         fps[tasknum+4] = fopen("prof_gconly_fbdist.csv","w");
         fps[tasknum+4+1] = fopen("prof_gconly_invdist.csv","w");
     }
-      else if(wflag == 12 && gcflag == 6 && rrflag == -1){//WGC
+    else if(wflag == 0  && gcflag == 0 && rrflag ==  1){//GConly
+        for(int i=0;i<tasknum;i++){
+            sprintf(name,"prof_rronly_t%d.csv",i);
+            fps[i] = fopen(name,"w");
+        }
+        for(int i=0;i<4;i++){
+            sprintf(name,"prof_rronly_hdist%d.csv",i);
+            fps[tasknum+i] = fopen(name,"w");
+        }
+        fps[tasknum+4] = fopen("prof_rronly_fbdist.csv","w");
+        fps[tasknum+4+1] = fopen("prof_rronly_invdist.csv","w");
+    }
+    else if(wflag == 12 && gcflag == 6 && rrflag == -1){//WGC
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_wgc_t%d.csv",i);
             fps[i] = fopen(name,"w");
