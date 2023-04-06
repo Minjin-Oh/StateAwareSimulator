@@ -107,16 +107,39 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     }
 
     //check code
-    /*
+    
     for(int i=0;i<tasknum*2;i++){
         printf("[W]section : %d, intensity : %.10lf\n",write_idx[i],write_intensity[i]);
     }
     for(int i=0;i<tasknum*2;i++){
         printf("[R]section : %d, intensity : %.10lf\n",read_idx[i],read_intensity[i]);
-    }*/
-    //with the sorted intensity, calculate proportion of each section.
-    //a proportion is calculated as (sum of weight of upper rank lpa section / total sum of weight)
+    }
     
+    //with the sorted intensity, calculate proportion of each section.
+    /*
+    //a proportion case 1 :: is calculated as (cur lpa weight / maximum lpa weight)
+    double max_w_intensity = 0.0, max_r_intensity = 0.0, max_gc_intensity = 0.0;
+    for(int i=0;i<tasknum*2;i++){
+        if(max_w_intensity <= write_intensity[i]){
+            max_w_intensity = write_intensity[i];
+        }
+        if(max_r_intensity <= read_intensity[i]){
+            max_r_intensity = read_intensity[i];
+        }
+        if(max_gc_intensity <= gc_intensity[i]){
+            max_gc_intensity = gc_intensity[i];
+        }
+    }
+    for(int i=0;i<tasknum*2;i++){
+        w_prop[write_idx[i]] = 1.0 - write_intensity[i] / max_w_intensity;
+        r_prop[read_idx[i]] = 1.0 - read_intensity[i] / max_r_intensity;
+        gc_prop[gc_idx[i]] = 1.0 - gc_intensity[i] / max_gc_intensity;
+        printf("[W]%d-th section : %f\n",write_idx[i],w_prop[write_idx[i]]);
+        printf("[R]%d-th section : %f\n",read_idx[i],r_prop[read_idx[i]]);
+        printf("[G]%d-th section : %f\n",gc_idx[i],gc_prop[gc_idx[i]]);
+    }
+    */
+    //a proportion case 2 :: is calculated as (sum of weight of upper rank lpa section / total sum of weight)
     //calculate sum of weight for each section. weight of section is calc as (num of lpa * intensity)
     for(int i=0;i<tasknum*2;i++){
         if(write_idx[i] % 2 == 0){//hotspace
@@ -135,12 +158,12 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
             gci_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace[i]) * gc_intensity[i];
         }
     }
-    /*for(int i=0;i<tasknum*2;i++){
+    for(int i=0;i<tasknum*2;i++){
         printf("[W]intensity_sum : %.10lf\n",wi_sum_arr[i]);
     }
     for(int i=0;i<tasknum*2;i++){
         printf("[R]intensity_sum : %.10lf\n",ri_sum_arr[i]);
-    }*/
+    }
 
     //calculate total sum of intensity
     for(int i=0;i<tasknum*2;i++){
@@ -168,13 +191,13 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
         }
         gc_proportion[i] = upper_weight / gc_weight_sum;
     }
-    /*
+    
     for(int i=0;i<tasknum*2;i++){
         printf("[W]proportion(sorted) : %.10lf\n",w_proportion[i]);
     }
     for(int i=0;i<tasknum*2;i++){
         printf("[R]proportion(sorted) : %.10lf\n",r_proportion[i]);
-    }*/
+    }
     for(int i=0;i<tasknum*2;i++){
         w_prop[write_idx[i]] = w_proportion[i];
         r_prop[read_idx[i]] = r_proportion[i];
@@ -188,6 +211,7 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     //small proportion =  no upper-ranked lpa exist
     //high proportion = many upper-ranked lpa exist
     //as proportion is determined, the constant value is utilized at find_write function.
+    abort();
 }
 
 int _find_write_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util, int cur_b, int* w_lpas){

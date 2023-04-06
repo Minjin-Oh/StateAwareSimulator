@@ -274,12 +274,13 @@ void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile){
 }
 
 void get_loc_from_file(rttask* tasks, int tasknum, FILE* locfile){
-    float __tploc, __sploc;
+    float __sploc, __tploc;
     for(int i=0;i<tasknum;i++){
-        fscanf(locfile,"%f, %f\n",&__tploc,&__sploc);
-        printf("locality specified, %f, %f\n",__tploc, __sploc);
-        tasks[i].tploc = __tploc;
+        fscanf(locfile,"%f, %f\n",&__sploc,&__tploc);
+        printf("locality specified, %f, %f\n",__sploc, __tploc);
         tasks[i].sploc = __sploc;
+        tasks[i].tploc = __tploc;
+        
     }
 }
 void get_task_from_file_recalc(rttask* tasks, int tasknum, FILE* taskfile, int max_valid_pg){
