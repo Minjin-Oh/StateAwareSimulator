@@ -109,10 +109,10 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     //check code
     
     for(int i=0;i<tasknum*2;i++){
-        printf("[W]section : %d, intensity : %.10lf\n",write_idx[i],write_intensity[i]);
+//        printf("[W]section : %d, intensity : %.10lf\n",write_idx[i],write_intensity[i]);
     }
     for(int i=0;i<tasknum*2;i++){
-        printf("[R]section : %d, intensity : %.10lf\n",read_idx[i],read_intensity[i]);
+//        printf("[R]section : %d, intensity : %.10lf\n",read_idx[i],read_intensity[i]);
     }
     
     //with the sorted intensity, calculate proportion of each section.
@@ -159,10 +159,10 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
         }
     }
     for(int i=0;i<tasknum*2;i++){
-        printf("[W]intensity_sum : %.10lf\n",wi_sum_arr[i]);
+//       printf("[W]intensity_sum : %.10lf\n",wi_sum_arr[i]);
     }
     for(int i=0;i<tasknum*2;i++){
-        printf("[R]intensity_sum : %.10lf\n",ri_sum_arr[i]);
+//        printf("[R]intensity_sum : %.10lf\n",ri_sum_arr[i]);
     }
 
     //calculate total sum of intensity
@@ -193,10 +193,10 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
     }
     
     for(int i=0;i<tasknum*2;i++){
-        printf("[W]proportion(sorted) : %.10lf\n",w_proportion[i]);
+//        printf("[W]proportion(sorted) : %.10lf\n",w_proportion[i]);
     }
     for(int i=0;i<tasknum*2;i++){
-        printf("[R]proportion(sorted) : %.10lf\n",r_proportion[i]);
+//        printf("[R]proportion(sorted) : %.10lf\n",r_proportion[i]);
     }
     for(int i=0;i<tasknum*2;i++){
         w_prop[write_idx[i]] = w_proportion[i];
@@ -204,14 +204,13 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
         gc_prop[gc_idx[i]] = gc_proportion[i];
         printf("[W]%d-th section : %f\n",write_idx[i],w_proportion[i]);
         printf("[R]%d-th section : %f\n",read_idx[i],r_proportion[i]);
-        printf("[G]%d-th section : %f\n",gc_idx[i],gc_proportion[i]);
+       printf("[G]%d-th section : %f\n",gc_idx[i],gc_proportion[i]);
     }
     //as proportion is determined, a task will use (length * proportion)-th flash block for their allocation.
     //e.g., if proportion is 0.5, it will be allocated to (length/2)-th flash block.
     //small proportion =  no upper-ranked lpa exist
     //high proportion = many upper-ranked lpa exist
     //as proportion is determined, the constant value is utilized at find_write function.
-    abort();
 }
 
 int _find_write_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util, int cur_b, int* w_lpas){

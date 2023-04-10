@@ -128,7 +128,7 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         fps[tasknum+4] = fopen("prof_gconly_fbdist.csv","w");
         fps[tasknum+4+1] = fopen("prof_gconly_invdist.csv","w");
     }
-    else if(wflag == 0  && gcflag == 0 && rrflag ==  1){//GConly
+    else if(wflag == 0  && gcflag == 0 && rrflag ==  1){//RRonly
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_rronly_t%d.csv",i);
             fps[i] = fopen(name,"w");
@@ -152,7 +152,19 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         fps[tasknum+4] = fopen("prof_wgc_fbdist.csv","w");
         fps[tasknum+4+1] = fopen("prof_wgc_invdist.csv","w");
     }
-      else if (wflag == 1 && gcflag == 0){
+    else if(wflag == 12 && gcflag == 6 && rrflag == 0){//W+GC+stat
+	for(int i=0;i<tasknum;i++){
+	    sprintf(name, "prof_wgstat_t%d.csv",i);
+	    fps[i] = fopen(name,"w");
+	}
+	for(int i=0;i<4;i++){
+	    sprintf(name,"prof_wgstat_hdist%d.csv",i);
+	    fps[tasknum+i] = fopen(name,"w");
+	}
+	fps[tasknum+4] = fopen("prof_wgstat_fbdist.csv","w");
+	fps[tasknum+4+1] = fopen("prof_wgstat_invdist.csv","w");
+    }
+    else if (wflag == 1 && gcflag == 0){
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_dow_t%d.csv",i);
             fps[i] = fopen(name,"w");
