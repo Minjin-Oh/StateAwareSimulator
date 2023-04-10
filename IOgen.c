@@ -217,7 +217,7 @@ void IOgen(int tasknum, rttask* tasks,long runtime, int offset, float _splocal, 
             IOgen_task(&(tasks[i]),runtime,temp_offset,temp_sploc,temp_tploc);
             tasks[i].sploc = temp_sploc;
             tasks[i].tploc = temp_tploc;
-            fprintf(locfile,"%f, %f\n",temp_tploc,temp_sploc);
+            fprintf(locfile,"%f, %f\n",temp_sploc,temp_tploc);
         }
         fclose(locfile);
     }
