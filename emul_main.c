@@ -26,6 +26,10 @@ double* w_prop;
 double* r_prop;
 double* gc_prop;
 
+//FIXME:: set these as global to expose
+long cur_cp;
+int max_valid_pg;
+
 int main(int argc, char* argv[]){
     //init params
     srand(time(NULL)); 
@@ -62,7 +66,7 @@ int main(int argc, char* argv[]){
     int g_cur = 0;                   //pointer for current writing page
     int last_task = tasknum-1;       //index of last I/O task
     float rrutil;                    //a utilization allowed to data relocation job
-    long cur_cp = 0;                 //current checkpoint time
+    cur_cp = 0;                 //current checkpoint time
     long cur_IO_end = __LONG_MAX__;  //absolute time when current req finishes
     int wl_init = 0;                 //flag for wear-leveling initiation
     float WU;                        //worst-case utilization tracker.
@@ -156,7 +160,7 @@ int main(int argc, char* argv[]){
    
     //MINRC is now a configurable value, which can be adjusted like OP
     //reference :: RTGC mechanism (2004, li pin chang et al.) 
-    int max_valid_pg = (int)((1.0-OP)*(float)(PPB*NOB));
+    max_valid_pg = (int)((1.0-OP)*(float)(PPB*NOB));
     int expected_invalid = MINRC*(NOB-tasknum);
     int expected_fp = PPB*(NOB-tasknum) - max_valid_pg - expected_invalid;
     printf("expected_invalid : %d, expected_fp : %d, maxvalid : %d\n",expected_invalid,expected_fp,max_valid_pg);
@@ -476,6 +480,7 @@ int main(int argc, char* argv[]){
                                               w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
                 write_release_num++;
                 gettimeofday(&(algo_end_time),NULL);
+                //printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                 write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
                 wjob_finished[j] = 0;

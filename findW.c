@@ -18,6 +18,9 @@ extern double* w_prop;
 extern double* r_prop;
 extern double* gc_prop;
 
+//FIXME:: a temporary solution to expose experiment values to find_write_gradient function.
+extern long cur_cp;
+extern int max_valid_pg;
 //Determine rank of current lpa using task & locality information.
 //assuming that locality is fixed, rank of lpa is determined statically.
 void _find_rank_lpa(rttask* tasks, int tasknum){
@@ -867,7 +870,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     int _offset = (int)((float)(task[taskidx].addr_ub - task[taskidx].addr_lb)*task[taskidx].sploc / 2.0);
     int whot_bound = task[taskidx].addr_lb;
     int rhot_bound = task[taskidx].addr_lb + _offset;
-    
+    int highrank_lpa_counts = 0;
     //params for intensity comparison.
     int whotspace = 0, rhotspace = 0;
     int w_hot = 0, r_hot = 0;
@@ -910,11 +913,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
             }
         }
     }
-    //printf("candidate num : %d\n",candidate_num);
-    //for(int i=0;i<candidate_num;i++){
-    //    printf("idx : %d, cyc : %d\n",candidate_arr[i],metadata->state[candidate_arr[i]]);
-    //}    
-
+    
     //EDGECASE: when candidate num is 0 (no feasible block)
     if(candidate_num == 0){
         //ignore find_write_safe and add candidate block.
@@ -947,6 +946,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     //printf("whot_bound : %d, hotspace : %d, offset : %d, rhot_bound : %d\n",whot_bound,hotspace,_offset,rhot_bound);
     
     //define weight
+    
     if(w_lpas[idx] < whot_bound + hotspace && w_lpas[idx] > whot_bound){
         whotspace = 1;
     }
@@ -965,6 +965,18 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     }
     gc_weight = w_weight / (double)MINRC;
     
+
+    /*
+    w_weight = (double)metadata->write_cnt[w_lpas[idx]] / (double)cur_cp;
+    r_weight = (double)metadata->read_cnt[w_lpas[idx]] / (double)cur_cp;
+    gc_weight = w_weight / (double)MINRC;
+    if(cur_cp == 0){
+        w_weight = 0.0;
+        r_weight = 0.0;
+        gc_weight = 0.0;
+    }
+    printf("[onlineweight]%lf,%lf,%lf\n",w_weight,r_weight,gc_weight);
+    */
     //check intensity
     w_gradient = (double)(ENDW - STARTW) / (double)MAXPE;
     r_gradient = (double)(ENDR - STARTR) / (double)MAXPE;
@@ -976,8 +988,13 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     r_intensity = r_weight * r_gradient;
     gc_intensity = gc_weight * gc_gradient;
     max_intensity = find_max_double(w_intensity,r_intensity,gc_intensity);
-
+    if(w_intensity == 0.0 && r_intensity == 0.0 && gc_intensity == 0.0){
+        max_intensity = 0.0;
+    }
+    //printf("[intensity]%lf,%lf,%lf\n",w_intensity,r_intensity,gc_intensity);
+    
     //using pre-defined proportion, find a proper block index.
+    /*
     if(max_intensity == w_intensity){
         //printf("w focused\n");
         if (whotspace == 1){
@@ -989,7 +1006,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
                 printf("unknown flag, aborting\n");
                 abort();
             }
-            //printf("[W]hot part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2],blockidx);
+            printf("[W]hot part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2],blockidx);
         } else if (whotspace == 0){
             if(flag == 12){
                 blockidx = candidate_num - (int)(w_prop[taskidx*2+1] * candidate_num);
@@ -999,37 +1016,82 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
                 printf("unknown flag, aborting\n");
                 abort();
             }
-            //printf("[W]cold part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2+1],blockidx);
+            printf("[W]cold part of task %d, prop : %f, idx : %d\n",taskidx,w_prop[taskidx*2+1],blockidx);
         }
+        printf("w focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
     else if (max_intensity == r_intensity){
         //printf("r focused\n");
         if (rhotspace == 1){
             blockidx = (int)(r_prop[taskidx*2] * candidate_num);
-            //printf("[R]hot part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2],blockidx);
+            printf("[R]hot part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2],blockidx);
         } else if (rhotspace == 0){
             blockidx = (int)(r_prop[taskidx*2+1] * candidate_num);
-            //printf("[R]cold part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2+1],blockidx);
+            printf("[R]cold part of task %d, prop : %f, idx : %d\n",taskidx,r_prop[taskidx*2+1],blockidx);
         }
+        printf("r focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
     else if (max_intensity == gc_intensity){
         //printf("gc focused\n");
         if (whotspace == 1){
             blockidx = (int)(gc_prop[taskidx*2]*candidate_num);
+            printf("[GC]hot part of task %d, prop : %f, idx : %d\n",taskidx,gc_prop[taskidx*2],blockidx);
         } else if (whotspace == 0){
             blockidx = (int)(gc_prop[taskidx*2+1]*candidate_num);
+            printf("[GC]cold part of task %d, prop : %f, idx : %d\n",taskidx,gc_prop[taskidx*2+1],blockidx);
         }
+        printf("gc focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
+    }
+    */
+    
+    //calculating proportions in online manner.
+    if(max_intensity == w_intensity){
+        for(int i=0;i<max_valid_pg;i++){
+            if (metadata->write_cnt[i]>metadata->write_cnt[w_lpas[idx]]){
+                highrank_lpa_counts += metadata->write_cnt[i];
+            }
+        }
+        blockidx = (int)((double)candidate_num*(1.0 - (double)highrank_lpa_counts / (double)metadata->tot_write_cnt));
+        if(metadata->tot_write_cnt == 0){
+            blockidx = 0;
+        }
+        //printf("highrank count : %d, tot_write_cnt : %d\n",highrank_lpa_counts,metadata->tot_write_cnt);
+        //printf("w focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
+    }
+    else if (max_intensity == r_intensity){
+        for(int i=0;i<max_valid_pg;i++){
+            if (metadata->read_cnt[i]>metadata->read_cnt[w_lpas[idx]]){
+                highrank_lpa_counts += metadata->read_cnt[i];
+            }
+        }
+        blockidx = (int)((double)candidate_num*((double)highrank_lpa_counts / (double)metadata->tot_read_cnt));
+        if(metadata->tot_read_cnt == 0){
+            blockidx = 0;
+        }
+        //printf("highrank count : %d, tot_read_cnt : %d\n",highrank_lpa_counts,metadata->tot_read_cnt);
+        //printf("r focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
+    }
+    else if (max_intensity == gc_intensity){
+        for(int i=0;i<max_valid_pg;i++){
+            if (metadata->write_cnt[i]>metadata->write_cnt[w_lpas[idx]]){
+                highrank_lpa_counts += metadata->write_cnt[i];
+            }
+        }
+        blockidx = (int)((double)candidate_num*((double)highrank_lpa_counts / (double)metadata->tot_write_cnt));
+        if(metadata->tot_write_cnt == 0){
+            blockidx = 0;
+        }
+        //printf("highrank count : %d, tot_write_cnt : %d\n",highrank_lpa_counts,metadata->tot_write_cnt);
+        //printf("gc focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
     
+    //printf("blockidx : %d, candnum : %d\n",blockidx,candidate_num);
     //edgecase:: if blockidx == candidate_num(prop == 1.00), return candidate_num-1, a last possible block.
     if(blockidx == candidate_num){
         blockidx = candidate_num-1;
     }
-    //printf("w_hot(w_hotspace) = %d(%d), r_hot(r_hotspace) = %d(%d)\n",w_hot,whotspace,r_hot,rhotspace);
-    //printf("blockidx = %d, max = %d\n",blockidx,candidate_num);
-    
+
     res = candidate_arr[blockidx];
-    //printf("return idx = %d, blockidx = %d\n",res,blockidx);
     free(candidate_arr);
     free(cand_state_arr);
     return res;
