@@ -119,10 +119,12 @@ int _find_min_period(rttask* task,int tasknum){
         //printf("[internal]comp btw%d %d %d\n",task[i].wp,task[i].rp,temp);
         min_each_task = __get_min(task[i].wp,task[i].rp,temp);
         //printf("%d\n",min_each_task);
-        if(i==0) 
+        if(i==0){
             ret = min_each_task;
-        else if(ret >= min_each_task)
+        }
+        else if(ret >= min_each_task){
             ret = min_each_task;
+        }
     }   
 
     if(ret == -1){

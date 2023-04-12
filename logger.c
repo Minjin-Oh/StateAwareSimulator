@@ -534,6 +534,7 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     state_var = sqrt(state_var);
     total_u_noblock = total_u;
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    printf("blocking : %f, %f, %f\n",e_exec(old),(float)_find_min_period(tasks,tasknum),(float)e_exec(old) / (float)_find_min_period(tasks,tasknum));
     //print all infos
     fprintf(fp,"%ld,%d, %f,%f,%f,%f,%f,%f, %d,%d, %d,%d,%d, %d,%d, %d,%d, %f,%f,%f, %f, %lf\n",
     cur_cp,taskidx,
