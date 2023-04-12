@@ -406,41 +406,36 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     
     //sort the victim blocks in order of utilization
     //allocate victim block to GC task proportionally with GC period
-    
-    //int* gc_period_sort = (int*)malloc(sizeof(int)*tasknum);                //array for task sorting
-    //int* task_order = (int*)malloc(sizeof(int)*tasknum);                    //array for task sorting
-    //int* vic_arr = (int*)malloc(sizeof(int)*full_head->blocknum);           //array for victim candidate
-    //float* gc_exec_arr = (float*)malloc(sizeof(float)*full_head->blocknum); //array for victim candidate
     struct timeval a;
     struct timeval b;
 
-    int gc_period_sort[tasknum];
-    int task_order[tasknum];
-    int vic_arr[full_head->blocknum];
-    float gc_exec_arr[full_head->blocknum];
-    int vic_num = 0;                                                        //number of victim
-    int proportion_sum = 0;                                                 //allocated proportion for task
-    int proportion_tot = 0;                                                 //sum of gc period
-    int old = get_blockstate_meta(metadata,OLD);                            //oldest block for system
+    int gc_period_sort[tasknum];                    //array to store period of GC
+    int task_order[tasknum];                        //array to store order of task
+    int vic_arr[full_head->blocknum];               //array to store GC candidate indexes.
+    float gc_util_arr[full_head->blocknum];         //array to store gc-related utilization (gcutil+blocking)
+    int vic_num = 0;                                //number of victim
+    int proportion_sum = 0;                         //allocated proportion for task
+    int proportion_tot = 0;                         //sum of gc period
+    int old = get_blockstate_meta(metadata,OLD);    //oldest block for system
+    int min_p =  _find_min_period(task,tasknum);    //minimum I/O period of taskset (necessary to calc blocking)
+    int cur_state, copyblock_state, new_rc;         //gc util calc params
+    float gc_exec, gc_period, gc_util;              //gc util calc params
+    int temp, cur_priority;                         //param for sorting & param for proportion check
+    float cur_offset;                               //proportion of current task
+    int cur_offset_int;                             //proportion of current task in victim block list
+    int best_invalid = 0;                           //edge case handling param
+    int best_idx = -1;                              //return value
 
-    int cur_state, copyblock_state, new_rc;                                 //gc util calc params
-    float gc_exec, gc_period, gc_util;                                      //gc util calc params
-    int temp, cur_priority;                                                 //param for sorting & param for proportion check
-    float cur_offset;                                                       //proportion of current task
-    int cur_offset_int;                                                     //proportion of current task in victim block list
-    
-    int best_invalid = 0;                                                   //edge case handling param
-    int best_idx = -1;                                                      //return value
-
+    //init arrays
     for(int i=0;i<full_head->blocknum;i++){
         vic_arr[i] = -1;
     }
-    //init gc period list
     for(int i=0;i<tasknum;i++){
         gc_period_sort[i] = task[i].gcp;
         task_order[i] = i;
         proportion_tot += gc_period_sort[i];
     }
+
     //sort gc period
     for(int i=tasknum-1;i>0;i--){
         for(int j=0;j<i;j++){
@@ -454,6 +449,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             }
         }
     }
+
     //find priority of cur gc
     for(int i=0;i<tasknum;i++){
         if(task_order[i] == taskidx){
@@ -464,15 +460,10 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     for(int i=0;i<cur_priority-1;i++){
         proportion_sum += gc_period_sort[i];
     }
-    //printf("[UGC]test sorting result\n");
-    for(int i=0;i<tasknum;i++){
-        //printf("[1] task %d(%d) --> %d(%d)\n",i,task[i].gcp,task_order[i],gc_period_sort[i]);
-    }
-    //printf("[UGC]test end\n");
     
     cur_offset = (float)proportion_sum / (float)proportion_tot;
     
-    //build up candidate block list first
+    //build up candidate block list
     block* cur = NULL;
     cur = full_head->head;
     gettimeofday(&a,NULL);
@@ -495,9 +486,18 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             cur = cur->next;
             continue;
         }
-        gc_exec_arr[vic_num] = gc_exec;
+        //add a blocking utilization, since GC has a chance to change it.
+        if(metadata->state[cur->idx] == old){
+            gc_util += e_exec(old+1) / (float)min_p;
+        } 
+        else{
+            gc_util += e_exec(old) / (float)min_p;
+        }
+        //insert util & block into candidate block list.
+        gc_util_arr[vic_num] = gc_util;
         vic_arr[vic_num] = cur->idx;
         vic_num++;
+
         //printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
         cur = cur->next;
     }
@@ -517,7 +517,14 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
             gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
             gc_util = gc_exec/gc_period;
-            gc_exec_arr[vic_num] = gc_exec;
+            //add a blocking utilization, since GC has a chance to change it.
+            if(metadata->state[cur->idx] == old){
+                gc_util += e_exec(old+1) / (float)min_p;
+            } 
+            else{
+                gc_util += e_exec(old) / (float)min_p;
+            }
+            gc_util_arr[vic_num] = gc_util;
             vic_arr[vic_num] = cur->idx;
             vic_num++;
             cur = cur->next;
@@ -528,10 +535,10 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     //sort candidate block list
     for(int i=vic_num-1;i>0;i--){
         for(int j=0;j<i;j++){
-            if(gc_exec_arr[j] > gc_exec_arr[j+1]){
-                temp = gc_exec_arr[j];
-                gc_exec_arr[j] = gc_exec_arr[j+1];
-                gc_exec_arr[j+1] = temp;
+            if(gc_util_arr[j] > gc_util_arr[j+1]){
+                temp = gc_util_arr[j];
+                gc_util_arr[j] = gc_util_arr[j+1];
+                gc_util_arr[j+1] = temp;
                 temp = vic_arr[j];
                 vic_arr[j] = vic_arr[j+1];
                 vic_arr[j+1] = temp;
@@ -539,11 +546,6 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
     gettimeofday(&b,NULL);
-    //printf("[candsort]%d\n",b.tv_sec * 1000000 + b.tv_usec - a.tv_sec * 1000000 - a.tv_usec);
-    //printf("[UGC]sorted result\n");
-    for(int i=0;i<vic_num;i++){
-        //printf("[UGC]sorted block %d(%d,%d,%f)\n",vic_arr[i],metadata->state[vic_arr[i]],new_rc,gc_exec_arr[i]);
-    }
     
     //using offset factor, choose best block
     cur_offset_int = (int)(cur_offset * (float)vic_num);
@@ -564,11 +566,5 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
     */
-
-    //free malloc arrays
-    //free(gc_period_sort) ;   //array for task sorting
-    //free(task_order);        //array for task sorting
-    //free(vic_arr);           //array for victim candidate
-    //free(gc_exec_arr);       //array for victim candidate
     return best_idx;
 }
