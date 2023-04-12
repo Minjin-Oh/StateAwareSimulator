@@ -420,12 +420,12 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     int min_p =  _find_min_period(task,tasknum);    //minimum I/O period of taskset (necessary to calc blocking)
     int cur_state, copyblock_state, new_rc;         //gc util calc params
     float gc_exec, gc_period, gc_util;              //gc util calc params
-    int temp, cur_priority;                         //param for sorting & param for proportion check
+    int cur_priority;                         //param for sorting & param for proportion check
     float cur_offset;                               //proportion of current task
     int cur_offset_int;                             //proportion of current task in victim block list
     int best_invalid = 0;                           //edge case handling param
     int best_idx = -1;                              //return value
-
+    float temp;
     //init arrays
     for(int i=0;i<full_head->blocknum;i++){
         vic_arr[i] = -1;
@@ -471,9 +471,10 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         cur_state = metadata->state[cur->idx];
         copyblock_state = metadata->state[rsvlist_head->head->idx];
         new_rc = metadata->invnum[cur->idx];
-        gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+        gc_exec = (float)(PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
         gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
         gc_util = gc_exec/gc_period;
+        //printf("gc_util, gc_exec : %f, %f\n",gc_util,gc_exec);
         //restriction 1. util
         if(_find_gc_safe(task,tasknum,metadata,old,taskidx,GC,gc_util,cur->idx,rsvlist_head->head->idx) == -1){
         //if(0){
@@ -508,9 +509,10 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             cur_state = metadata->state[cur->idx];
             copyblock_state = metadata->state[rsvlist_head->head->idx];
             new_rc = metadata->invnum[cur->idx];
-            gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+            gc_exec = (float)(PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
             gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
             gc_util = gc_exec/gc_period;
+            printf("gc_util, gc_exec : %f, %f\n",gc_util,gc_exec);
             //add a blocking utilization, since GC has a chance to change it.
             gc_util_arr[vic_num] = gc_util;
             vic_arr[vic_num] = cur->idx;
