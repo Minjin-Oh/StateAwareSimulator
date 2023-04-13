@@ -481,13 +481,19 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             cur = cur->next;
             continue;
         }
-
         //restriction 2. MINRC
         if(metadata->invnum[cur->idx] < MINRC){
             cur = cur->next;
             continue;
         }
-
+        //add a blocking utilization, since GC has a chance to change it.
+        
+        if(metadata->state[cur->idx] == old){
+            gc_util += e_exec(old+1) / (float)min_p;
+        }
+        else{
+            gc_util += e_exec(old) / (float)min_p;
+        }
         //insert util & block into candidate block list.
         gc_util_arr[vic_num] = gc_util;
         vic_arr[vic_num] = cur->idx;
@@ -512,8 +518,13 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             gc_exec = (float)(PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
             gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
             gc_util = gc_exec/gc_period;
-            printf("gc_util, gc_exec : %f, %f\n",gc_util,gc_exec);
             //add a blocking utilization, since GC has a chance to change it.
+            if(metadata->state[cur->idx] == old){
+            gc_util += e_exec(old+1) / (float)min_p;
+            }
+            else{
+                gc_util += e_exec(old) / (float)min_p;
+            }
             gc_util_arr[vic_num] = gc_util;
             vic_arr[vic_num] = cur->idx;
             vic_num++;
