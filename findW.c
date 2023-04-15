@@ -871,6 +871,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     int whot_bound = task[taskidx].addr_lb;
     int rhot_bound = task[taskidx].addr_lb + _offset;
     int highrank_lpa_counts = 0;
+    int highestrank_lpa_counts = 0;
     //params for intensity comparison.
     int whotspace = 0, rhotspace = 0;
     int w_hot = 0, r_hot = 0;
@@ -946,7 +947,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     //printf("whot_bound : %d, hotspace : %d, offset : %d, rhot_bound : %d\n",whot_bound,hotspace,_offset,rhot_bound);
     
     //define weight
-    
+    /*
     if(w_lpas[idx] < whot_bound + hotspace && w_lpas[idx] > whot_bound){
         whotspace = 1;
     }
@@ -964,9 +965,9 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         r_weight = (double)task[taskidx].rn / (double)task[taskidx].rp * (1/(double)((task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace))) * (1.0 - (double)task[taskidx].tploc);  
     }
     gc_weight = w_weight / (double)MINRC;
-    
+    */
 
-    /*
+    
     w_weight = (double)metadata->write_cnt[w_lpas[idx]] / (double)cur_cp;
     r_weight = (double)metadata->read_cnt[w_lpas[idx]] / (double)cur_cp;
     gc_weight = w_weight / (double)MINRC;
@@ -975,8 +976,8 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         r_weight = 0.0;
         gc_weight = 0.0;
     }
-    printf("[onlineweight]%lf,%lf,%lf\n",w_weight,r_weight,gc_weight);
-    */
+    //printf("[onlineweight]%lf,%lf,%lf\n",w_weight,r_weight,gc_weight);
+    
     //check intensity
     w_gradient = (double)(ENDW - STARTW) / (double)MAXPE;
     r_gradient = (double)(ENDR - STARTR) / (double)MAXPE;
@@ -1084,7 +1085,46 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         //printf("highrank count : %d, tot_write_cnt : %d\n",highrank_lpa_counts,metadata->tot_write_cnt);
         //printf("gc focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
+    //proportion calculation method 2.
     
+    if(max_intensity == w_intensity){
+	    for(int i=0;i<max_valid_pg;i++){
+		    if(metadata->write_cnt[i] > higestrank_lpa_counts){
+			    highestrank_lpa_counts = metadata->write_cnt[i];
+		    }
+	    }
+	    blockidx = (int)((double)candidate_num*(1.0 - (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts));
+	    if(highestrank_lpa_counts == 0){
+		    blockidx = 0;
+	    }
+    }
+    else if(max_intensity == r_intensity){
+	    for(int i=0;i<max_valid_pg;i++){
+		    if(metadata->read_cnt[i] > higestrank_lpa_counts){
+			    highestrank_lpa_counts = metadata->read_cnt[i];
+		    }
+	    }
+	    blockidx = (int)((double)candidate_num*((double)metadata->read_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts));
+	    if(highestrank_lpa_counts == 0){
+		    blockidx = 0;
+	    }
+    }
+    else if(max_intensity == gc_intensity){
+	    for(int i=0;i<max_valid_pg;i++){
+		    if(metadata->write_cnt[i] > higestrank_lpa_counts){
+			    highestrank_lpa_counts = metadata->write_cnt[i];
+		    }
+	    }
+	    blockidx = (int)((double)candidate_num*((double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts));
+	    if(metadata->write_cnt[w_lpas[idx]] == 0){
+		    blockidx = candidate_num - 1;
+	    }
+	    if(highestrank_lpa_counts == 0){
+		    blockidx = 0;
+	    }
+    }
+   
+
     //printf("blockidx : %d, candnum : %d\n",blockidx,candidate_num);
     //edgecase:: if blockidx == candidate_num(prop == 1.00), return candidate_num-1, a last possible block.
     if(blockidx == candidate_num){
@@ -1097,6 +1137,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     return res;
 }
 /*
+//old WGRAD function lines(DEPRECATED)
 int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx){
     
     //params
