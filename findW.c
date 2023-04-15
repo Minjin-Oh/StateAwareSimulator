@@ -1046,6 +1046,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     */
     
     //calculating proportions in online manner.
+    /*
     if(max_intensity == w_intensity){
         for(int i=0;i<max_valid_pg;i++){
             if (metadata->write_cnt[i]>metadata->write_cnt[w_lpas[idx]]){
@@ -1069,8 +1070,8 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         if(metadata->tot_read_cnt == 0){
             blockidx = 0;
         }
-        //printf("highrank count : %d, tot_read_cnt : %d\n",highrank_lpa_counts,metadata->tot_read_cnt);
-        //printf("r focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
+        printf("highrank count : %d, tot_read_cnt : %d\n",highrank_lpa_counts,metadata->tot_read_cnt);
+        printf("r focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
     else if (max_intensity == gc_intensity){
         for(int i=0;i<max_valid_pg;i++){
@@ -1082,14 +1083,15 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         if(metadata->tot_write_cnt == 0){
             blockidx = 0;
         }
-        //printf("highrank count : %d, tot_write_cnt : %d\n",highrank_lpa_counts,metadata->tot_write_cnt);
-        //printf("gc focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
+        printf("highrank count : %d, tot_write_cnt : %d\n",highrank_lpa_counts,metadata->tot_write_cnt);
+        printf("gc focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
+    */
     //proportion calculation method 2.
     
     if(max_intensity == w_intensity){
 	    for(int i=0;i<max_valid_pg;i++){
-		    if(metadata->write_cnt[i] > higestrank_lpa_counts){
+		    if(metadata->write_cnt[i] > highestrank_lpa_counts){
 			    highestrank_lpa_counts = metadata->write_cnt[i];
 		    }
 	    }
@@ -1100,7 +1102,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     }
     else if(max_intensity == r_intensity){
 	    for(int i=0;i<max_valid_pg;i++){
-		    if(metadata->read_cnt[i] > higestrank_lpa_counts){
+		    if(metadata->read_cnt[i] > highestrank_lpa_counts){
 			    highestrank_lpa_counts = metadata->read_cnt[i];
 		    }
 	    }
@@ -1108,10 +1110,12 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
 	    if(highestrank_lpa_counts == 0){
 		    blockidx = 0;
 	    }
+        printf("highest : %d, cur : %d\n",highestrank_lpa_counts,metadata->read_cnt[w_lpas[idx]]);
+        printf("[2]r focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
     else if(max_intensity == gc_intensity){
 	    for(int i=0;i<max_valid_pg;i++){
-		    if(metadata->write_cnt[i] > higestrank_lpa_counts){
+		    if(metadata->write_cnt[i] > highestrank_lpa_counts){
 			    highestrank_lpa_counts = metadata->write_cnt[i];
 		    }
 	    }
@@ -1122,6 +1126,8 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
 	    if(highestrank_lpa_counts == 0){
 		    blockidx = 0;
 	    }
+        printf("highest : %d, cur : %d\n",highestrank_lpa_counts,metadata->write_cnt[w_lpas[idx]]);
+        printf("[2]gc focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
    
 
