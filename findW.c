@@ -21,6 +21,7 @@ extern double* gc_prop;
 //FIXME:: a temporary solution to expose experiment values to find_write_gradient function.
 extern long cur_cp;
 extern int max_valid_pg;
+extern FILE **fps;
 //Determine rank of current lpa using task & locality information.
 //assuming that locality is fixed, rank of lpa is determined statically.
 void _find_rank_lpa(rttask* tasks, int tasknum){
@@ -865,13 +866,15 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     int cur_state, temp;
     int blockidx;
     int res;
-    
+    int type;
+    int rank;
     int hotspace = (int)((float)(task[taskidx].addr_ub - task[taskidx].addr_lb)*task[taskidx].sploc);
     int _offset = (int)((float)(task[taskidx].addr_ub - task[taskidx].addr_lb)*task[taskidx].sploc / 2.0);
     int whot_bound = task[taskidx].addr_lb;
     int rhot_bound = task[taskidx].addr_lb + _offset;
     int highrank_lpa_counts = 0;
     int highestrank_lpa_counts = 0;
+    double proportion;
     //params for intensity comparison.
     int whotspace = 0, rhotspace = 0;
     int w_hot = 0, r_hot = 0;
@@ -1088,25 +1091,35 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     }
     */
     //proportion calculation method 2.
-    
+    rank = 1;
     if(max_intensity == w_intensity){
+        type = WR;
 	    for(int i=0;i<max_valid_pg;i++){
 		    if(metadata->write_cnt[i] > highestrank_lpa_counts){
 			    highestrank_lpa_counts = metadata->write_cnt[i];
 		    }
+            if(metadata->write_cnt[i] > metadata->write_cnt[w_lpas[idx]]){
+                rank++;
+            }
 	    }
-	    blockidx = (int)((double)candidate_num*(1.0 - (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts));
+        proportion = 1.0 - (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
+	    blockidx = (int)((double)candidate_num*proportion);
 	    if(highestrank_lpa_counts == 0){
 		    blockidx = 0;
 	    }
     }
     else if(max_intensity == r_intensity){
+        type = RD;
 	    for(int i=0;i<max_valid_pg;i++){
 		    if(metadata->read_cnt[i] > highestrank_lpa_counts){
 			    highestrank_lpa_counts = metadata->read_cnt[i];
 		    }
+            if(metadata->read_cnt[i] > metadata->read_cnt[w_lpas[idx]]){
+                rank++;
+            }
 	    }
-	    blockidx = (int)((double)candidate_num*((double)metadata->read_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts));
+        proportion = (double)metadata->read_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
+	    blockidx = (int)((double)candidate_num*proportion);
 	    if(highestrank_lpa_counts == 0){
 		    blockidx = 0;
 	    }
@@ -1114,12 +1127,17 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         printf("[2]r focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
     else if(max_intensity == gc_intensity){
+        type = GC;
 	    for(int i=0;i<max_valid_pg;i++){
 		    if(metadata->write_cnt[i] > highestrank_lpa_counts){
 			    highestrank_lpa_counts = metadata->write_cnt[i];
 		    }
+            if(metadata->write_cnt[i] > metadata->write_cnt[w_lpas[idx]]){
+                rank++;
+            }
 	    }
-	    blockidx = (int)((double)candidate_num*((double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts));
+        proportion = (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
+	    blockidx = (int)((double)candidate_num*proportion);
 	    if(metadata->write_cnt[w_lpas[idx]] == 0){
 		    blockidx = candidate_num - 1;
 	    }
@@ -1138,6 +1156,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     }
 
     res = candidate_arr[blockidx];
+    print_writeblock_profile(fps[taskidx+tasknum],cur_cp,metadata,fblist_head,write_head,w_lpas[idx],candidate_arr[blockidx],type,rank,proportion);
     free(candidate_arr);
     free(cand_state_arr);
     return res;

@@ -29,6 +29,7 @@ double* gc_prop;
 //FIXME:: set these as global to expose
 long cur_cp;
 int max_valid_pg;
+FILE **fps;
 
 int main(int argc, char* argv[]){
     //init params
@@ -78,7 +79,7 @@ int main(int argc, char* argv[]){
     FILE* w_workloads[tasknum];
     FILE* r_workloads[tasknum];
     FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
-    FILE **fps;
+    
     block* cur_wb[tasknum];
     GCblock cur_GC[tasknum];
     RRblock cur_rr;
