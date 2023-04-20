@@ -550,7 +550,7 @@ void print_invalid_profile(FILE* fp, int cur_cp, meta* metadata){
 }
 
 void print_writeblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* fblist_head, bhead* write_head, int write_idx, int target_idx, int type, int rank, float proportion){
-    int oldest_writable = 0, youngest_writable = 0;
+    int oldest_writable = 0, youngest_writable = MAXPE+1;
     block* cur = fblist_head->head;
     while (cur != NULL){
         if (oldest_writable <= metadata->state[cur->idx]){
