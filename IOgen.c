@@ -213,7 +213,7 @@ void IOgen(int tasknum, rttask* tasks,long runtime, int offset, float _splocal, 
             //randomly generate locality for each task
             gen_loc(&(tasks[i]),i%4,&temp_sploc,&temp_tploc,&temp_offset);
             //assign offset to each task
-            printf("[task %d]sploc %f,tploc %f,offset %d\n",temp_sploc,temp_tploc,temp_offset);
+            printf("[task %d]sploc %f,tploc %f,offset %d\n",i,temp_sploc,temp_tploc,temp_offset);
             IOgen_task(&(tasks[i]),runtime,temp_offset,temp_sploc,temp_tploc);
             tasks[i].sploc = temp_sploc;
             tasks[i].tploc = temp_tploc;
@@ -221,7 +221,20 @@ void IOgen(int tasknum, rttask* tasks,long runtime, int offset, float _splocal, 
         }
         fclose(locfile);
     }
-    /*
+    //if locality is specified as -2, assign pre-recorded locality using input loc.csv files.
+    else if (_splocal == -2.0 || _tplocal == -2.0){
+	locfile = fopen("loc.csv","r");
+        for (int i=0;i<tasknum;i++){
+	    fscanf(locfile,"%f, %f\n",&temp_sploc,&temp_tploc);
+	    temp_offset = (int)((float)(tasks[i].addr_ub - tasks[i].addr_lb)* (temp_sploc)/2.0);
+	    printf("[task %d]sploc %f,tploc %f,offset %d\n",i,temp_sploc,temp_tploc,temp_offset);
+	    tasks[i].sploc = temp_sploc;
+	    tasks[i].tploc = temp_tploc;
+	    IOgen_task(&(tasks[i]),runtime,temp_offset,temp_sploc,temp_tploc);
+	}
+	fclose(locfile);
+    }
+    /* 
     //IO analyze code::activate if want to print the raw profile of I/O concentration.
     char name[10];
     char name2[10];
@@ -236,8 +249,8 @@ void IOgen(int tasknum, rttask* tasks,long runtime, int offset, float _splocal, 
         analyze_IO(fp_r);
         fclose(fp_w);
         fclose(fp_r);
-    }
-    */
+    }*/
+    
     
 }
 
