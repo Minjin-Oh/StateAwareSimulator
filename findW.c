@@ -1102,7 +1102,8 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
                 rank++;
             }
 	    }
-        proportion = (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
+        //proportion = (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
+	proportion = 1.0 - (double)rank/(double)max_valid_pg;
 	    blockidx = (int)((double)candidate_num*proportion);
 	    if(highestrank_lpa_counts == 0){
 		    blockidx = 0;
@@ -1118,8 +1119,9 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
                 rank++;
             }
 	    }
-        proportion = 1.0 - (double)metadata->read_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
-	    blockidx = (int)((double)candidate_num*proportion);
+        //proportion = 1.0 - (double)metadata->read_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
+	proportion = (double)rank / (double)max_valid_pg;    
+	blockidx = (int)((double)candidate_num*proportion);
 	    if(highestrank_lpa_counts == 0){
 		    blockidx = 0;
 	    }
@@ -1136,7 +1138,8 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
                 rank++;
             }
 	    }
-        proportion = 1.0 - (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
+        //proportion = 1.0 - (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
+	proportion = (double)rank/(double)max_valid_pg;
 	    blockidx = (int)((double)candidate_num*proportion);
 	    if(metadata->write_cnt[w_lpas[idx]] == 0){
 		    blockidx = candidate_num - 1;
