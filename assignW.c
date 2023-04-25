@@ -2,6 +2,11 @@
 
 #include "assignW.h"
 #include "findW.h"
+
+extern long cur_cp;
+extern int max_valid_pg;
+extern FILE **fps;
+
 block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadata,
                            bhead* fblist_head, bhead* write_head, block* cur_b){
     int target;
@@ -62,6 +67,7 @@ block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata,
         target = cur->idx;
         //printf("[INIT]target block : %d\n",target);
     }//if state is different, get another write block
+    print_writeblock_profile(fps[tasknum+taskidx],cur_cp,metadata,fblist_head,write_head,-1,cur->idx,-1,-1,-1.0,cur->idx,-1);
     return cur;
 }
 
