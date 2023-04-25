@@ -864,9 +864,9 @@ int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metad
         return best_idx;
     }
     
-    printf("best block : %d, state : %d,oldest_writable:%d,youngest_writable:%d\n",
-		    best_idx,metadata->state[best_idx],oldest_writable,youngest_writable);
-    print_writeblock_profile(fps[taskidx+tasknum],cur_cp,metadata,fblist_head,write_head,lpa,best_idx,-1,-1,-1.0);
+    //printf("best block : %d, state : %d,oldest_writable:%d,youngest_writable:%d\n",
+	//	    best_idx,metadata->state[best_idx],oldest_writable,youngest_writable);
+    print_writeblock_profile(fps[taskidx+tasknum],cur_cp,metadata,fblist_head,write_head,lpa,best_idx,-1,-1,-1.0, -1, -1);
 
     return best_idx;
 }
@@ -1174,7 +1174,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     }
 
     res = candidate_arr[blockidx];
-    print_writeblock_profile(fps[taskidx+tasknum],cur_cp,metadata,fblist_head,write_head,w_lpas[idx],candidate_arr[blockidx],type,rank,proportion);
+    print_writeblock_profile(fps[taskidx+tasknum],cur_cp,metadata,fblist_head,write_head,w_lpas[idx],candidate_arr[blockidx],type,rank,proportion,blockidx,candidate_num);
     free(candidate_arr);
     free(cand_state_arr);
     return res;

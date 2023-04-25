@@ -549,7 +549,7 @@ void print_invalid_profile(FILE* fp, int cur_cp, meta* metadata){
     fprintf(fp,"\n");
 }
 
-void print_writeblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* fblist_head, bhead* write_head, int write_idx, int target_idx, int type, int rank, float proportion){
+void print_writeblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* fblist_head, bhead* write_head, int write_idx, int target_idx, int type, int rank, float proportion, int bidx, int candnum){
     int oldest_writable = 0, youngest_writable = MAXPE+1;
     block* cur = fblist_head->head;
     while (cur != NULL){
@@ -571,12 +571,12 @@ void print_writeblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* fbli
         }
         cur = cur->next;
     }
-    fprintf(fp,"%ld,%d,%d, %d,%d,%d,%d, %d, %d,%d, %f,%d,%d,\n",
+    fprintf(fp,"%ld,%d,%d, %d,%d,%d,%d, %d, %d,%d, %f,%d,%d,%d,%d\n",
     cur_cp,type,write_idx,
     metadata->write_cnt[write_idx],metadata->tot_write_cnt,metadata->read_cnt[write_idx],metadata->tot_read_cnt,
     rank,
     oldest_writable,youngest_writable,
-    proportion, target_idx, metadata->state[target_idx]);
+    proportion, target_idx, metadata->state[target_idx],bidx,candnum);
 }
 void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, long cur_cp, FILE* fp, FILE* fplife){
     int cur_read_worst[tasknum];
