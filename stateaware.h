@@ -127,7 +127,7 @@ float calc_weightedgc(rttask* tasks, meta* metadata, block* tar, int taskidx, in
 //profiler
 float get_totutil(rttask* tasks, int tasknum, int taskidx, meta* metadata, int old);
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
-                   int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead* write_head, int getfp);
+                   int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead* write_head, int getfp,int gcvalidcount);
 float print_profile_best(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state);
 void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, long cur_cp, FILE* fp, FILE* fplife);

@@ -1113,9 +1113,9 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
 		    if(metadata->write_cnt[i] > highestrank_lpa_counts){
 			    highestrank_lpa_counts = metadata->write_cnt[i];
 		    }
-            	    if(metadata->write_cnt[i] > metadata->write_cnt[w_lpas[idx]]){
-                 	rank++;
-            	    }
+            if(metadata->write_cnt[i] > metadata->write_cnt[w_lpas[idx]]){
+                rank++;
+            }
 	    }
         //proportion = (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
 	proportion = 1.0 - (double)rank/(double)max_valid_pg;
@@ -1179,126 +1179,4 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     free(cand_state_arr);
     return res;
 }
-/*
-//old WGRAD function lines(DEPRECATED)
-int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx){
-    
-    //params
-    block* cur;
-    int whotspace = 0, rhotspace = 0;       //check if current lpa is in hotspace or not
-    int w_hot = 0, r_hot = 0;               //check if current lpa "favors" write or read
-    int preference;
-    int cur_state, best_state;
-    int best_idx = -1;
-    int old = get_blockstate_meta(metadata,OLD);
-    double w_weight = 0.0, r_weight = 0.0;
-    double w_gradient, r_gradient;
-    
-    //FIXME:: references global variables to specify hotness.
-    //printf("sploc : %f, tploc : %f, offset : %d\n",sploc,tploc,offset);
-    float _sploc = sploc;
-    float _tploc = tploc;
-    int _offset = (int)((float)(task[0].addr_ub - task[0].addr_lb)*sploc);
-    int hotspace = (int)((float)(task[taskidx].addr_ub - task[taskidx].addr_lb)*_sploc);
-    int whot_bound = task[taskidx].addr_lb;
-    int rhot_bound = task[taskidx].addr_lb + _offset;
 
-    //printf("whot_bound : %d ~ %d\n",whot_bound, whot_bound+hotspace);
-    //printf("rhot bound : %d ~ %d\n",rhot_bound, rhot_bound + hotspace);
-    if(w_lpas[idx] < whot_bound + hotspace && w_lpas[idx] > whot_bound){
-        whotspace = 1;
-    }
-    if(w_lpas[idx] < rhot_bound + hotspace && w_lpas[idx] > rhot_bound){
-        rhotspace = 1;
-    }
-    //printf("lpa is %d, w = %d, r = %d\n",w_lpas[idx],whotspace,rhotspace);
-    //code for finding write & read weight
-    if(whotspace == 1){
-        w_weight = (double)task[taskidx].wn / (double)task[taskidx].wp * (1.0/(double)hotspace) * (double)_tploc;
-        //printf("[H]w = %d / %d * (1/%d) * %lf = %lf\n",task[taskidx].wn , task[taskidx].wp, hotspace, _tploc,w_weight);
-    } else {
-        w_weight = (double)task[taskidx].wn / (double)task[taskidx].wp * (1.0/(double)((task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace))) * (1.0 - (double)_tploc);  
-        //printf("[C]w = %d / %d * (1/%d) * %lf = %lf\n",task[taskidx].wn , task[taskidx].wp, (task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace), 1.0 - _tploc, w_weight);
-    }
-    if(rhotspace == 1){
-        r_weight = (double)task[taskidx].rn / (double)task[taskidx].rp * (1/(double)hotspace) * _tploc;
-        //printf("[H]r = %d / %d * (1/%d) * %f = %f\n",task[taskidx].rn , task[taskidx].rp, hotspace, _tploc,r_weight);
-    } else { 
-        r_weight = (double)task[taskidx].rn / (double)task[taskidx].rp * (1/(double)((task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace))) * (1.0 - (double)_tploc);  
-        //printf("[C]r = %d / %d * (1/%d) * %f = %f\n",task[taskidx].rn , task[taskidx].rp, (task[taskidx].addr_ub - task[taskidx].addr_lb - hotspace), 1.0 - _tploc,r_weight);
-    }
-    //weight defined
-    //code for checking page characteristic
-    w_gradient = (double)(ENDW - STARTW) / (double)MAXPE;
-    r_gradient = (double)(ENDR - STARTR) / (double)MAXPE;
-    //printf("w_grad : %lf, w_weight : %lf, r_grad : %lf, r_weight : %lf, calc : %.10lf\n",
-    //            w_gradient,w_weight,r_gradient,r_weight,w_gradient * w_weight + r_gradient * r_weight);
-    if (w_gradient * w_weight + r_gradient * r_weight < 0.0){
-        w_hot = 1; //prefers old block
-    } else if (w_gradient * w_weight + r_gradient * r_weight > 0.0){
-        r_hot = 1; //prefers young block
-    }
-    //printf("w_hot = %d, r_hot = %d\n",w_hot,r_hot);
-    //characteristic defined
-
-    //select block
-    //init best block if possible
-    cur = fblist_head->head;
-    if(cur != NULL && best_idx == -1){
-        best_state = metadata->state[cur->idx];
-        best_idx = cur->idx;
-    }
-    while(cur != NULL){
-        //check if current block violates utilization bound or not
-        cur_state = metadata->state[cur->idx];
-        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
-            //printf("block: %d, util check fail\n",cur->idx);
-            cur = cur->next;
-            continue;
-        }
-        if(w_hot == 1){
-            //find oldest block possible
-            if(metadata->state[cur->idx] > best_state){
-                best_state = metadata->state[cur->idx];
-                best_idx = cur->idx;
-            }
-        } else if (r_hot == 1){
-            //find youngest block possible
-            if(metadata->state[cur->idx] < best_state){
-                best_state = metadata->state[cur->idx];
-                best_idx = cur->idx;
-            }
-        }
-        cur = cur->next;
-    }
-    cur = write_head->head;
-    if(cur != NULL && best_idx == -1){
-        best_state = metadata->state[cur->idx];
-        best_idx = cur->idx;
-    }
-    while(cur != NULL){
-        //check if current block violates utilization bound or not
-        cur_state = metadata->state[cur->idx];
-        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
-            //printf("block: %d, util check fail\n",cur->idx);
-            cur = cur->next;
-            continue;
-        }
-        if(w_hot == 1){
-            //find oldest block possible
-            if(metadata->state[cur->idx] > best_state){
-                best_state = metadata->state[cur->idx];
-                best_idx = cur->idx;
-            }
-        } else if (r_hot == 1){
-            //find youngest block possible
-            if(metadata->state[cur->idx] < best_state){
-                best_state = metadata->state[cur->idx];
-                best_idx = cur->idx;
-            }
-        }
-        cur = cur->next;
-    }
-    //block selection finished
-    return best_idx;
-}*/

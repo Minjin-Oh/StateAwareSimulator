@@ -375,7 +375,7 @@ int main(int argc, char* argv[]){
                     total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fps[cur_IO->taskidx],yngest,oldest,cur_cp,
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
-                                    newmeta->total_fp);
+                                    newmeta->total_fp,cur_IO->gc_valid_count);
                     
                     if(total_u > 1.0){
                         printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);

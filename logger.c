@@ -332,7 +332,7 @@ float calc_weightedgc(rttask* tasks, meta* metadata, block* tar, int taskidx, in
     return (gc_prob * exp_gc_latency);
 }
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
-                   int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead*write_head, int getfp){
+                   int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead*write_head, int getfp, int gcvalidcount){
     //init params
     int cur_read_worst[tasknum];
     int state_tot = 0;
@@ -383,14 +383,14 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     total_u_noblock = total_u;
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
     //print all infos
-    fprintf(fp,"%ld,%d, %f,%f,%f,%f,%f,%f, %d,%d, %d,%d,%d, %d,%d, %d,%d, %f,%f,%f, %f, %lf\n",
+    fprintf(fp,"%ld,%d, %f,%f,%f,%f,%f,%f, %d,%d, %d,%d,%d,%d, %d,%d, %d,%d, %f,%f,%f, %f, %lf\n",
     cur_cp,taskidx,
     worst_util,total_u, total_u_noblock,
     metadata->runutils[0][taskidx],
     metadata->runutils[1][taskidx],
     metadata->runutils[2][taskidx],
     old,yng,
-    cur_gc_idx,cur_gc_state,getfp,
+    cur_gc_idx,cur_gc_state,getfp,gcvalidcount,
     cur_wb->idx,metadata->state[cur_wb->idx],
     fblist_head->blocknum,write_head->blocknum,
     total_w,total_r,total_gc,
