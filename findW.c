@@ -724,6 +724,7 @@ int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metad
     int best_idx = -1;
     int logi_pg = (int)((1.0-OP)*(float)NOP);
     int old = get_blockstate_meta(metadata,OLD);
+	int youngest_writable = MAXPE+1, oldest_writable = 0;
     avg_w_cnt = (int)((float)metadata->tot_write_cnt / (float)(logi_pg));
     avg_r_cnt = (int)((float)metadata->tot_read_cnt / (float)(logi_pg));
     
@@ -781,6 +782,12 @@ int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metad
                 best_state = metadata->state[cur->idx];
                 best_idx = cur->idx;
             }
+	    if(metadata->state[cur->idx] < youngest_writable){
+		    youngest_writable = metadata->state[cur->idx];
+	    }
+	    if(metadata->state[cur->idx] > oldest_writable){
+		    oldest_writable = metadata->state[cur->idx];
+	    }
         }
         cur = cur->next;
     }//!fblist search end
@@ -836,6 +843,12 @@ int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metad
                 best_state = metadata->state[cur->idx];
                 best_idx = cur->idx;
             }
+	    if(metadata->state[cur->idx] < youngest_writable){
+		    youngest_writable = metadata->state[cur->idx];
+	    }
+	    if(metadata->state[cur->idx] > oldest_writable){
+		    oldest_writable = metadata->state[cur->idx];
+	    }
         }
         cur = cur->next;
     }//!writelist search end
@@ -851,8 +864,10 @@ int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metad
         return best_idx;
     }
     
-    //printf("best block : %d, state : %d\n",best_idx,metadata->state[best_idx]);
-   
+    printf("best block : %d, state : %d,oldest_writable:%d,youngest_writable:%d\n",
+		    best_idx,metadata->state[best_idx],oldest_writable,youngest_writable);
+    print_writeblock_profile(fps[taskidx+tasknum],cur_cp,metadata,fblist_head,write_head,lpa,best_idx,-1,-1,-1.0);
+
     return best_idx;
 }
 
@@ -1098,9 +1113,9 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
 		    if(metadata->write_cnt[i] > highestrank_lpa_counts){
 			    highestrank_lpa_counts = metadata->write_cnt[i];
 		    }
-            if(metadata->write_cnt[i] > metadata->write_cnt[w_lpas[idx]]){
-                rank++;
-            }
+            	    if(metadata->write_cnt[i] > metadata->write_cnt[w_lpas[idx]]){
+                 	rank++;
+            	    }
 	    }
         //proportion = (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
 	proportion = 1.0 - (double)rank/(double)max_valid_pg;
