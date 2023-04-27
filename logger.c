@@ -523,6 +523,28 @@ void print_freeblock_profile(FILE* fp, int cur_cp, meta* metadata, bhead* fblist
     fprintf(fp,"\n");
 }
 
+void print_fullblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* full_head){
+    int fullblock_state[NOB];
+    int fullblock_invalids[NOB];
+    int fullblock_count = 0;
+    block* cur = full_head->head;
+    while(cur != NULL){
+        fullblock_state[fullblock_count] = metadata->state[cur->idx];
+        fullblock_invalids[fullblock_count] = metadata->invnum[cur->idx];
+        cur = cur->next;
+        fullblock_count++;
+    }
+    fprintf(fp,"%ld,",cur_cp);
+    for(int i=0;i<fullblock_count;i++){
+        fprintf(fp,"%d, ",fullblock_state[i]);
+    }
+    fprintf(fp,"\n %ld",cur_cp);
+    for(int i=0;i<fullblock_count;i++){
+        fprintf(fp,"%d, ",fullblock_invalids[i]);
+    }
+    fprintf(fp,"\n");
+}
+
 void print_invalid_profile(FILE* fp, int cur_cp, meta* metadata){
     int invalid_per_state[MAXPE];
     int sorted_idx[NOB];

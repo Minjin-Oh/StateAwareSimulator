@@ -134,6 +134,7 @@ void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, long
 void check_block(float tot_u, meta* metadata, rttask* tasks, int tasknum, long cur_cp, FILE* fp, FILE* fplife);
 void print_hotdist_profile(FILE* fp, rttask* tasks, int cur_cp, meta* metadata, int taskidx, int hotness_rw);
 void print_freeblock_profile(FILE* fp, int cur_cp, meta* metadata, bhead* fblist_head, bhead* write_head);
+void print_fullblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* full_head);
 void print_invalid_profile(FILE* fp, int cur_cp, meta* metadata);
 void print_writeblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* fblist_head, bhead* write_head, int write_idx, int target_idx, int type, int rank, float proportion, int bidx, int candnum);
 float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* fp, int yng, int old,long cur_cp);
