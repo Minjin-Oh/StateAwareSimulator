@@ -538,7 +538,7 @@ void print_fullblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* full_
     for(int i=0;i<fullblock_count;i++){
         fprintf(fp,"%d, ",fullblock_state[i]);
     }
-    fprintf(fp,"\n %ld",cur_cp);
+    fprintf(fp,"\n %ld,",cur_cp);
     for(int i=0;i<fullblock_count;i++){
         fprintf(fp,"%d, ",fullblock_invalids[i]);
     }
