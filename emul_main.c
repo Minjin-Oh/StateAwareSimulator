@@ -371,7 +371,6 @@ int main(int argc, char* argv[]){
                     //    print_hotdist_profile(fps[tasknum+i],tasks,cur_cp, newmeta,-1,i);
                     //}
                     //print_freeblock_profile(fps[tasknum+4],cur_cp,newmeta,fblist_head,write_head);
-                    print_fullblock_profile(fps[tasknum+tasknum+1],cur_cp,newmeta,full_head);
                     total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fps[cur_IO->taskidx],yngest,oldest,cur_cp,
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
@@ -502,6 +501,7 @@ int main(int argc, char* argv[]){
             if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){
                 //printf("next gc : %ld, cur cp : %ld, gcjob : %d\n",next_gc_release[j],cur_cp,gcjob_finished[j]);
                 if(newmeta->total_invalid >= expected_invalid){
+                    print_fullblock_profile(fps[tasknum+tasknum+1],cur_cp,newmeta,full_head);
                     gettimeofday(&(algo_start_time),NULL);
                     gc_job_start_q(tasks, j, tasknum, newmeta,
                                fblist_head, full_head, rsvlist_head, 0,
