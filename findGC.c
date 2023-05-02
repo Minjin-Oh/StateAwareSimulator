@@ -619,10 +619,10 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     
     int test_cur_offset_int = (int)(cur_offset * (float)test_vicnum);
     int test_best_idx = test_arr[test_cur_offset_int];
-    fprintf(test_gc_writeblock[taskidx],"%ld, %d, %d, %d, %d, %d\n",
+    fprintf(test_gc_writeblock[taskidx],"%ld, %d, %d, %d, %d, %d,%d\n",
     cur_cp,
     best_idx,metadata->state[best_idx],
     test_best_idx,metadata->state[test_best_idx],
-    block_origin[test_cur_offset_int]);
+    block_origin[test_cur_offset_int],test_vicnum - vic_num);
     return best_idx;
 }
