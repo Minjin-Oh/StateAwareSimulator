@@ -137,6 +137,7 @@ void print_freeblock_profile(FILE* fp, int cur_cp, meta* metadata, bhead* fblist
 void print_fullblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* full_head);
 void print_invalid_profile(FILE* fp, int cur_cp, meta* metadata);
 void print_writeblock_profile(FILE* fp, long cur_cp, meta* metadata, bhead* fblist_head, bhead* write_head, int write_idx, int target_idx, int type, int rank, float proportion, int bidx, int candnum);
+void print_profile_updaterate(meta* metadata, FILE* updaterate_fp);
 float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* fp, int yng, int old,long cur_cp);
 
 //gen_task

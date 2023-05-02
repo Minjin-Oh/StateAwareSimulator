@@ -31,7 +31,7 @@ long cur_cp;
 int max_valid_pg;
 FILE **fps;
 FILE *test_gc_writeblock[4];
-
+FILE *updaterate_fp;
 int main(int argc, char* argv[]){
     //init params
     srand(time(NULL)); 
@@ -307,6 +307,7 @@ int main(int argc, char* argv[]){
         sprintf(testgcwriteblockname,"wbtest_%d.csv",i);
         test_gc_writeblock[i] = fopen(testgcwriteblockname,"w");
     }
+    updaterate_fp = fopen("updaterate.csv","w");
     gettimeofday(&(tot_start_time),NULL);
     while(cur_cp <= runtime){
         //if current time is near end of workload window, rewind to first of workload
@@ -351,6 +352,7 @@ int main(int argc, char* argv[]){
                 fprintf(fplife,"%ld,",cur_cp);
                 fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
                 fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
+                print_profile_updaterate(newmeta,updaterate_fp);
                 sleep(1);
                 return 1;
             }
@@ -405,6 +407,7 @@ int main(int argc, char* argv[]){
                         fprintf(fplife,"%ld,",cur_cp);
                         fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
                         fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
+                        print_profile_updaterate(newmeta,updaterate_fp);
                         sleep(1);
                         return 1;
                     }

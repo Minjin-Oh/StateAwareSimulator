@@ -752,6 +752,7 @@ float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* 
 
 void print_profile_updaterate(meta* metadata, FILE* updaterate_fp){
     for (int i=0;i<NOP;i++){
-        fprintf(updaterate_fp,"%ld, %ld\n",metadata->avg_update,metadata->recent_update);
+        printf("wtf? %ld %ld\n",metadata->avg_update[i],metadata->recent_update[i]);
+        fprintf(updaterate_fp,"%ld, %ld\n",metadata->avg_update[i],metadata->recent_update[i]);
     }
 }
