@@ -195,7 +195,7 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
 }
 
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
-                  bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
+                  bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
                   int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp){
     if(gcq->reqnum != 0){
         //printf("[%ld]queue not empty, dl miss detected. task %d GC\n",cur_cp,taskidx);
@@ -228,7 +228,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     } else if (gcflag == 5){
         gc_limit = find_gcweighted(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
     } else if (gcflag == 6){
-        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
+        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head);
     }
     
     //if gc baseline, select most invalid block

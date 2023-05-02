@@ -7,6 +7,8 @@ extern int MINRC;
 extern IOhead** wq;
 extern IOhead** rq;
 extern IOhead** gcq;
+extern FILE* test_gc_writeblock[4];
+extern long cur_cp;
 
 int _find_gc_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util, int cur_b, int rsv_b){
     //check if current I/O job does not violate util test along with recently released other jobs.
@@ -402,7 +404,7 @@ int find_gcweighted(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
 }
 
 
-int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head){
+int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head, bhead* write_head){
     
     //sort the victim blocks in order of utilization
     //allocate victim block to GC task proportionally with GC period
@@ -420,12 +422,18 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     int min_p =  _find_min_period(task,tasknum);    //minimum I/O period of taskset (necessary to calc blocking)
     int cur_state, copyblock_state, new_rc;         //gc util calc params
     float gc_exec, gc_period, gc_util;              //gc util calc params
-    int cur_priority;                         //param for sorting & param for proportion check
+    int cur_priority;                               //param for sorting & param for proportion check
     float cur_offset;                               //proportion of current task
     int cur_offset_int;                             //proportion of current task in victim block list
     int best_invalid = 0;                           //edge case handling param
     int best_idx = -1;                              //return value
     float temp;
+    
+    //arrays to test write block array
+    int test_arr[full_head->blocknum + write_head->blocknum];
+    float test_gcutil_arr[full_head->blocknum + write_head->blocknum];
+    char block_origin[full_head->blocknum + write_head->blocknum];
+
     //init arrays
     for(int i=0;i<full_head->blocknum;i++){
         vic_arr[i] = -1;
@@ -497,8 +505,50 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         //insert util & block into candidate block list.
         gc_util_arr[vic_num] = gc_util;
         vic_arr[vic_num] = cur->idx;
+        //testcode:: insert util & block into test block list.
+        test_gcutil_arr[vic_num] = gc_util;
+        test_arr[vic_num] = cur->idx;
+        block_origin[vic_num] = 0;
         vic_num++;
-
+        //printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
+        cur = cur->next;
+    }
+    //testcode:: search the write block list
+    cur = write_head->head;
+    int test_vicnum = vic_num;
+    gettimeofday(&a,NULL);
+    while(cur != NULL){
+        cur_state = metadata->state[cur->idx];
+        copyblock_state = metadata->state[rsvlist_head->head->idx];
+        new_rc = metadata->invnum[cur->idx];
+        gc_exec = (float)(PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+        gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
+        gc_util = gc_exec/gc_period;
+        //printf("gc_util, gc_exec : %f, %f\n",gc_util,gc_exec);
+        //restriction 1. util
+        if(_find_gc_safe(task,tasknum,metadata,old,taskidx,GC,gc_util,cur->idx,rsvlist_head->head->idx) == -1){
+        //if(0){
+            cur = cur->next;
+            continue;
+        }
+        //restriction 2. MINRC
+        if(metadata->invnum[cur->idx] < MINRC){
+            cur = cur->next;
+            continue;
+        }
+        //add a blocking utilization, since GC has a chance to change it.
+        
+        if(metadata->state[cur->idx] == old){
+            gc_util += e_exec(old+1) / (float)min_p;
+        }
+        else{
+            gc_util += e_exec(old) / (float)min_p;
+        }
+        //testcode:: insert util & block into test block list.
+        test_gcutil_arr[test_vicnum] = gc_util;
+        test_arr[test_vicnum] = cur->idx;
+        block_origin[test_vicnum] = 1;
+        test_vicnum++;
         //printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
         cur = cur->next;
     }
@@ -547,25 +597,32 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
     gettimeofday(&b,NULL);
-    
-    //using offset factor, choose best block
-    cur_offset_int = (int)(cur_offset * (float)vic_num);
-  
-    best_idx = vic_arr[cur_offset_int];
-    
-    /*
-    //edge case handling(deprecated)
-    if(best_idx == -1){
-        cur = full_head->head;
-        best_invalid = metadata->invnum[cur->idx];
-        while(cur != NULL){
-            if(metadata->invnum[cur->idx] >= best_invalid){
-                best_idx = cur->idx;
-                best_invalid = metadata->invnum[cur->idx];
+    //testcode:: sort test block list
+    for(int i=test_vicnum-1;i>0;i--){
+        for(int j=0;j<i;j++){
+            if(test_gcutil_arr[j] > test_gcutil_arr[j+1]){
+                temp = test_gcutil_arr[j];
+                test_gcutil_arr[j] = test_gcutil_arr[j+1];
+                test_gcutil_arr[j+1] = temp;
+                temp = test_arr[j];
+                test_arr[j] = test_arr[j+1];
+                test_arr[j+1] = temp;
+                temp = block_origin[j];
+                block_origin[j] = block_origin[j+1];
+                block_origin[j+1] = temp;
             }
-            cur = cur->next;
         }
     }
-    */
+    //using offset factor, choose best block
+    cur_offset_int = (int)(cur_offset * (float)vic_num);
+    best_idx = vic_arr[cur_offset_int];
+    
+    int test_cur_offset_int = (int)(cur_offset * (float)test_vicnum);
+    int test_best_idx = test_arr[test_cur_offset_int];
+    fprintf(test_gc_writeblock[taskidx],"%ld, %d, %d, %d, %d, %d\n",
+    cur_cp,
+    best_idx,metadata->state[best_idx],
+    test_best_idx,metadata->state[test_best_idx],
+    block_origin[test_cur_offset_int]);
     return best_idx;
 }

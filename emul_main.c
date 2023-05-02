@@ -30,6 +30,7 @@ double* gc_prop;
 long cur_cp;
 int max_valid_pg;
 FILE **fps;
+FILE *test_gc_writeblock[4];
 
 int main(int argc, char* argv[]){
     //init params
@@ -80,7 +81,7 @@ int main(int argc, char* argv[]){
     FILE* r_workloads[tasknum];
     FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
     
-    block* cur_wb[tasknum];
+    block *cur_wb[tasknum];
     GCblock cur_GC[tasknum];
     RRblock cur_rr;
 
@@ -301,6 +302,11 @@ int main(int argc, char* argv[]){
 
     //run simulation
     FILE* u_check = fopen("rrchecker.csv","w");
+    for(int i=0;i<4;i++){
+        char testgcwriteblockname[20];
+        sprintf(testgcwriteblockname,"wbtest_%d.csv",i);
+        test_gc_writeblock[i] = fopen(testgcwriteblockname,"w");
+    }
     gettimeofday(&(tot_start_time),NULL);
     while(cur_cp <= runtime){
         //if current time is near end of workload window, rewind to first of workload
@@ -504,7 +510,7 @@ int main(int argc, char* argv[]){
                     print_fullblock_profile(fps[tasknum+tasknum+1],cur_cp,newmeta,full_head);
                     gettimeofday(&(algo_start_time),NULL);
                     gc_job_start_q(tasks, j, tasknum, newmeta,
-                               fblist_head, full_head, rsvlist_head, 0,
+                               fblist_head, full_head, rsvlist_head, write_head, 0,
                                gcq[j], &(cur_GC[j]), gcflag, cur_cp);
                     gc_release_num++;
                     gettimeofday(&(algo_end_time),NULL);

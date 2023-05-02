@@ -107,7 +107,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
                      FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp);
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
-                  bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
+                  bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
                   int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp);
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
                   IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp);
