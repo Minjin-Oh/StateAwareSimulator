@@ -9,6 +9,8 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         metadata->vmap_task[i] = -1;
         metadata->read_cnt[i] = 0;
         metadata->write_cnt[i] = 0;
+        metadata->avg_update[i] = 0;
+        metadata->recent_update[i] = 0;
     }
     for (int i=0;i<NOB;i++){
         metadata->invnum[i] = 0;

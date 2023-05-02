@@ -150,6 +150,8 @@ typedef struct _meta{
     int tot_read_cnt;
     int write_cnt[NOP];
     int* write_cnt_task;
+    long avg_update[NOP];
+    long recent_update[NOP];
     int tot_write_cnt;
     int EEC[NOB];
     int tot_gc_cnt;

@@ -749,3 +749,9 @@ float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* 
     cur_cp,total_u,old,yng,state_avg,state_var); 
     return total_u;
 }
+
+void print_profile_updaterate(meta* metadata, FILE* updaterate_fp){
+    for (int i=0;i<NOP;i++){
+        fprintf(updaterate_fp,"%ld, %ld\n",metadata->avg_update,metadata->recent_update);
+    }
+}

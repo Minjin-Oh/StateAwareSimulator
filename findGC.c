@@ -428,12 +428,12 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     int best_invalid = 0;                           //edge case handling param
     int best_idx = -1;                              //return value
     float temp;
-    
+#ifdef utilsort_writecheck
     //arrays to test write block array
     int test_arr[full_head->blocknum + write_head->blocknum];
     float test_gcutil_arr[full_head->blocknum + write_head->blocknum];
     char block_origin[full_head->blocknum + write_head->blocknum];
-
+#endif
     //init arrays
     for(int i=0;i<full_head->blocknum;i++){
         vic_arr[i] = -1;
@@ -505,14 +505,17 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         //insert util & block into candidate block list.
         gc_util_arr[vic_num] = gc_util;
         vic_arr[vic_num] = cur->idx;
+#ifdef utilsort_writecheck
         //testcode:: insert util & block into test block list.
         test_gcutil_arr[vic_num] = gc_util;
         test_arr[vic_num] = cur->idx;
         block_origin[vic_num] = 0;
+#endif
         vic_num++;
         //printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
         cur = cur->next;
     }
+#ifdef utilsort_writecheck
     //testcode:: search the write block list
     cur = write_head->head;
     int test_vicnum = vic_num;
@@ -552,6 +555,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         //printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
         cur = cur->next;
     }
+#endif
     gettimeofday(&b,NULL);
     //printf("[gcsafe]%d\n",b.tv_sec * 1000000 + b.tv_usec - a.tv_sec * 1000000 - a.tv_usec);
     //EDGE CASE HANDLING : if vic_num is 0, ignore find_gc_safe and add victims.
@@ -597,6 +601,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
     gettimeofday(&b,NULL);
+#ifdef utilsort_writecheck
     //testcode:: sort test block list
     for(int i=test_vicnum-1;i>0;i--){
         for(int j=0;j<i;j++){
@@ -613,10 +618,11 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             }
         }
     }
+#endif
     //using offset factor, choose best block
     cur_offset_int = (int)(cur_offset * (float)vic_num);
     best_idx = vic_arr[cur_offset_int];
-    
+#ifdef utilsort_writecheck
     int test_cur_offset_int = (int)(cur_offset * (float)test_vicnum);
     int test_best_idx = test_arr[test_cur_offset_int];
     fprintf(test_gc_writeblock[taskidx],"%ld, %d, %d, %d, %d, %d,%d\n",
@@ -624,5 +630,6 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     best_idx,metadata->state[best_idx],
     test_best_idx,metadata->state[test_best_idx],
     block_origin[test_cur_offset_int],test_vicnum - vic_num);
+#endif
     return best_idx;
 }
