@@ -127,7 +127,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         metadata->reserved_write++;
         metadata->avg_update[lpa] = (metadata->avg_update[lpa]*(metadata->write_cnt[lpa]-1)+(cur_cp - metadata->recent_update[lpa]))/(long)metadata->write_cnt[lpa];
         metadata->recent_update[lpa] = cur_cp;
-        printf("avg : %ld, recent : %ld\n",metadata->avg_update[lpa],metadata->recent_update[lpa]);
+        //printf("avg : %ld, recent : %ld\n",metadata->avg_update[lpa],metadata->recent_update[lpa]);
         req->type = WR;
         req->taskidx = taskidx;
         req->lpa = lpa;

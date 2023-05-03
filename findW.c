@@ -883,6 +883,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     int res;
     int type;
     int rank;
+    int youngest_writable = MAXPE+1, oldest_writable = 0;
     int hotspace = (int)((float)(task[taskidx].addr_ub - task[taskidx].addr_lb)*task[taskidx].sploc);
     int _offset = (int)((float)(task[taskidx].addr_ub - task[taskidx].addr_lb)*task[taskidx].sploc / 2.0);
     int whot_bound = task[taskidx].addr_lb;
@@ -897,6 +898,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     double w_gradient, r_gradient, gc_gradient;
     double w_intensity, r_intensity, gc_intensity;
     double max_intensity;
+
     //init, find & sort candidate block list.
     block* cur = NULL;
     cur = write_head->head;
@@ -909,6 +911,12 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         }
         candidate_arr[candidate_num] = cur->idx;
         candidate_num++;
+        if(youngest_writable > metadata->state[cur->idx]){
+            youngest_writable = metadata->state[cur->idx];
+        }
+        if(oldest_writable < metadata->state[cur->idx]){
+            oldest_writable = metadata->state[cur->idx];
+        }
         cur = cur->next;
     }
     cur = fblist_head->head;
@@ -921,17 +929,15 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         }
         candidate_arr[candidate_num] = cur->idx;
         candidate_num++;
+        if(youngest_writable > metadata->state[cur->idx]){
+            youngest_writable = metadata->state[cur->idx];
+        }
+        if(oldest_writable < metadata->state[cur->idx]){
+            oldest_writable = metadata->state[cur->idx];
+        }
         cur = cur->next;
     }
-    for(int i=candidate_num-1;i>0;i--){
-        for(int j=0;j<i;j++){
-            if(metadata->state[candidate_arr[j]] > metadata->state[candidate_arr[j+1]]){
-                temp = candidate_arr[j];
-                candidate_arr[j] = candidate_arr[j+1];
-                candidate_arr[j+1] = temp;
-            }
-        }
-    }
+    
     
     //EDGECASE: when candidate num is 0 (no feasible block)
     if(candidate_num == 0){
@@ -941,26 +947,37 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
             candidate_arr[candidate_num] = cur->idx;
             candidate_num++;
             cur = cur->next;
+            if(youngest_writable > metadata->state[cur->idx]){
+                youngest_writable = metadata->state[cur->idx];
+            }
+            if(oldest_writable < metadata->state[cur->idx]){
+                oldest_writable = metadata->state[cur->idx];
+            }
         }
         cur = fblist_head->head;
         while(cur!=NULL){
             candidate_arr[candidate_num] = cur->idx;
             candidate_num++;
             cur = cur->next;
+            if(youngest_writable > metadata->state[cur->idx]){
+                youngest_writable = metadata->state[cur->idx];
+            }
+            if(oldest_writable < metadata->state[cur->idx]){
+                oldest_writable = metadata->state[cur->idx];
+            }
         }
-        /* 
-        //old edge case handling logic (deprecated)
-        cur = write_head->head;
-        if(cur == NULL){
-            cur = fblist_head->head;
-        }
-        free(candidate_arr);
-        free(cand_state_arr);
-        return cur->idx;
-        */
     }
     //!EDGECASE
-    
+
+    for(int i=candidate_num-1;i>0;i--){
+        for(int j=0;j<i;j++){
+            if(metadata->state[candidate_arr[j]] > metadata->state[candidate_arr[j+1]]){
+                temp = candidate_arr[j];
+                candidate_arr[j] = candidate_arr[j+1];
+                candidate_arr[j+1] = temp;
+            }
+        }
+    }
     //printf("addr_lb : %d, addr_ub :%d, addr slize : %d, sploc : %f\n",task[taskidx].addr_lb, task[taskidx].addr_ub, task[taskidx].addr_ub - task[taskidx].addr_lb, task[taskidx].sploc);
     //printf("whot_bound : %d, hotspace : %d, offset : %d, rhot_bound : %d\n",whot_bound,hotspace,_offset,rhot_bound);
     
@@ -1118,7 +1135,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
             }
 	    }
         //proportion = (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
-	proportion = 1.0 - (double)rank/(double)max_valid_pg;
+        proportion = 1.0 - (double)rank/(double)max_valid_pg;
 	    blockidx = (int)((double)candidate_num*proportion);
 	    if(highestrank_lpa_counts == 0){
 		    blockidx = 0;
@@ -1135,13 +1152,13 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
             }
 	    }
         //proportion = 1.0 - (double)metadata->read_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
-	proportion = (double)rank / (double)max_valid_pg;    
-	blockidx = (int)((double)candidate_num*proportion);
+	    proportion = (double)rank / (double)max_valid_pg;    
+	    blockidx = (int)((double)candidate_num*proportion);
 	    if(highestrank_lpa_counts == 0){
 		    blockidx = 0;
 	    }
-        printf("highest : %d, cur : %d\n",highestrank_lpa_counts,metadata->read_cnt[w_lpas[idx]]);
-        printf("[2]r focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
+        //printf("highest : %d, cur : %d\n",highestrank_lpa_counts,metadata->read_cnt[w_lpas[idx]]);
+        //printf("[2]r focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
     else if(max_intensity == gc_intensity){
         type = GC;
@@ -1154,7 +1171,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
             }
 	    }
         //proportion = 1.0 - (double)metadata->write_cnt[w_lpas[idx]]/(double)highestrank_lpa_counts;
-	proportion = (double)rank/(double)max_valid_pg;
+	    proportion = (double)rank/(double)max_valid_pg;
 	    blockidx = (int)((double)candidate_num*proportion);
 	    if(metadata->write_cnt[w_lpas[idx]] == 0){
 		    blockidx = candidate_num - 1;
@@ -1162,12 +1179,10 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
 	    if(highestrank_lpa_counts == 0){
 		    blockidx = 0;
 	    }
-        printf("highest : %d, cur : %d\n",highestrank_lpa_counts,metadata->write_cnt[w_lpas[idx]]);
-        printf("[2]gc focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
+        //printf("highest : %d, cur : %d\n",highestrank_lpa_counts,metadata->write_cnt[w_lpas[idx]]);
+        //printf("[2]gc focused, bidx=%d,candnum=%d\n",blockidx,candidate_num);
     }
-   
 
-    //printf("blockidx : %d, candnum : %d\n",blockidx,candidate_num);
     //edgecase:: if blockidx == candidate_num(prop == 1.00), return candidate_num-1, a last possible block.
     if(blockidx == candidate_num){
         blockidx = candidate_num-1;
