@@ -284,7 +284,7 @@ int _find_write_safe(rttask* tasks, int tasknum, meta* metadata, int old, int ta
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
     total_u -= wutils[taskidx];
     total_u += util;
-    //printf("tot_u : %f, old_tot_u : %f\n",total_u,old_total_u);
+    printf("tot_u : %f, old_tot_u : %f\n",total_u,old_total_u);
     if (total_u <= 1.0){
         return 0;
     } else if (total_u > 1.0){
@@ -946,25 +946,26 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
         while(cur!=NULL){
             candidate_arr[candidate_num] = cur->idx;
             candidate_num++;
-            cur = cur->next;
             if(youngest_writable > metadata->state[cur->idx]){
                 youngest_writable = metadata->state[cur->idx];
             }
             if(oldest_writable < metadata->state[cur->idx]){
                 oldest_writable = metadata->state[cur->idx];
             }
+            cur = cur->next;
         }
         cur = fblist_head->head;
         while(cur!=NULL){
             candidate_arr[candidate_num] = cur->idx;
             candidate_num++;
-            cur = cur->next;
+            
             if(youngest_writable > metadata->state[cur->idx]){
                 youngest_writable = metadata->state[cur->idx];
             }
             if(oldest_writable < metadata->state[cur->idx]){
                 oldest_writable = metadata->state[cur->idx];
             }
+            cur = cur->next;
         }
     }
     //!EDGECASE

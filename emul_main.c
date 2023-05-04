@@ -26,12 +26,18 @@ double* w_prop;
 double* r_prop;
 double* gc_prop;
 
-//FIXME:: set these as global to expose
+//FIXME:: set these as global to expose log file pointers and system parameters
 long cur_cp;
 int max_valid_pg;
 FILE **fps;
 FILE *test_gc_writeblock[4];
 FILE *updaterate_fp;
+
+//FIXME:: set these as global to expose global write block to assign_write_invalid function
+block** b_glob_young;
+block** b_glob_old;
+bhead* glob_yb;
+bhead* glob_ob;
 int main(int argc, char* argv[]){
     //init params
     srand(time(NULL)); 
@@ -68,7 +74,7 @@ int main(int argc, char* argv[]){
     int g_cur = 0;                   //pointer for current writing page
     int last_task = tasknum-1;       //index of last I/O task
     float rrutil;                    //a utilization allowed to data relocation job
-    cur_cp = 0;                 //current checkpoint time
+    cur_cp = 0;                      //current checkpoint time
     long cur_IO_end = __LONG_MAX__;  //absolute time when current req finishes
     int wl_init = 0;                 //flag for wear-leveling initiation
     float WU;                        //worst-case utilization tracker.
@@ -80,7 +86,12 @@ int main(int argc, char* argv[]){
     FILE* w_workloads[tasknum];
     FILE* r_workloads[tasknum];
     FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
-    
+    b_glob_old = (block**)malloc(sizeof(block*)*tasknum);
+    b_glob_young = (block**)malloc(sizeof(block*)*tasknum);
+    for(int i=0;i<tasknum;i++){
+        b_glob_old[i] = NULL;
+        b_glob_young[i] = NULL;
+    }
     block *cur_wb[tasknum];
     GCblock cur_GC[tasknum];
     RRblock cur_rr;
@@ -262,6 +273,8 @@ int main(int argc, char* argv[]){
     rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);
     full_head = init_blocklist(0,-1);//generate 0 component ll.
     write_head = init_blocklist(0,-1);
+    glob_yb = init_blocklist(0,-1);
+    glob_ob = init_blocklist(0, -1);
     hotlist = init_blocklist(0,-1);
     coldlist = init_blocklist(0,-1);
 
