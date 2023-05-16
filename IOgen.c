@@ -262,6 +262,67 @@ void IO_open(int tasknum, FILE** wfpp, FILE** rfpp){
         sprintf(name2,"rd_t%d.csv",i);
         wfpp[i] = fopen(name,"r");
         rfpp[i] = fopen(name2,"r");
+        printf("opening %s and %s\n",name,name2);
+        if(wfpp[i] == NULL){
+            printf("file pointer of write workload is missing\n");
+            abort();
+        }
+        if(rfpp[i] == NULL){
+            printf("file pointer of read workload is missing\n");
+            abort();
+        }
+        
+    }
+    sleep(3);
+}
+
+void reset_IO_update(meta* metadata, int lpa_lb, int lpa_ub, long IO_offset){
+    //a function which resets update time of given LPA range
+    //called for first job after I/O rewind
+    //according to the reset time, re-calculate the next update time of designated task.
+    char name[30];
+    FILE* timing_fp;
+    long scan_ret;
+    long timing_ret;
+    for(int i=lpa_lb; i<lpa_ub;i++){
+        sprintf(name,"./timing/%d.csv",i);
+        timing_fp = fopen(name,"r");
+        if(timing_fp != NULL){
+            scan_ret = fscanf(timing_fp,"%ld,",&timing_ret);
+            metadata->next_update[i] = timing_ret + IO_offset;
+        } else if (timing_fp == NULL){
+            metadata->next_update[i] = WORKLOAD_LENGTH + IO_offset;
+        }
+        if(timing_fp != NULL){
+            fclose(timing_fp);
+        }
+    }
+}
+
+void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
+    char name[30];
+    FILE* timing_fp;
+    long scan_ret;
+    long timing_ret;
+    sprintf(name,"./timing/%d.csv",lpa);
+    timing_fp = fopen(name,"r");
+    if(timing_fp != NULL){
+        for(int i=0;i<wcount+1;i++){
+            scan_ret = fscanf(timing_fp,"%ld,",&timing_ret);
+        }
+        if(scan_ret != EOF){
+                metadata->next_update[lpa] = timing_ret+offset;
+                //printf("lpa %d update timing set to %ld\n",lpa,metadata->next_update[lpa]);
+        } else {
+            metadata->next_update[lpa] = offset + WORKLOAD_LENGTH;
+            //printf("[NOUPDATE]lpa %d update timing set to %ld\n",lpa,metadata->next_update[lpa]);
+        }
+    } else if (timing_fp == NULL){
+        metadata->next_update[lpa] = offset + WORKLOAD_LENGTH;
+        //printf("[NOFILE]lpa %d update timing set to %ld\n",lpa,metadata->next_update[lpa]);
+    }
+    if(timing_fp != NULL){
+        fclose(timing_fp);
     }
 }
 

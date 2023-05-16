@@ -12,7 +12,7 @@ extern bhead* glob_yb;
 extern bhead* glob_ob;
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp){
+                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp, long workload_reset_time){
 
     //makes write job according to workload and task parameter
     block *cur, *temp;
@@ -70,7 +70,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     } else if (wflag == 12 || wflag == 13){
         cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0,wflag);
     } else if (wflag == 14){
-        cur = assign_write_invalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0);
+        cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0);
     }
     //save the destination ppa for each write
     //ONLY update blockmanager (reserve free page)
@@ -78,14 +78,16 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     cur_offset = PPB - cur->fpnum;
     for (int i=0;i<tasks[taskidx].wn;i++){
         while(cur->fpnum==0){
-            if(wflag != 14){
+            //if(wflag != 14){
+            if(1){
                 temp = ll_remove(write_head,cur->idx);
                 if(temp!=NULL){
                     ll_append(full_head,temp);
                     printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
                     printf("free page left : %d\n",metadata->total_fp);
                 }
-            } else if (wflag == 14){
+            } 
+            /*else if (wflag == 14){
                 temp = ll_remove(glob_yb, cur->idx);
                 if(temp == NULL){
                     temp = ll_remove(glob_ob, cur->idx);
@@ -95,7 +97,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                     printf("[%ld][new]append %d, fullbnum : %d, wbnum : %d&%d, freebnum: %d\n",cur_cp,temp->idx,full_head->blocknum,glob_ob->blocknum,glob_yb->blocknum,fblist_head->blocknum);
                     printf("[%ld][new]free page left : %d\n",cur_cp,metadata->total_fp);
                 }
-            }
+            }*/
             
             if(wflag == 1){
                 cur = assign_write_ctrl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
@@ -124,7 +126,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             } else if (wflag == 12 || wflag == 13){
                 cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
             } else if (wflag == 14){
-                cur = assign_write_invalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i);
+                cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i);
             }
             if(cur==NULL){
                 printf("noFP available\n, totalfp : %d\n");
@@ -142,7 +144,9 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     }
     
     //assign page write destination
-     //generate I/O requests.
+    //generate I/O requests.
+    char name[30];
+    FILE* timing_fp;
     for (int i=0;i<tasks[taskidx].wn;i++){
         IO* req = (IO*)malloc(sizeof(IO));
         lpa = lpas[i];
@@ -160,6 +164,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         req->IO_start_time = cur_cp;
         req->deadline = (long)cur_cp + (long)tasks[taskidx].wp;
         req->exec = (long)floor((double)w_exec(ppa_state[i]));
+        IO_timing_update(metadata,lpa,metadata->write_cnt[lpa],workload_reset_time);
         if(i != tasks[taskidx].wn-1){
             req->islastreq = 0;    
         } else {

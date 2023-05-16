@@ -105,7 +105,7 @@ void set_scheme_flags(char* argv[],
 }
 
 void set_exec_flags(char* argv[], int *tasknum, float *totutil, 
-                    int *genflag, int* taskflag,
+                    int *genflag, int* taskflag, int* profflag,
                     int *skewness, float* sploc, float* tploc, int* skewnum,
                     int *OPflag, int *cyc, double *OP, int *MINRC){
     /* 
@@ -128,6 +128,9 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
     }
     if(strcmp(argv[4],"TASKGEN")==0){
         *taskflag = 1;
+    }
+    if(strcmp(argv[4],"PROFGEN")==0){
+        *profflag = 1;
     }
 
     *tasknum = atoi(argv[5]);

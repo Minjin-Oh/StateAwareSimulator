@@ -52,6 +52,7 @@ block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata,
             //printf("do not change wb, left fp : %d\n",cur_b->fpnum);
             return cur_b;
         } else {
+            /*
             cur = ll_pop(fblist_head);
             if (cur != NULL){
                 ll_append(write_head,cur);
@@ -59,9 +60,17 @@ block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata,
                 cur = write_head->head;
             }
             target = cur->idx;
-            //printf("target block : %d\n",target);
+            */
+           cur = write_head->head;
+           if (cur == NULL){
+               cur = ll_pop(fblist_head);
+               if (cur != NULL){
+                   ll_append(write_head,cur);
+               }
+           }
         }
     } else { //initial case :: cur_b == NULL. find new block
+        /*
         cur = ll_pop(fblist_head);
         if (cur != NULL){
             ll_append(write_head,cur);
@@ -69,7 +78,14 @@ block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata,
             cur = write_head->head;
         }
         target = cur->idx;
-        //printf("[INIT]target block : %d\n",target);
+        */
+       cur = write_head->head;
+       if(cur == NULL){
+           cur = ll_pop(fblist_head);
+           if(cur != NULL){
+               ll_append(write_head,cur);
+           }
+       }
     }//if state is different, get another write block
     print_writeblock_profile(fps[tasknum+taskidx],cur_cp,metadata,fblist_head,write_head,-1,cur->idx,-1,-1,-1.0,cur->idx,-1);
     return cur;
@@ -478,4 +494,19 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
         }
         return ret;
     }
+}
+
+block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx){
+    int target;
+    block* cur = NULL;
+    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx);
+    cur = ll_remove(fblist_head,target);
+    if (cur != NULL){
+        printf("retreived %d\n",cur->idx);
+        ll_append(write_head,cur);
+    } else {
+        cur = ll_findidx(write_head,target);
+    }
+    return cur;
 }

@@ -54,14 +54,14 @@ int main(int argc, char* argv[]){
     //return;
 
     //get flags & open file
-    int gcflag = 0, wflag = 0, genflag = 0, taskflag = 0, rrcond = 0;
+    int gcflag = 0, wflag = 0, genflag = 0, taskflag = 0, profflag = 0, rrcond = 0;
     float sploc;
     float tploc;
     int OPflag;
     set_scheme_flags(argv,
                      &gcflag, &wflag, &rrflag, &rrcond);
     set_exec_flags(argv, &tasknum, &totutil,
-                   &genflag, &taskflag,
+                   &genflag, &taskflag, &profflag,
                    &skewness, &sploc, &tploc, &skewnum,
                    &OPflag, &OP, &MINRC);
     int total_fp = NOP-PPB*tasknum;

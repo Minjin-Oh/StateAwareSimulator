@@ -15,7 +15,7 @@
 //locality param
 #define SPLOCAL 0.05
 #define TPLOCAL 0.95
-
+#define WORKLOAD_LENGTH 8000000000L
 //lifetime params
 #define _MINRC 35
 #define MAXPE 1000
@@ -152,6 +152,7 @@ typedef struct _meta{
     int* write_cnt_task;
     long avg_update[NOP];
     long recent_update[NOP];
+    long next_update[NOP];
     int tot_write_cnt;
     int EEC[NOB];
     int tot_gc_cnt;

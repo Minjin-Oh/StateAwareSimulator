@@ -10,7 +10,7 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata){
     old_ppa = metadata->pagemap[lpa];
     old_block = (int)(old_ppa/PPB);
 
-    //invalidate old ppa
+    //invalidate old ppa (1 == invalid, 0 == valid)
     metadata->rmap[old_ppa] = -1;
     if(metadata->invmap[old_ppa] == 0){
         metadata->invmap[old_ppa] = 1;

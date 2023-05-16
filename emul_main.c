@@ -33,6 +33,9 @@ FILE **fps;
 FILE *test_gc_writeblock[4];
 FILE *updaterate_fp;
 
+int* IO_resetflag;
+long* IO_resetpoint;
+
 //FIXME:: set these as global to expose global write block to assign_write_invalid function
 block** b_glob_young;
 block** b_glob_old;
@@ -57,6 +60,7 @@ int main(int argc, char* argv[]){
     float totutil;                   //a total utilization of current system
     int genflag = 0;
     int taskflag = 0;
+    int profflag = 0;
     int skewness;                    //skew of utilization(-1 = noskew, 0 = read-skewed, 1 = write-skewed)
     int skewnum;                     //number of skewed task
     int OPflag;
@@ -66,7 +70,7 @@ int main(int argc, char* argv[]){
     set_scheme_flags(argv,
                      &gcflag, &wflag, &rrflag, &rrcond);
     set_exec_flags(argv, &tasknum, &totutil,
-                   &genflag, &taskflag,
+                   &genflag, &taskflag, &profflag,
                    &skewness, &sploc, &tploc, &skewnum,
                    &OPflag, &init_cyc, &OP, &MINRC);
     
@@ -92,6 +96,12 @@ int main(int argc, char* argv[]){
         b_glob_old[i] = NULL;
         b_glob_young[i] = NULL;
     }
+    IO_resetflag = (int*)malloc(sizeof(int)*tasknum);
+    IO_resetpoint = (long*)malloc(sizeof(long)*tasknum);
+    for(int i=0;i<tasknum;i++){
+        IO_resetflag[i] = 0;
+        IO_resetpoint[i] = 0L;
+    }
     block *cur_wb[tasknum];
     GCblock cur_GC[tasknum];
     RRblock cur_rr;
@@ -109,8 +119,8 @@ int main(int argc, char* argv[]){
     long rr_check = (long)100000;
     //long runtime = 160000000000;
     //long init_runtime = 160000000000;
-    long runtime = 8000000000L;
-    long init_runtime = 8000000000L;
+    long runtime = WORKLOAD_LENGTH;
+    long init_runtime = WORKLOAD_LENGTH;
     IO* cur_IO = NULL;
     wq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     rq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
@@ -245,6 +255,29 @@ int main(int argc, char* argv[]){
     fclose(main_taskparam);
     fclose(locfile);    
 
+    if(profflag == 1){
+        int prof_targ_lpa;
+        int wn_count = 0;
+        char name[30];
+        FILE* write_targ_file;
+        IO_open(tasknum,w_workloads,r_workloads);
+        for(int a=0;a<tasknum;a++){
+            cur_cp = 0;
+            wn_count = 0;
+            while(EOF != fscanf(w_workloads[a],"%d,",&prof_targ_lpa)){
+                sprintf(name,"./timing/%d.csv",prof_targ_lpa);
+                write_targ_file = fopen(name,"a");
+                fprintf(write_targ_file,"%ld,",cur_cp);
+                fclose(write_targ_file);
+                wn_count++;
+                if(wn_count == tasks[a].wn){
+                    cur_cp += tasks[a].wp;
+                    wn_count = 0;
+                }
+            }
+        }
+        return 0;
+    }
     //run gradient tests for write in offline, and assign offset value for WGRAD policy.
     _find_rank_lpa(tasks,tasknum);
     offset = (int)((float)(tasks[0].addr_ub - tasks[0].addr_lb)*sploc/2.0);
@@ -330,6 +363,7 @@ int main(int argc, char* argv[]){
             for(int i=0;i<tasknum;i++){
                 rewind(r_workloads[i]);
                 rewind(w_workloads[i]);
+                IO_resetflag[i] = 1;
             }
             prev_run = runtime;
             runtime = runtime + init_runtime;
@@ -495,11 +529,16 @@ int main(int argc, char* argv[]){
                 wjob_deferred[j] = 1;
             }
             if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){
+                if(IO_resetflag[j] == 1){
+                    IO_resetpoint[j] = cur_cp;
+                    IO_resetflag[j] = 0;
+                    reset_IO_update(newmeta,tasks[j].addr_lb,tasks[j].addr_ub,cur_cp);
+                }
                 //printf("next w : %ld, cur cp : %ld, wjob : %d\n",next_w_release[j],cur_cp,wjob_finished[j]);
                 gettimeofday(&(algo_start_time),NULL);
                 cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
                                               fblist_head, full_head, write_head,
-                                              w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
+                                              w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp,IO_resetpoint[j]);
                 write_release_num++;
                 gettimeofday(&(algo_end_time),NULL);
                 //printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);

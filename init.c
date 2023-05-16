@@ -1,7 +1,11 @@
 #include "init.h"
+#include "IOgen.h"
 void init_metadata(meta* metadata, int tasknum, int cycle){
     FILE* cyc_fp;
+    FILE* timing_fp;
+    char name[30];
     int cyc_b;
+    long next_update_time;
     for (int i=0;i<NOP;i++){
         metadata->pagemap[i] = -1;
         metadata->rmap[i] = -1;
@@ -11,6 +15,7 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         metadata->write_cnt[i] = 0;
         metadata->avg_update[i] = 0;
         metadata->recent_update[i] = 0;
+        IO_timing_update(metadata,i,0,0L);
     }
     for (int i=0;i<NOB;i++){
         metadata->invnum[i] = 0;

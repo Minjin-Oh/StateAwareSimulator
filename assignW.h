@@ -23,3 +23,5 @@ block* assign_write_gradient(rttask* task, int taskidx, int tasknum, meta* metad
                            bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, int flag);
 block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metadata,
                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx);
+block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, 
+                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx);

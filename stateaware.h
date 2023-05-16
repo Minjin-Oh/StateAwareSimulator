@@ -24,7 +24,7 @@ int _gc_period(rttask* task,int _minrc);
 void set_scheme_flags(char* argv[], 
                       int *gcflag, int *wflag, int *rrflag, int *rrcond);
 void set_exec_flags(char* argv[], int *tasknum, float *totutil, 
-                    int *genflag, int* taskflag,
+                    int *genflag, int* taskflag, int* profflag, 
                     int *skewness, float* sploc, float* tploc, int* skewnum,
                     int *OPflag, int *cyc, double *OP, int *MINRC);
 
@@ -105,7 +105,7 @@ void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head,
 void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOhead* rq, long cur_cp);
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp);
+                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp, long workload_reset_time);
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
                   int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp);
