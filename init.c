@@ -15,13 +15,16 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         metadata->write_cnt[i] = 0;
         metadata->avg_update[i] = 0;
         metadata->recent_update[i] = 0;
+#ifdef IOTIMING
         IO_timing_update(metadata,i,0,0L);
+#endif
     }
     for (int i=0;i<NOB;i++){
         metadata->invnum[i] = 0;
         metadata->state[i] = cycle;
         metadata->EEC[i]=0;
         metadata->access_window[i] = 0;
+        metadata->GC_locktime[i] = 0L;
     }
     metadata->total_invalid = 0;
     metadata->tot_read_cnt = 0;

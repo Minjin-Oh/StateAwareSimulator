@@ -254,3 +254,16 @@ int util_check_main(){
     int gc_period = _gc_period(&(tasks[0]),(int)(PPB*OP));
     printf("gc util e:%d p:%d u:%f\n",gc_exec,gc_period,__calc_gcu(&(tasks[0]),(int)(PPB*OP),0,20,20));
 }
+
+long get_gc_locktime(meta* metadata, int blockidx){
+    int lpa;
+    long ret = 0L;
+    int offset = blockidx*PPB;
+    for(int i=offset;i<offset+PPB;i++){
+        lpa = metadata->rmap[i];
+        if(ret < metadata->next_update[lpa]){
+            ret = metadata->next_update[lpa];
+        }
+    }
+    return ret;
+}

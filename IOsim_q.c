@@ -83,8 +83,9 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                 temp = ll_remove(write_head,cur->idx);
                 if(temp!=NULL){
                     ll_append(full_head,temp);
-                    printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
-                    printf("free page left : %d\n",metadata->total_fp);
+                    metadata->GC_locktime[temp->idx] = get_gc_locktime(metadata,temp->idx);
+                    //printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
+                    //printf("free page left : %d\n",metadata->total_fp);
                 }
             } 
             /*else if (wflag == 14){
@@ -132,7 +133,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                 printf("noFP available\n, totalfp : %d\n");
                 abort();
             } else {
-                printf("cur : %d\n",cur->idx);
+                //printf("cur : %d\n",cur->idx);
             }
             cur_offset = PPB - cur->fpnum;
             //printf("current offset : %d\n",cur_offset);
@@ -164,7 +165,9 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         req->IO_start_time = cur_cp;
         req->deadline = (long)cur_cp + (long)tasks[taskidx].wp;
         req->exec = (long)floor((double)w_exec(ppa_state[i]));
+#ifdef IOTIMING
         IO_timing_update(metadata,lpa,metadata->write_cnt[lpa],workload_reset_time);
+#endif
         if(i != tasks[taskidx].wn-1){
             req->islastreq = 0;    
         } else {

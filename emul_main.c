@@ -532,7 +532,9 @@ int main(int argc, char* argv[]){
                 if(IO_resetflag[j] == 1){
                     IO_resetpoint[j] = cur_cp;
                     IO_resetflag[j] = 0;
+#ifdef IOTIMING
                     reset_IO_update(newmeta,tasks[j].addr_lb,tasks[j].addr_ub,cur_cp);
+#endif
                 }
                 //printf("next w : %ld, cur cp : %ld, wjob : %d\n",next_w_release[j],cur_cp,wjob_finished[j]);
                 gettimeofday(&(algo_start_time),NULL);

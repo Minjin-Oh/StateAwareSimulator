@@ -34,6 +34,7 @@
 //scheme option toggle
 #define DOGC
 #define DORELOCATE
+//#define IOTIMING
 
 //baseline vs new scheme(deprecated)
 //#define DOGCCONTROL
@@ -141,20 +142,22 @@ typedef struct _bhead{
 typedef struct _meta{
     int pagemap[NOP];
     int rmap[NOP];
-    int invnum[NOB];
     int invmap[NOP];
-    int state[NOB];
-    int access_window[NOB];
     int read_cnt[NOP];
-    int* read_cnt_task;
-    int tot_read_cnt;
     int write_cnt[NOP];
-    int* write_cnt_task;
     long avg_update[NOP];
     long recent_update[NOP];
     long next_update[NOP];
-    int tot_write_cnt;
+    char vmap_task[NOP];
+    int invnum[NOB];
+    int state[NOB];
+    int access_window[NOB];
     int EEC[NOB];
+    long GC_locktime[NOB];
+    int* read_cnt_task;
+    int tot_read_cnt;
+    int* write_cnt_task;
+    int tot_write_cnt;
     int tot_gc_cnt;
     int total_invalid;
     int total_fp;
@@ -162,6 +165,4 @@ typedef struct _meta{
     float** runutils;
     char** access_tracker;
     int* cur_read_worst;
-    char vmap_task[NOP];
-
 }meta;
