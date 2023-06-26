@@ -32,15 +32,27 @@ int max_valid_pg;
 FILE **fps;
 FILE *test_gc_writeblock[4];
 FILE *updaterate_fp;
-
+FILE *invfull_fp;
+FILE *longliveratio_fp;
 int* IO_resetflag;
 long* IO_resetpoint;
+
+//a space to store lpa update timing(memory)
+long* lpa_update_timing[NOP];
+int update_cnt[NOP];
+int cur_length[NOP];
+int init_length = 10;
 
 //FIXME:: set these as global to expose global write block to assign_write_invalid function
 block** b_glob_young;
 block** b_glob_old;
 bhead* glob_yb;
 bhead* glob_ob;
+
+int tot_longlive_cnt = 0;
+
+
+
 int main(int argc, char* argv[]){
     //init params
     srand(time(NULL)); 
@@ -167,12 +179,15 @@ int main(int argc, char* argv[]){
     double tot_runtime_readable;
     double write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg;
     
+    //TEMPCODE::open file for invfull block check.
+    invfull_fp = fopen("invfull.csv","w");
+    longliveratio_fp = fopen("longliveratio.csv","w");
+
     //enable following two lines in a case to check util per cycle.
     //randtask_statechecker(tasknum,8000);
     //return;
 
     //add scheme flags for flexible write policy change
-
     printf("[ SCHEMES ] %d, %d, %d, %d\n",wflag,gcflag,rrflag,rrcond);
     printf("[EXEC-main] %d, %d\n",genflag,taskflag);
     printf("[EXEC-task] %d, %f\n",tasknum,totutil);
@@ -255,6 +270,54 @@ int main(int argc, char* argv[]){
     fclose(main_taskparam);
     fclose(locfile);    
 
+    
+
+#ifdef TIMING_ON_MEM
+    int prof_targ_lpa;
+    int wn_count = 0;
+    IO_open(tasknum,w_workloads,r_workloads);
+    for(int i=0;i<max_valid_pg;i++){
+        lpa_update_timing[i] = (long*)malloc(sizeof(long)*init_length);
+        cur_length[i] = init_length;
+        update_cnt[i] = 0;
+    }
+    for(int a=0;a<tasknum;a++){
+        cur_cp = 0;
+        wn_count = 0;
+        while(EOF != fscanf(w_workloads[a],"%d,",&prof_targ_lpa)){
+            //write on memory
+            lpa_update_timing[prof_targ_lpa][update_cnt[prof_targ_lpa]] = cur_cp;
+            //printf("lpa_update_timing[%d][%d] = %ld",prof_targ_lpa,update_cnt[prof_targ_lpa],cur_cp);
+            update_cnt[prof_targ_lpa]++;
+            //if malloc space is not enough, relocate the update timing records.
+            if(cur_length[prof_targ_lpa] <= update_cnt[prof_targ_lpa]){
+                long* temp_arr = (long*)malloc(sizeof(long)*(cur_length[prof_targ_lpa]+init_length));
+                for(int b=0;b<cur_length[prof_targ_lpa];b++){
+                    temp_arr[b] = lpa_update_timing[prof_targ_lpa][b];
+                }
+                free(lpa_update_timing[prof_targ_lpa]);
+                lpa_update_timing[prof_targ_lpa] = temp_arr;
+                cur_length[prof_targ_lpa] += init_length;
+            }
+            wn_count++;
+            if(wn_count == tasks[a].wn){
+                cur_cp += tasks[a].wp;
+                wn_count = 0;
+            }
+        }
+    }
+    for(int a=0;a<update_cnt[0];a++){
+        //printf("%ld\n",lpa_update_timing[0][a]);
+    }
+    for(int a=0;a<tasknum;a++){
+        for(int b=tasks[a].addr_lb;b<tasks[a].addr_ub;b++){
+            //printf("(%d)%d,%ld ",b,update_cnt[b],lpa_update_timing[b][0]);
+        }
+        //printf("\n");
+    }
+    IO_close(tasknum,w_workloads,r_workloads);
+#endif
+    //LPA PROFILE GENERATOR CODE :: profile LPA invalidation pattern(per each address)
     if(profflag == 1){
         int prof_targ_lpa;
         int wn_count = 0;
@@ -265,6 +328,7 @@ int main(int argc, char* argv[]){
             cur_cp = 0;
             wn_count = 0;
             while(EOF != fscanf(w_workloads[a],"%d,",&prof_targ_lpa)){
+                //write on file
                 sprintf(name,"./timing/%d.csv",prof_targ_lpa);
                 write_targ_file = fopen(name,"a");
                 fprintf(write_targ_file,"%ld,",cur_cp);
@@ -278,6 +342,84 @@ int main(int argc, char* argv[]){
         }
         return 0;
     }
+    //LPA PROFILE GENERATOR CODE 2 :: 
+    //profile LPA invalidation pattern in one file for plotting + profile GC pattern for plotting
+    if(profflag == 2){
+        //main flag :: generate a scatter plot of LPA update vs timestamp
+        int wn_count[tasknum];
+        int wn_before_GC = 0;
+        long next_wp[tasknum];
+        long next_cp;
+        int next_task;
+        int invalidation_count;
+        long invalid_cumulative = 0;
+        long reclaim_cumulative = 0;
+        int fp_count;
+        char name[30];
+        char name2[30];
+        FILE* IO_scatter_file;
+        FILE* GC_scatter_file;
+        IO_open(tasknum,w_workloads,r_workloads);
+        sprintf(name,"scatter.csv");
+        sprintf(name2,"GC_timing.csv");
+        IO_scatter_file = fopen(name,"w");
+        GC_scatter_file = fopen(name2,"w");
+        for(int a=0;a<tasknum;a++){
+            next_wp[a] = tasks[a].wp;
+        }
+
+        //start profiling assuming that dummy write is all done.
+        cur_cp = 0;
+        invalidation_count = 0;
+        fp_count = PPB*NOB - max_valid_pg;
+        while(cur_cp <= WORKLOAD_LENGTH){
+            for(int a=0;a<tasknum;a++){
+                if(cur_cp % tasks[a].wp == 0){
+                    for(int b=0;b<tasks[a].wn;b++){
+                        wn_before_GC++;
+                        invalidation_count++;
+                        invalid_cumulative++;
+                        fp_count--;
+                        fprintf(IO_scatter_file,"%ld, %ld, %d, %ld\n",cur_cp,(long)IOget(w_workloads[a]),a,invalid_cumulative);
+                    }
+                }
+            }
+            for(int a=0;a<tasknum;a++){
+                if(cur_cp % tasks[a].gcp == 0){//GC timing reached
+                    if(invalidation_count >= expected_invalid){
+                    //if(1){
+                        reclaim_cumulative += PPB;
+                        fprintf(GC_scatter_file,"%ld, -1, %d, %d, %d, %d, %ld, %ld\n",cur_cp,wn_before_GC,invalidation_count,fp_count,a,invalid_cumulative,reclaim_cumulative);
+                        wn_before_GC = 0;
+                        invalidation_count -= PPB;
+                        fp_count += PPB;
+                    } else {
+                        //do nothing, which means we skip GC.
+                    }
+                }
+            }
+            //find next checkpoint.
+            next_cp = next_wp[0];
+            for(int a=1;a<tasknum;a++){
+                if(next_wp[a] < next_cp){
+                    next_cp = next_wp[a];
+                }
+            }//checkpoint found.
+            //update tasks' checkpoint if next_cp == next_wp[a].
+
+            for(int a=0;a<tasknum;a++){
+                if(next_wp[a] == next_cp){
+                    next_wp[a] += tasks[a].wp;
+                }
+            }//checkpoint updated
+            cur_cp = next_cp;
+            printf("next checkpoint: %ld, cur_inv: %d, cur_fp: %d\n",cur_cp,invalidation_count,fp_count);
+        }
+        fclose(IO_scatter_file);
+        fclose(GC_scatter_file);
+        return 0;
+    }
+
     //run gradient tests for write in offline, and assign offset value for WGRAD policy.
     _find_rank_lpa(tasks,tasknum);
     offset = (int)((float)(tasks[0].addr_ub - tasks[0].addr_lb)*sploc/2.0);
@@ -310,7 +452,7 @@ int main(int argc, char* argv[]){
     glob_ob = init_blocklist(0, -1);
     hotlist = init_blocklist(0,-1);
     coldlist = init_blocklist(0,-1);
-
+    
     //init data access & distribution tracker
     for(int i=0;i<tasknum;i++){
         cur_wb[i] = NULL;

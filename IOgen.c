@@ -1,5 +1,20 @@
 #include "IOgen.h"
 
+extern long* lpa_update_timing[NOP];
+extern int update_cnt[NOP];
+
+int gen_lpa_rand(int hotspace, int lb, int space, float tplocal){
+    int lpa;
+    float hot = (float)(rand()%100/100.0);
+    if (hot<tplocal){
+        lpa = rand()%hotspace + lb;
+    }
+    else{
+        lpa = rand()%(space-hotspace) + hotspace + lb;
+    }
+    return lpa;
+}
+
 void IOgen_task(rttask* task, long runtime, int offset, float _splocal, float _tplocal){
     //generate workload with given restrictions.
     char name[30];
@@ -10,7 +25,7 @@ void IOgen_task(rttask* task, long runtime, int offset, float _splocal, float _t
     float hot;
     int lb = task->addr_lb;
     int hb = task->addr_ub;
-
+    int temp_write[100];
     //open csv file
     sprintf(name,"wr_t%d.csv",task->idx);
     sprintf(name2,"rd_t%d.csv",task->idx);
@@ -22,15 +37,26 @@ void IOgen_task(rttask* task, long runtime, int offset, float _splocal, float _t
     hotspace = (int)((hb - lb)*_splocal);
     w_size = (int)(runtime / (long)task->wp * (long)task->wn);
     r_size = (int)(runtime / (long)task->rp * (long)task->rn);
+    int reqsize = 0;
     for(int i=0;i<w_size;i++){
-        hot = (float)(rand()%100/100.0);
-        if (hot<_tplocal){
-            lpa = rand()%hotspace + lb;
+        //generate lpa. make sure that lpa does not overlap in single job
+        lpa = gen_lpa_rand(hotspace,lb,space,_tplocal);
+        for(int a=0;a<reqsize;a++){
+            if(temp_write[a] == lpa){
+                while(temp_write[a] == lpa){
+                    lpa = gen_lpa_rand(hotspace,lb,space,_tplocal);
+                }
+            }
         }
-        else{
-            lpa = rand()%(space-hotspace) + hotspace + lb;
+        temp_write[reqsize] = lpa;
+        reqsize++;
+        if(reqsize == task->wn){
+            for(int a=0;a<reqsize;a++){
+                fprintf(w_fp,"%d,",temp_write[a]);
+                temp_write[a] = -1;
+            }
+            reqsize = 0;
         }
-        fprintf(w_fp,"%d,",lpa);
     }
     for(int i=0;i<r_size;i++){
         hot = (float)(rand()%100/100.0);
@@ -276,6 +302,14 @@ void IO_open(int tasknum, FILE** wfpp, FILE** rfpp){
     sleep(3);
 }
 
+void IO_close(int tasknum, FILE** wfpp, FILE** rfpp){
+    for(int i=0;i<tasknum;i++){
+        fclose(wfpp[i]);
+        fclose(rfpp[i]);
+        printf("closing wr_t%d and rd_t%d\n",i,i);
+    }
+}
+
 void reset_IO_update(meta* metadata, int lpa_lb, int lpa_ub, long IO_offset){
     //a function which resets update time of given LPA range
     //called for first job after I/O rewind
@@ -284,19 +318,33 @@ void reset_IO_update(meta* metadata, int lpa_lb, int lpa_ub, long IO_offset){
     FILE* timing_fp;
     long scan_ret;
     long timing_ret;
+#ifdef TIMING_ON_MEM
+    for(int i=lpa_lb; i<lpa_ub; i++){
+        if(update_cnt[i] >= 1){
+            metadata->next_update[i] = lpa_update_timing[i][0] + IO_offset;
+        } 
+        else {
+            metadata->next_update[i] = WORKLOAD_LENGTH + IO_offset;
+        }
+        metadata->write_cnt_per_cycle[i] = 0;
+    }
+#endif
+#ifndef TIMING_ON_MEM
     for(int i=lpa_lb; i<lpa_ub;i++){
         sprintf(name,"./timing/%d.csv",i);
         timing_fp = fopen(name,"r");
         if(timing_fp != NULL){
             scan_ret = fscanf(timing_fp,"%ld,",&timing_ret);
             metadata->next_update[i] = timing_ret + IO_offset;
-        } else if (timing_fp == NULL){
+        } 
+        else if (timing_fp == NULL){
             metadata->next_update[i] = WORKLOAD_LENGTH + IO_offset;
         }
         if(timing_fp != NULL){
             fclose(timing_fp);
         }
     }
+#endif
 }
 
 void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
@@ -304,6 +352,16 @@ void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
     FILE* timing_fp;
     long scan_ret;
     long timing_ret;
+#ifdef TIMING_ON_MEM
+    if(wcount >= 0 && wcount < update_cnt[lpa]){
+        metadata->next_update[lpa] = lpa_update_timing[lpa][wcount]+offset;
+    } else if (wcount == update_cnt[lpa]){//no more update
+        metadata->next_update[lpa] = offset + WORKLOAD_LENGTH;
+    } else if (update_cnt[lpa] == 0){//never updated 
+        metadata->next_update[lpa] = offset + WORKLOAD_LENGTH;
+    }
+#endif
+#ifndef TIMING_ON_MEM
     sprintf(name,"./timing/%d.csv",lpa);
     timing_fp = fopen(name,"r");
     if(timing_fp != NULL){
@@ -312,18 +370,21 @@ void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
         }
         if(scan_ret != EOF){
                 metadata->next_update[lpa] = timing_ret+offset;
-                //printf("lpa %d update timing set to %ld\n",lpa,metadata->next_update[lpa]);
+                printf("lpa %d update timing set to %ld\n",lpa,metadata->next_update[lpa]);
         } else {
             metadata->next_update[lpa] = offset + WORKLOAD_LENGTH;
-            //printf("[NOUPDATE]lpa %d update timing set to %ld\n",lpa,metadata->next_update[lpa]);
+            printf("[NOUPDATE]lpa %d update timing set to %ld\n",lpa,metadata->next_update[lpa]);
         }
     } else if (timing_fp == NULL){
         metadata->next_update[lpa] = offset + WORKLOAD_LENGTH;
-        //printf("[NOFILE]lpa %d update timing set to %ld\n",lpa,metadata->next_update[lpa]);
+        printf("[NOFILE]lpa %d update timing set to %ld\n",lpa,metadata->next_update[lpa]);
     }
     if(timing_fp != NULL){
         fclose(timing_fp);
     }
+#endif
+    //printf("%d next_update_time : %ld, offset : %ld\n",lpa,metadata->next_update[lpa],offset);
+    
 }
 
 void lat_open(int tasknum, FILE** wlpp, FILE** rlpp, FILE** gclpp){

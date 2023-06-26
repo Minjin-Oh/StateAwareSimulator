@@ -132,6 +132,9 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
     if(strcmp(argv[4],"PROFGEN")==0){
         *profflag = 1;
     }
+    if(strcmp(argv[4],"SCATTERGEN")==0){
+        *profflag = 2;
+    }
 
     *tasknum = atoi(argv[5]);
     *totutil = atof(argv[6]);

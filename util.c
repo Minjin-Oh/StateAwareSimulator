@@ -256,14 +256,80 @@ int util_check_main(){
 }
 
 long get_gc_locktime(meta* metadata, int blockidx){
+    //set locktime as a time until 75% of block is invalidated
     int lpa;
     long ret = 0L;
+    long temp[PPB];
     int offset = blockidx*PPB;
     for(int i=offset;i<offset+PPB;i++){
         lpa = metadata->rmap[i];
-        if(ret < metadata->next_update[lpa]){
-            ret = metadata->next_update[lpa];
+        temp[i-offset] = metadata->next_update[lpa];
+        printf("lpa %d, next update %ld\n",lpa,metadata->next_update[lpa]);
+    }
+    qsort(temp,PPB,sizeof(long),compare);
+    ret = temp[PPB/4 * 3];
+    return ret;
+}
+
+void print_blocklist_info(bhead* head, meta* metadata){
+    block* cur = head->head;
+    int cyc_yng = MAXPE;
+    int cyc_old = 0;
+    int invnum_min = PPB;
+    int invnum_max = 0;
+    int invnum_avg = 0;
+    while(cur != NULL){
+        if(metadata->invnum[cur->idx] <= invnum_min){
+            invnum_min = metadata->invnum[cur->idx];
+        }
+        if(metadata->invnum[cur->idx] >= invnum_max){
+            invnum_max = metadata->invnum[cur->idx];
+        }
+        if(metadata->state[cur->idx] <= cyc_yng){
+            cyc_yng = metadata->state[cur->idx];
+        }
+        if(metadata->state[cur->idx] >= cyc_old){
+            cyc_old = metadata->state[cur->idx];
+        }
+        invnum_avg += metadata->invnum[cur->idx];
+        cur = cur->next;
+    }
+    if(head->blocknum != 0){
+        printf("[listinfo]yng:%d,old:%d,invmax:%d,invmin:%d, invavg:%d\n",cyc_yng,cyc_old,invnum_max,invnum_min,invnum_avg/head->blocknum);
+    }
+}
+
+void print_fullblock_info(meta* metadata, bhead* full_head, long cur_cp, FILE* fp){
+    //a function which  prints a full block whenever invnum reaches PPB.
+    //called only when finish_WR makes completely full invalid block.
+    block* cur = full_head->head;
+    
+    fprintf(fp, "%ld, ",cur_cp);
+    while(cur != NULL){
+        //check if invalid == 128
+        if(metadata->invnum[cur->idx] == 128){
+            fprintf(fp, "%d, ",cur->idx);
+        }
+        cur = cur->next;
+    }
+    fprintf(fp, "\n");
+}
+
+void print_maxinvalidation_block(meta* metadata, int blockidx){
+    int startidx = blockidx*PPB;
+    int lpa;
+    long longest_next_update = 0;
+    for(int i=0;i<PPB;i++){
+        lpa = metadata->rmap[startidx+i];
+        if(lpa != -1){
+            if(blockidx == 995){
+                printf("[MAXINVCHECK][%d]%d-%ld\n",blockidx,lpa,metadata->next_update[lpa]);
+            }
+            //update longest next update
+            if(longest_next_update < metadata->next_update[lpa]){
+                longest_next_update = metadata->next_update[lpa];    
+            }
         }
     }
-    return ret;
+    printf("bidx : %d, full invalid at %ld\n",blockidx,longest_next_update);
 }

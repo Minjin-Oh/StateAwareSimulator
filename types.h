@@ -31,10 +31,13 @@
 //GC and GCDEBUG option toggle  
 //#define GCDEBUG                // DEBUG print option
 
-//scheme option toggle
+//maybe deprecated?
 #define DOGC
 #define DORELOCATE
-//#define IOTIMING
+
+//scheme option toggle
+#define IOTIMING
+#define TIMING_ON_MEM
 
 //baseline vs new scheme(deprecated)
 //#define DOGCCONTROL
@@ -145,6 +148,7 @@ typedef struct _meta{
     int invmap[NOP];
     int read_cnt[NOP];
     int write_cnt[NOP];
+    int write_cnt_per_cycle[NOP];
     long avg_update[NOP];
     long recent_update[NOP];
     long next_update[NOP];

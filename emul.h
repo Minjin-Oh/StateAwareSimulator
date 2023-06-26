@@ -1,7 +1,7 @@
 #pragma once
 #include "stateaware.h"
 
-void finish_WR(rttask* task, IO* cur_IO, meta* metadata);
+void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head);
 void finish_GC(rttask* task, IO* cur_IO, meta* metadata);
 void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, 
                  bhead* fblist_head, bhead* rsvlist_head, GCblock* cur_GC);

@@ -15,7 +15,9 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                      FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp, long workload_reset_time){
 
     //makes write job according to workload and task parameter
-    block *cur, *temp;
+    block *cur = NULL;
+    block *temp = NULL;
+    block *last_access_block = NULL;
     int lpa;
     int ppa_dest[tasks[taskidx].wn];  //array to store target ppa
     int ppa_state[tasks[taskidx].wn]; //array to store target block state
@@ -23,125 +25,53 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     int cur_offset;
     int bnum = 0;
     float exec_sum = 0.0, period = (float)tasks[taskidx].wp;
-
-    //if current fp cannot handle reserved write + current write, abort releasing new write job.
     
     for(int i=0;i<tasks[taskidx].wn;i++){
         lpas[i] = IOget(fp_w);
     }
-    //find a target block whenever job initializes
-    //do not actually update the write block in job_start phase
-    if(wflag == 1){
-        cur = assign_write_ctrl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-    } else if (wflag == 0){
-        if(cur_target == NULL){
-            cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        } else { 
-            cur = cur_target;
-        }
-    } else if(wflag == 2){
-        if(cur_target == NULL){
-            cur = assign_write_greedy(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        } else {
-            cur = cur_target;
-        }
-    } else if (wflag == 3){
-        cur = assign_writelimit(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas);
-    } else if (wflag == 4){
-        cur = assign_writeweighted(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0);
-    } else if (wflag == 5){
-        cur = assign_writefixed(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-    } else if (wflag == 6){
-        cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0);
-    } else if (wflag == 7){
-        if(cur_target == NULL){
-            cur = assign_write_old(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        } else {
-            cur = cur_target;
-        }
-    } else if (wflag == 8){//write motiv policies
-        cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
-    } else if (wflag == 9){//write motiv policies
-        cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
-    } else if (wflag == 10){//write motiv policies
-        cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
-    } else if (wflag == 11){//write motiv policies
-        cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[0],wflag);
-    } else if (wflag == 12 || wflag == 13){
-        cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0,wflag);
-    } else if (wflag == 14){
-        cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,0);
-    }
-    //save the destination ppa for each write
-    //ONLY update blockmanager (reserve free page)
-    //page mapping updated later
-    cur_offset = PPB - cur->fpnum;
-    for (int i=0;i<tasks[taskidx].wn;i++){
-        while(cur->fpnum==0){
-            //if(wflag != 14){
-            if(1){
+    
+    for(int i=0;i<tasks[taskidx].wn;i++){
+        //make sure that no full block is in write block list during assign logic.
+        //allocate current block to full B.
+        if(cur != NULL){
+            if(cur->fpnum == 0){
                 temp = ll_remove(write_head,cur->idx);
-                if(temp!=NULL){
-                    ll_append(full_head,temp);
-                    metadata->GC_locktime[temp->idx] = get_gc_locktime(metadata,temp->idx);
-                    //printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
-                    //printf("free page left : %d\n",metadata->total_fp);
-                }
-            } 
-            /*else if (wflag == 14){
-                temp = ll_remove(glob_yb, cur->idx);
-                if(temp == NULL){
-                    temp = ll_remove(glob_ob, cur->idx);
-                }
-                if(temp != NULL){
-                    ll_append(full_head,temp);
-                    printf("[%ld][new]append %d, fullbnum : %d, wbnum : %d&%d, freebnum: %d\n",cur_cp,temp->idx,full_head->blocknum,glob_ob->blocknum,glob_yb->blocknum,fblist_head->blocknum);
-                    printf("[%ld][new]free page left : %d\n",cur_cp,metadata->total_fp);
-                }
-            }*/
-            
-            if(wflag == 1){
-                cur = assign_write_ctrl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            } else if (wflag == 0){
-                cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            } else if (wflag == 2){
-                cur = assign_write_greedy(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            } else if (wflag == 3){
-                cur = assign_writelimit(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas);
-            } else if (wflag == 4){
-                cur = assign_writeweighted(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas, i);
-            } else if (wflag == 5){
-                cur = assign_writefixed(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            } else if (wflag == 6){
-                cur = assign_writehotness(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i);
-            } else if (wflag == 7){
-                cur = assign_write_old(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            } else if (wflag == 8){
-                cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
-            } else if (wflag == 9){
-                cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
-            } else if (wflag == 10){//write motiv policies
-                cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
-            } else if (wflag == 11){//write motiv policies
-                cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
-            } else if (wflag == 12 || wflag == 13){
-                cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
-            } else if (wflag == 14){
-                cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i);
-            }
-            if(cur==NULL){
-                printf("noFP available\n, totalfp : %d\n");
-                abort();
+                ll_append(full_head,temp);
+                printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
+                printf("free page left : %d\n",metadata->total_fp);
+                print_maxinvalidation_block(metadata, temp->idx);
+                cur = NULL;
             } else {
-                //printf("cur : %d\n",cur->idx);
+                //do nothing
             }
-            cur_offset = PPB - cur->fpnum;
-            //printf("current offset : %d\n",cur_offset);
         }
+        if(wflag == 0){
+            cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
+        } else if(wflag == 11){
+            cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
+        } else if(wflag == 12 || wflag == 13){
+            cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
+        } else if(wflag == 14){
+            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i, workload_reset_time);
+        }
+        cur_offset = PPB - cur->fpnum;
         ppa_dest[i] = cur->idx*PPB + cur_offset;
         ppa_state[i] = metadata->state[cur->idx];
-        cur_offset++;
         cur->fpnum--;
+        last_access_block = cur;
+        //allocate current block to full B.
+        if(cur != NULL){
+            if(cur->fpnum == 0){
+                temp = ll_remove(write_head,cur->idx);                
+                ll_append(full_head,temp);
+                printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
+                printf("free page left : %d\n",metadata->total_fp);
+                print_maxinvalidation_block(metadata, temp->idx);
+                cur = NULL;
+            } else {
+                //do nothing
+            }
+        }
     }
     
     //assign page write destination
@@ -154,6 +84,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         metadata->write_cnt[lpa]++;
         metadata->write_cnt_task[taskidx]++;
         metadata->tot_write_cnt++;
+        metadata->write_cnt_per_cycle[lpa]++;
         metadata->reserved_write++;
         metadata->avg_update[lpa] = (metadata->avg_update[lpa]*(metadata->write_cnt[lpa]-1)+(cur_cp - metadata->recent_update[lpa]))/(long)metadata->write_cnt[lpa];
         metadata->recent_update[lpa] = cur_cp;
@@ -186,13 +117,12 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             req->last = 0;
         }
         //printf("tp:%d,lpa:%d,ppa:%d,dl:%ld,exec:%ld\n",req->type,req->lpa,req->ppa,req->deadline,req->exec);
-        
     }
         
     //update runtime utilization
     metadata->runutils[0][taskidx] = exec_sum / period;
     //sleep(1);
-    return cur;
+    return last_access_block;
 }
 
 void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOhead* rq, long cur_cp){
@@ -266,16 +196,31 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     } else if (gcflag == 6){
         gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head);
     }
-    
+    print_blocklist_info(write_head,metadata);
+    print_blocklist_info(full_head,metadata);
     //if gc baseline, select most invalid block
     if (gcflag == 0){
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
                (metadata->state[cur->idx] >= write_limit)){
-                cur_vic_idx = cur->idx;
-                vic = cur;
+                if(metadata->invnum[cur_vic_idx] >= PPB/4*3){
+                    cur_vic_idx = cur->idx;
+                    vic = cur;
+                }
             }
             cur = cur->next;
+        }
+        if(vic==NULL){
+            printf("!!!no feasible GC. fall back to original!!!\n");
+            cur = full_head->head;
+            while(cur != NULL){
+                if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
+                (metadata->state[cur->idx] >= write_limit)){
+                    cur_vic_idx = cur->idx;
+                    vic = cur;
+                }
+                cur = cur->next;
+            }
         }
     }
     //if not, choose a victim block from full_block list using index
@@ -291,7 +236,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
         //sleep(1);
     }
-    //printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
+    printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
 
     if(vic==NULL){
         printf("[GC]no feasible block\n");

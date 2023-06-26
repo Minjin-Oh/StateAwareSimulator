@@ -1,7 +1,10 @@
 #include "stateaware.h"
 #include "emul.h"
 
-void finish_WR(rttask* task, IO* cur_IO, meta* metadata){
+extern long cur_cp;
+extern FILE* invfull_fp;
+
+void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     int lpa, ppa, old_ppa, old_block;
     int target_block;
     int tot_inv=0;
@@ -15,6 +18,9 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata){
     if(metadata->invmap[old_ppa] == 0){
         metadata->invmap[old_ppa] = 1;
         metadata->invnum[old_block] += 1;
+        if(metadata->invnum[old_block] == PPB){
+            print_fullblock_info(metadata,full_head,cur_cp,invfull_fp);
+        }
     }
     metadata->vmap_task[old_ppa] = -1;
     metadata->total_invalid++;
@@ -188,7 +194,7 @@ void finish_req(rttask* task, IO* cur_IO, meta* metadata,
     
     //called by main function to process I/O request 
     if(cur_IO->type==WR){
-        finish_WR(task,cur_IO,metadata);
+        finish_WR(task,cur_IO,metadata,full_head);
     }
     else if (cur_IO->type==RD){
         finish_RD(task,cur_IO, metadata);

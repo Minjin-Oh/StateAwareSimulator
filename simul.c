@@ -271,7 +271,7 @@ void gc_simul(rttask task, int tasknum, meta* metadata, bhead* fblist_head,
             int rtv_lpa = metadata->rmap[vic_offset+i];
             metadata->pagemap[rtv_lpa] = rsv_offset+vp_count;
             metadata->rmap[rsv_offset+vp_count] = rtv_lpa;
-            metadata->invmap[rsv_offset+vp_count]=0;
+            metadata->invmap[rsv_offset+vp_count] = 0;
             //update runtime utilization(copyback overhead)
             vic_state[vp_count] = vic->idx;
             tar_state[vp_count] = rsv->idx;
@@ -279,8 +279,8 @@ void gc_simul(rttask task, int tasknum, meta* metadata, bhead* fblist_head,
             vp_count++;
         }
         //reset old page info
-        metadata->rmap[vic_offset+i]= -1;
-        metadata->invmap[vic_offset+i]= 0;
+        metadata->rmap[vic_offset+i] = -1;
+        metadata->invmap[vic_offset+i] = 0;
     }
     //set free page info in rsv block
     for(int i=vp_count;i<PPB;i++){

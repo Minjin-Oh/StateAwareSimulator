@@ -11,6 +11,8 @@ extern block** b_glob_young;
 extern block** b_glob_old;
 extern bhead* glob_yb;
 extern bhead* glob_ob;
+extern long* lpa_update_timing[NOP];
+
 block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadata,
                            bhead* fblist_head, bhead* write_head, block* cur_b){
     int target;
@@ -44,49 +46,16 @@ block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadat
 
 block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b){
-    int target;
     //printf("fbnum : %d, writenum : %d\n",fblist_head->blocknum,write_head->blocknum);
     block* cur = NULL;
-    if(cur_b != NULL){
-        if(cur_b->fpnum > 0){
-            //printf("do not change wb, left fp : %d\n",cur_b->fpnum);
-            return cur_b;
-        } else {
-            /*
-            cur = ll_pop(fblist_head);
-            if (cur != NULL){
-                ll_append(write_head,cur);
-            } else {
-                cur = write_head->head;
-            }
-            target = cur->idx;
-            */
-           cur = write_head->head;
-           if (cur == NULL){
-               cur = ll_pop(fblist_head);
-               if (cur != NULL){
-                   ll_append(write_head,cur);
-               }
-           }
-        }
-    } else { //initial case :: cur_b == NULL. find new block
-        /*
+    cur = write_head->head;
+    if (cur == NULL){
         cur = ll_pop(fblist_head);
         if (cur != NULL){
             ll_append(write_head,cur);
-        } else {
-            cur = write_head->head;
         }
-        target = cur->idx;
-        */
-       cur = write_head->head;
-       if(cur == NULL){
-           cur = ll_pop(fblist_head);
-           if(cur != NULL){
-               ll_append(write_head,cur);
-           }
-       }
-    }//if state is different, get another write block
+    }
+    //if state is different, get another write block
     print_writeblock_profile(fps[tasknum+taskidx],cur_cp,metadata,fblist_head,write_head,-1,cur->idx,-1,-1,-1.0,cur->idx,-1);
     return cur;
 }
@@ -497,16 +466,16 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
 }
 
 block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx){
+                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, long workload_reset_time){
     int target;
     block* cur = NULL;
-    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx);
-    cur = ll_remove(fblist_head,target);
-    if (cur != NULL){
-        printf("retreived %d\n",cur->idx);
-        ll_append(write_head,cur);
-    } else {
-        cur = ll_findidx(write_head,target);
+    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,workload_reset_time);
+    cur = ll_findidx(write_head,target);
+    if(target == 995){
+        printf("[MAXINVALID]target block : %d, left : %d , lpa : %d, nnupdate: %ld\n",
+        target,cur->fpnum,
+        w_lpas[idx],
+        lpa_update_timing[w_lpas[idx]][metadata->write_cnt[w_lpas[idx]]+1]);
     }
     return cur;
 }

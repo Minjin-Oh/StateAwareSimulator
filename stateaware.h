@@ -155,3 +155,9 @@ void _find_rank_lpa(rttask* tasks, int tasknum);
 
 //util.c functions
 double find_max_double(double a, double b, double c);
+long get_gc_locktime(meta* metadata, int blockidx);
+void print_blocklist_info(bhead* head, meta* metadata);
+void print_fullblock_info(meta* metadata, bhead* head, long cur_cp, FILE* fp);
+void print_maxinvalidation_block(meta* metadata, int blockidx);
+//misc.c functions
+int compare(const void *a, const void *b);

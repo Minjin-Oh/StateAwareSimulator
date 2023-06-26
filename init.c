@@ -7,12 +7,14 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
     int cyc_b;
     long next_update_time;
     for (int i=0;i<NOP;i++){
+        printf("page %d\n",i);
         metadata->pagemap[i] = -1;
         metadata->rmap[i] = -1;
         metadata->invmap[i] = 0;
         metadata->vmap_task[i] = -1;
         metadata->read_cnt[i] = 0;
         metadata->write_cnt[i] = 0;
+        metadata->write_cnt_per_cycle[i] = 0;
         metadata->avg_update[i] = 0;
         metadata->recent_update[i] = 0;
 #ifdef IOTIMING
@@ -53,7 +55,7 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
             metadata->access_tracker[i][j] = 0;
         }
     }
-    //index for write = 0, read = 1, GC =2. therefore, 3 double-pointer is hardcoded
+    //index for write = 0, read = 1, GC = 2. therefore, 3 double-pointer is hardcoded
     metadata->runutils = (float**)malloc(sizeof(float*)*3);
     for(int i=0;i<3;i++){
         metadata->runutils[i] = (float*)malloc(sizeof(float)*tasknum);
