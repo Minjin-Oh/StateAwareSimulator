@@ -23,6 +23,7 @@ extern long cur_cp;
 extern int max_valid_pg;
 extern FILE **fps;
 
+//FIXME:: a temporary solutio to expose update timing & info to find_write_invalidmax function.
 extern long* lpa_update_timing[NOP];
 extern int update_cnt[NOP];
 extern int tot_longlive_cnt;
@@ -1270,13 +1271,17 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
         cur_update_timing = 0L;
         invalid_per_lpa = 0;
         update_num = 0;
-        if(metadata->next_update[i] + workload_reset_time < cur_lpa_timing){    
+        if(metadata->next_update[i] < cur_lpa_timing){    
             while(cur_update_timing <= cur_lpa_timing){
-                cur_update_timing = lpa_update_timing[i][update_num] + workload_reset_time;
+                cur_update_timing = lpa_update_timing[i][update_num];
                 if(cur_update_timing <= cur_lpa_timing && cur_update_timing > cur_cp){
                     invalid_per_lpa++;
                 }
                 update_num++;
+                //printf("update num : %d\n",update_cnt[i]);
+                if(update_cnt[i] <= update_num){
+                    break;
+                }
             }
         }
         if(invalid_per_lpa >= 1){
@@ -1321,7 +1326,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     //overhead measurement values
     struct timeval a;
     struct timeval b;
-    //find out current lpa's update order
+    //find out current lpa's update order 
     gettimeofday(&a,NULL);
 #ifdef TIMING_ON_MEM   
     int cur_lpa_nextupdatenum = metadata->write_cnt_per_cycle[w_lpas[idx]]+1;

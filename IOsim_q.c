@@ -12,7 +12,7 @@ extern bhead* glob_yb;
 extern bhead* glob_ob;
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp, long workload_reset_time){
+                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp){
 
     //makes write job according to workload and task parameter
     block *cur = NULL;
@@ -28,6 +28,15 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     
     for(int i=0;i<tasks[taskidx].wn;i++){
         lpas[i] = IOget(fp_w);
+        if(lpas[i] == EOF){
+            //if returned value is EOF
+            //1. reset file & read first data.
+            rewind(fp_w);
+            fscanf(fp_w,"%ld,",&(lpas[i]));
+            //2. add offset to expected update timing.
+            add_offset_for_timing(metadata,taskidx,tasks[taskidx].addr_lb,tasks[taskidx].addr_ub,cur_cp);
+            reset_IO_update(metadata,tasks[taskidx].addr_lb,tasks[taskidx].addr_ub,cur_cp);
+        }
     }
     
     for(int i=0;i<tasks[taskidx].wn;i++){
@@ -37,9 +46,10 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             if(cur->fpnum == 0){
                 temp = ll_remove(write_head,cur->idx);
                 ll_append(full_head,temp);
-                printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
-                printf("free page left : %d\n",metadata->total_fp);
-                print_maxinvalidation_block(metadata, temp->idx);
+                //printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
+                //printf("free page left : %d\n",metadata->total_fp);
+                //printf("cur_cp : %ld\n",cur_cp);
+                //print_maxinvalidation_block(metadata, temp->idx);
                 cur = NULL;
             } else {
                 //do nothing
@@ -52,7 +62,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         } else if(wflag == 12 || wflag == 13){
             cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
         } else if(wflag == 14){
-            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i, workload_reset_time);
+            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i, cur_cp);
         }
         cur_offset = PPB - cur->fpnum;
         ppa_dest[i] = cur->idx*PPB + cur_offset;
@@ -66,6 +76,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                 ll_append(full_head,temp);
                 printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
                 printf("free page left : %d\n",metadata->total_fp);
+                printf("cur_cp : %ld\n",cur_cp);
                 print_maxinvalidation_block(metadata, temp->idx);
                 cur = NULL;
             } else {
@@ -97,7 +108,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         req->deadline = (long)cur_cp + (long)tasks[taskidx].wp;
         req->exec = (long)floor((double)w_exec(ppa_state[i]));
 #ifdef IOTIMING
-        IO_timing_update(metadata,lpa,metadata->write_cnt[lpa],workload_reset_time);
+        IO_timing_update(metadata,lpa,metadata->write_cnt_per_cycle[lpa],cur_cp);
 #endif
         if(i != tasks[taskidx].wn-1){
             req->islastreq = 0;    
@@ -131,6 +142,12 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
     float exec_sum = 0.0, period = (float)task[taskidx].rp;
     for(int i=0;i<task[taskidx].rn;i++){
         lpa = IOget(fp_r);
+        if(lpa == EOF){
+            //if returned value is EOF
+            //1. reset file & read first data.
+            rewind(fp_r);
+            fscanf(fp_r,"%ld,",&lpa);
+        }
         IO* req = (IO*)malloc(sizeof(IO));
         req->type = RD;
         req->taskidx = taskidx;
@@ -211,7 +228,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             cur = cur->next;
         }
         if(vic==NULL){
-            printf("!!!no feasible GC. fall back to original!!!\n");
+            //printf("!!!no feasible GC. fall back to original!!!\n");
             cur = full_head->head;
             while(cur != NULL){
                 if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
@@ -236,7 +253,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
         //sleep(1);
     }
-    printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
+    //printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
 
     if(vic==NULL){
         printf("[GC]no feasible block\n");

@@ -471,11 +471,5 @@ block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* met
     block* cur = NULL;
     target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,workload_reset_time);
     cur = ll_findidx(write_head,target);
-    if(target == 995){
-        printf("[MAXINVALID]target block : %d, left : %d , lpa : %d, nnupdate: %ld\n",
-        target,cur->fpnum,
-        w_lpas[idx],
-        lpa_update_timing[w_lpas[idx]][metadata->write_cnt[w_lpas[idx]]+1]);
-    }
     return cur;
 }

@@ -295,7 +295,7 @@ void print_blocklist_info(bhead* head, meta* metadata){
         cur = cur->next;
     }
     if(head->blocknum != 0){
-        printf("[listinfo]yng:%d,old:%d,invmax:%d,invmin:%d, invavg:%d\n",cyc_yng,cyc_old,invnum_max,invnum_min,invnum_avg/head->blocknum);
+        //printf("[listinfo]yng:%d,old:%d,invmax:%d,invmin:%d, invavg:%d\n",cyc_yng,cyc_old,invnum_max,invnum_min,invnum_avg/head->blocknum);
     }
 }
 
@@ -322,14 +322,13 @@ void print_maxinvalidation_block(meta* metadata, int blockidx){
     for(int i=0;i<PPB;i++){
         lpa = metadata->rmap[startidx+i];
         if(lpa != -1){
-            if(blockidx == 995){
-                printf("[MAXINVCHECK][%d]%d-%ld\n",blockidx,lpa,metadata->next_update[lpa]);
-            }
             //update longest next update
             if(longest_next_update < metadata->next_update[lpa]){
                 longest_next_update = metadata->next_update[lpa];    
             }
+            //printf("[%d]%ld\n",lpa,metadata->next_update[lpa]);
         }
+        
     }
     printf("bidx : %d, full invalid at %ld\n",blockidx,longest_next_update);
 }

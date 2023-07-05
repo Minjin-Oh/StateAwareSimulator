@@ -157,9 +157,16 @@ void IOgen_task_new(rttask* task, long runtime, int w_area, int r_area, int offs
 
 
 int IOget(FILE* fp){
+    //now IOget rewinds back to the start of I/O if necessary
+    int scan_ret;
     int ret;
-    fscanf(fp,"%d,",&ret);
-    return ret;
+    scan_ret = fscanf(fp,"%d,",&ret);
+    if(scan_ret != EOF){
+        return ret;
+    }
+    else if(scan_ret == EOF){
+        return EOF;
+    } 
 }
 
 void analyze_IO(FILE* fp){
@@ -310,6 +317,26 @@ void IO_close(int tasknum, FILE** wfpp, FILE** rfpp){
     }
 }
 
+void add_offset_for_timing(meta* metadata, int taskidx, int lpa_lb, int lpa_ub, long cur_cp){
+    //a function which adds given offset to all lpa timing.
+    //offset = cur_cp - previous_offset_timing
+    long IO_offset = cur_cp - metadata->rewind_time_per_task[taskidx];
+    for(int i=lpa_lb;i<lpa_ub;i++){
+        for(int j=0;j<update_cnt[i];j++){
+            lpa_update_timing[i][j] = lpa_update_timing[i][j] + IO_offset;
+        }
+        
+    }
+    printf("reset %d ~ %d, offset : %ld to %ld\n",lpa_lb,lpa_ub,metadata->rewind_time_per_task[taskidx],cur_cp);
+    for(int i=lpa_lb;i<lpa_ub;i++){
+        if(update_cnt[i] >= 1){
+            printf("[timing offset test][%d] %ld to %ld\n",i,lpa_update_timing[i][0] - IO_offset, lpa_update_timing[i][0]);
+        }
+    }
+    metadata->rewind_time_per_task[taskidx] = cur_cp;
+    sleep(1);
+}
+
 void reset_IO_update(meta* metadata, int lpa_lb, int lpa_ub, long IO_offset){
     //a function which resets update time of given LPA range
     //called for first job after I/O rewind
@@ -320,13 +347,15 @@ void reset_IO_update(meta* metadata, int lpa_lb, int lpa_ub, long IO_offset){
     long timing_ret;
 #ifdef TIMING_ON_MEM
     for(int i=lpa_lb; i<lpa_ub; i++){
+        long temp = metadata->next_update[i];
         if(update_cnt[i] >= 1){
-            metadata->next_update[i] = lpa_update_timing[i][0] + IO_offset;
+            metadata->next_update[i] = lpa_update_timing[i][0];
         } 
         else {
             metadata->next_update[i] = WORKLOAD_LENGTH + IO_offset;
         }
         metadata->write_cnt_per_cycle[i] = 0;
+        //printf("[%d]updated to %ld, original : %ld\n",i,metadata->next_update[i],lpa_update_timing[i][0] - IO_offset);
     }
 #endif
 #ifndef TIMING_ON_MEM
@@ -345,6 +374,7 @@ void reset_IO_update(meta* metadata, int lpa_lb, int lpa_ub, long IO_offset){
         }
     }
 #endif
+    //sleep(1);
 }
 
 void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
@@ -354,12 +384,19 @@ void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
     long timing_ret;
 #ifdef TIMING_ON_MEM
     if(wcount >= 0 && wcount < update_cnt[lpa]){
-        metadata->next_update[lpa] = lpa_update_timing[lpa][wcount]+offset;
-    } else if (wcount == update_cnt[lpa]){//no more update
-        metadata->next_update[lpa] = offset + WORKLOAD_LENGTH;
-    } else if (update_cnt[lpa] == 0){//never updated 
-        metadata->next_update[lpa] = offset + WORKLOAD_LENGTH;
+        timing_ret = lpa_update_timing[lpa][wcount];
+        //printf("[UP]updated to %ld. info: %ld, %ld\n",timing_ret, offset, WORKLOAD_LENGTH);  
+    } 
+    else if (wcount == update_cnt[lpa]){//no more update
+        timing_ret = offset + WORKLOAD_LENGTH;
+        //printf("[NO]updated to %ld. info: %ld, %ld\n",timing_ret, offset, WORKLOAD_LENGTH);
+    } 
+    else if (update_cnt[lpa] == 0){//never updated
+        timing_ret = offset + WORKLOAD_LENGTH;
+        //printf("[NO]updated to %ld. info: %ld, %ld\n",timing_ret, offset, WORKLOAD_LENGTH);
     }
+    metadata->next_update[lpa] = timing_ret;
+    
 #endif
 #ifndef TIMING_ON_MEM
     sprintf(name,"./timing/%d.csv",lpa);
@@ -384,7 +421,6 @@ void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
     }
 #endif
     //printf("%d next_update_time : %ld, offset : %ld\n",lpa,metadata->next_update[lpa],offset);
-    
 }
 
 void lat_open(int tasknum, FILE** wlpp, FILE** rlpp, FILE** gclpp){

@@ -34,9 +34,6 @@ FILE *test_gc_writeblock[4];
 FILE *updaterate_fp;
 FILE *invfull_fp;
 FILE *longliveratio_fp;
-int* IO_resetflag;
-long* IO_resetpoint;
-
 //a space to store lpa update timing(memory)
 long* lpa_update_timing[NOP];
 int update_cnt[NOP];
@@ -108,12 +105,6 @@ int main(int argc, char* argv[]){
         b_glob_old[i] = NULL;
         b_glob_young[i] = NULL;
     }
-    IO_resetflag = (int*)malloc(sizeof(int)*tasknum);
-    IO_resetpoint = (long*)malloc(sizeof(long)*tasknum);
-    for(int i=0;i<tasknum;i++){
-        IO_resetflag[i] = 0;
-        IO_resetpoint[i] = 0L;
-    }
     block *cur_wb[tasknum];
     GCblock cur_GC[tasknum];
     RRblock cur_rr;
@@ -129,10 +120,9 @@ int main(int argc, char* argv[]){
     int yngest;
     int over_avg = 0;
     long rr_check = (long)100000;
-    //long runtime = 160000000000;
-    //long init_runtime = 160000000000;
-    long runtime = WORKLOAD_LENGTH;
-    long init_runtime = WORKLOAD_LENGTH;
+
+    //long runtime = WORKLOAD_LENGTH;
+    //long init_runtime = WORKLOAD_LENGTH;
     IO* cur_IO = NULL;
     wq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     rq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
@@ -255,7 +245,7 @@ int main(int argc, char* argv[]){
             get_task_from_file_recalc(rand_tasks,tasknum,file_taskparam,max_valid_pg);
         }
         offset = (int)((float)(rand_tasks[0].addr_ub - rand_tasks[0].addr_lb)*sploc/2.0);
-        IOgen(tasknum,rand_tasks,runtime,offset,sploc,tploc);
+        IOgen(tasknum,rand_tasks,WORKLOAD_LENGTH,offset,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
         return 0;
@@ -497,21 +487,7 @@ int main(int argc, char* argv[]){
     }
     updaterate_fp = fopen("updaterate.csv","w");
     gettimeofday(&(tot_start_time),NULL);
-    while(cur_cp <= runtime){
-        //if current time is near end of workload window, rewind to first of workload
-        if((double)cur_cp >= (double)runtime * 0.95){
-            long prev_run;
-            printf("curcp:%ld,runtime:%ld\n",cur_cp,runtime);
-            for(int i=0;i<tasknum;i++){
-                rewind(r_workloads[i]);
-                rewind(w_workloads[i]);
-                IO_resetflag[i] = 1;
-            }
-            prev_run = runtime;
-            runtime = runtime + init_runtime;
-            printf("rewind check, prev run : %ld, next run : %ld\n",prev_run, runtime);
-           // sleep(1);
-        }
+    while(cur_cp <= RUNTIME){
         yngest = get_blockstate_meta(newmeta,YOUNG);
         oldest = get_blockstate_meta(newmeta,OLD);
         //flash state checker
@@ -671,18 +647,12 @@ int main(int argc, char* argv[]){
                 wjob_deferred[j] = 1;
             }
             if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){
-                if(IO_resetflag[j] == 1){
-                    IO_resetpoint[j] = cur_cp;
-                    IO_resetflag[j] = 0;
-#ifdef IOTIMING
-                    reset_IO_update(newmeta,tasks[j].addr_lb,tasks[j].addr_ub,cur_cp);
-#endif
-                }
+
                 //printf("next w : %ld, cur cp : %ld, wjob : %d\n",next_w_release[j],cur_cp,wjob_finished[j]);
                 gettimeofday(&(algo_start_time),NULL);
                 cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
                                               fblist_head, full_head, write_head,
-                                              w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp,IO_resetpoint[j]);
+                                              w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
                 write_release_num++;
                 gettimeofday(&(algo_end_time),NULL);
                 //printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);

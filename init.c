@@ -47,6 +47,7 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
     metadata->read_cnt_task = (int*)malloc(sizeof(int)*tasknum);
     metadata->write_cnt_task = (int*)malloc(sizeof(int)*tasknum);
     metadata->access_tracker = (char**)malloc(sizeof(char*)*tasknum);
+    metadata->rewind_time_per_task = (long*)malloc(sizeof(long)*tasknum);
     for(int i=0;i<tasknum;i++){
         metadata->read_cnt_task[i] = 0;
         metadata->write_cnt_task[i] = 0;
@@ -54,6 +55,7 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         for(int j=0;j<NOB;j++){
             metadata->access_tracker[i][j] = 0;
         }
+        metadata->rewind_time_per_task[i] = 0L;
     }
     //index for write = 0, read = 1, GC = 2. therefore, 3 double-pointer is hardcoded
     metadata->runutils = (float**)malloc(sizeof(float*)*3);
