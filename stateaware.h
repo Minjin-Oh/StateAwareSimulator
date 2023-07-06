@@ -28,21 +28,6 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
                     int *skewness, float* sploc, float* tploc, int* skewnum,
                     int *OPflag, int *cyc, double *OP, int *MINRC);
 
-
-//simulator functions(deprecated)
-block* write_simul(rttask task, meta* metadata, int* g_cur, 
-                   bhead* fblist_head, bhead* write_head, bhead* full_head, 
-                   block* cur_fb,int* total_fp, float* tracker, FILE* fp_w, int write_limit);
-void read_simul(rttask task, meta* metadata, float* tracker, int offset, FILE* fp_r);
-
-void gc_simul(rttask task, int tasknum, meta* metadata, 
-              bhead* fblist_head, bhead* full_head, bhead* rsvlist_head,
-              int* total_fp, float* tracker, int gc_limit, int write_limit, int* targetblockhistory);
-
-void wl_simul(meta* metadata, int tasknum,
-              bhead* fbhead, bhead* fullhead, bhead* hotlist, bhead* coldlist, 
-              int vic1, int vic2, int* total_fp);
-
 //utilization_calculate
 float find_worst_util(rttask* task, int tasknum, meta* metadata);
 float find_cur_util(rttask* tasks, int tasknum, meta* metadata, int old);
@@ -77,29 +62,6 @@ int get_blkidx_byage(meta* metadata, bhead* list, bhead* full_head, int param, i
 int get_blockstate_meta(meta* metadata, int param);
 int is_idx_in_list(bhead* head, int tar);
 
-
-//lpsolver
-int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,int low, int high);
-
-//write block assignment functions 
-
-//refactored simulation functions
-block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
-                     bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, IO* IOqueue, block* cur_target, int wflag);
-void write_job_end(rttask task, meta* metadata, IO* IOqueue, int* total_fp);
-void read_job_start(rttask task, meta* metadata, FILE* fp_r, IO* IOqueue);
-void read_job_end(rttask task,meta* metadata, IO* IOqueue);
-void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
-                  bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
-                  int write_limit, IO* IOqueue, GCblock* cur_GC,int gcflag);
-void gc_job_end(rttask* tasks, int taskidx, int tasknum, meta* metadata, IO* IOqueue,
-                bhead* fblist_head, bhead* rsvlist_head,
-                GCblock* cur_GC, int* total_fp);
-void RR_job_start(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
-                  IO* IOqueue, RRblock* cur_RR);
-void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head, 
-                  IO* IOqueue, RRblock* cur_RR, int* total_fp);
 
 //emulation functions
 void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOhead* rq, long cur_cp);
@@ -159,5 +121,46 @@ long get_gc_locktime(meta* metadata, int blockidx);
 void print_blocklist_info(bhead* head, meta* metadata);
 void print_fullblock_info(meta* metadata, bhead* head, long cur_cp, FILE* fp);
 void print_maxinvalidation_block(meta* metadata, int blockidx);
+int find_block_in_list(meta* metadata, bhead* head, int cond);
+
 //misc.c functions
 int compare(const void *a, const void *b);
+
+
+
+//////////////////DEPRECATED//////////////////////////////////
+
+//simulator functions(deprecated)
+block* write_simul(rttask task, meta* metadata, int* g_cur, 
+                   bhead* fblist_head, bhead* write_head, bhead* full_head, 
+                   block* cur_fb,int* total_fp, float* tracker, FILE* fp_w, int write_limit);
+void read_simul(rttask task, meta* metadata, float* tracker, int offset, FILE* fp_r);
+
+void gc_simul(rttask task, int tasknum, meta* metadata, 
+              bhead* fblist_head, bhead* full_head, bhead* rsvlist_head,
+              int* total_fp, float* tracker, int gc_limit, int write_limit, int* targetblockhistory);
+
+void wl_simul(meta* metadata, int tasknum,
+              bhead* fbhead, bhead* fullhead, bhead* hotlist, bhead* coldlist, 
+              int vic1, int vic2, int* total_fp);
+
+//lpsolver
+int find_writectrl_lp(rttask* tasks, int tasknum, meta* metadata, double margin,int low, int high);
+
+//refactored simulation functions
+block* write_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
+                     bhead* fblist_head, bhead* full_head, bhead* write_head,
+                     FILE* fp_w, IO* IOqueue, block* cur_target, int wflag);
+void write_job_end(rttask task, meta* metadata, IO* IOqueue, int* total_fp);
+void read_job_start(rttask task, meta* metadata, FILE* fp_r, IO* IOqueue);
+void read_job_end(rttask task,meta* metadata, IO* IOqueue);
+void gc_job_start(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
+                  bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, 
+                  int write_limit, IO* IOqueue, GCblock* cur_GC,int gcflag);
+void gc_job_end(rttask* tasks, int taskidx, int tasknum, meta* metadata, IO* IOqueue,
+                bhead* fblist_head, bhead* rsvlist_head,
+                GCblock* cur_GC, int* total_fp);
+void RR_job_start(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, 
+                  IO* IOqueue, RRblock* cur_RR);
+void RR_job_end(meta* metadata, bhead* fblist_head, bhead* full_head, 
+                  IO* IOqueue, RRblock* cur_RR, int* total_fp);

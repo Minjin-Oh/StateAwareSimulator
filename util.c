@@ -332,3 +332,35 @@ void print_maxinvalidation_block(meta* metadata, int blockidx){
     }
     printf("bidx : %d, full invalid at %ld\n",blockidx,longest_next_update);
 }
+
+int find_block_in_list(meta* metadata, bhead* head, int cond){
+    //a function wihch finds a block in given blocklist, considering its state.
+    //cond == YOUNG ; find youngest block in blocklist
+    //cond == OLD ; find oldest block in blocklist
+    int ret;
+    block* b;
+    int compare;
+    if(cond == YOUNG){
+        compare = MAXPE;
+        b = head->head;
+        while(b != NULL){
+            if(compare > metadata->state[b->idx]){
+                ret = b->idx;
+                compare = metadata->state[b->idx];
+            }
+            b = b->next;
+        }
+    }
+    else if(cond == OLD){
+        compare = 0;
+        b = head->head;
+        while(b != NULL){
+            if(compare < metadata->state[b->idx]){
+                ret = b->idx;
+                compare = metadata->state[b->idx];
+            }
+            b = b->next;
+        }
+    }
+    return ret;
+}

@@ -466,10 +466,18 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
 }
 
 block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, long workload_reset_time){
+                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, long cur_cp){
+    struct timeval a;
+    struct timeval b;
+    int sec, usec;
     int target;
     block* cur = NULL;
-    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,workload_reset_time);
+    gettimeofday(&a,NULL);
+    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,cur_cp);
     cur = ll_findidx(write_head,target);
+    gettimeofday(&b,NULL);
+    sec = (b.tv_sec - a.tv_sec)*1000000;
+    usec = (b.tv_usec - a.tv_usec);
+    printf("[assignovhd]:%d\n",sec+usec);
     return cur;
 }

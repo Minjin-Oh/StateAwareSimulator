@@ -655,7 +655,7 @@ int main(int argc, char* argv[]){
                                               w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
                 write_release_num++;
                 gettimeofday(&(algo_end_time),NULL);
-                //printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+                printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                 write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
                 wjob_finished[j] = 0;

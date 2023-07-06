@@ -62,7 +62,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         } else if(wflag == 12 || wflag == 13){
             cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
         } else if(wflag == 14){
-            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i, cur_cp);
+            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,cur_cp);
         }
         cur_offset = PPB - cur->fpnum;
         ppa_dest[i] = cur->idx*PPB + cur_offset;

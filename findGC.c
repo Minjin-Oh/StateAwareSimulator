@@ -10,6 +10,11 @@ extern IOhead** gcq;
 extern FILE* test_gc_writeblock[4];
 extern long cur_cp;
 
+//FIXME:: a temporary solution to expose 
+extern int update_cnt[NOP];
+extern int max_valid_pg;
+extern
+
 int _find_gc_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util, int cur_b, int rsv_b){
     //check if current I/O job does not violate util test along with recently released other jobs.
     
@@ -632,4 +637,84 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     block_origin[test_cur_offset_int],test_vicnum - vic_num);
 #endif
     return best_idx;
+}
+
+int find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead* fblist_head, bhead* write_head){
+    //find a destination of current page, similar to find_maxinvalid function.
+    //FIXME:: this prototype function is hardcoded for TIMING_ON_MEM
+    long cur_lpa_timing;
+    int cnt;
+    int cur_lpa_nextupdatenum;
+    int target;
+    int yield_pg;
+    block *wb_new, *cur;
+
+    //find relocated page's update timing & calculate its order.
+    cur_lpa_nextupdatenum = metadata->write_cnt_per_cycle[lpa] + 1;
+    if(cur_lpa_nextupdatenum >= update_cnt[lpa]){
+        cur_lpa_timing = workload_reset_time + WORKLOAD_LENGTH;
+    }
+    cnt = __calc_invorder_mem(max_valid_pg, metadata, cur_lpa_timing, workload_reset_time, metadata->total_fp);
+
+    if(cnt >= metadata->total_fp){//edgecase:: free page is not enough to handle target lpa
+        while(fblist_head->blocknum != 0){
+            //search through free block list, finding a youngest block, 
+            target = find_block_in_list(metadata,fblist_head,YOUNG);
+            wb_new = ll_remove(fblist_head,target);
+            ll_append(write_head,wb_new);
+        }
+        //give last write block.
+        cur = write_head->head;
+        while(cur != NULL){
+            if (cur->next == NULL){
+                return cur->idx;    
+            }
+            cur = cur->next;
+        }
+    }
+    yield_pg = 0;
+    cur = write_head->head;
+    while(cur != NULL){
+        yield_pg += cur->fpnum;
+        if(yield_pg > cnt){
+            //if current block has enough page to satisfy update order, break from loop
+            break;
+        } else {
+            //search next if not
+            cur = cur->next;
+        }
+    }
+    if(cur==NULL){//edgecase 1. write block list X have corresponding block.
+        while(fblist_head->blocknum != 0){
+            //search through free block list, finding a youngest block, 
+            target = find_block_in_list(metadata,fblist_head,YOUNG);
+            wb_new = ll_remove(fblist_head,target);
+            ll_append(write_head,wb_new);
+            yield_pg += wb_new->fpnum;
+            if(yield_pg > cnt){
+                cur = wb_new;
+                break;
+            } else {
+                //do nothing. 
+                //repeat while loop until free block runs out.
+            }
+            //printf("[FB]yieldpg : %d\n",yield_pg);
+        }
+    }
+    if(cur==NULL){//final edge case. somehow no corresponding block.
+        while(fblist_head->blocknum != 0){
+            //search through free block list, finding a youngest block, 
+            target = find_block_in_list(metadata,fblist_head,YOUNG);
+            wb_new = ll_remove(fblist_head,target);
+            ll_append(write_head,wb_new);
+        }
+        //give last write block.
+        cur = write_head->head;
+        while(cur != NULL){
+            if (cur->next == NULL){
+                return cur->idx;    
+            }
+            cur = cur->next;
+        }
+    }
 }

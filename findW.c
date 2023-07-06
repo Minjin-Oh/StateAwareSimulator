@@ -1287,11 +1287,7 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
         if(invalid_per_lpa >= 1){
             invalid_per_lpa -= 1;
         }
-        if(invalid_per_lpa != 0){
-            //printf("timing : %ld ~ %ld, invalid of lpa %d : %d, cumul : %d\n",cur_cp, cur_lpa_timing, i,invalid_per_lpa,ret);
-        }
         ret += invalid_per_lpa;
-        
         if(ret >= curfp){
             return ret;
         }
@@ -1308,9 +1304,10 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     int cnt = 0;
     int curfp = metadata->total_fp;
     int old = get_blockstate_meta(metadata,OLD);
+#ifndef TIMING_ON_MEM    
     sprintf(name,"./timing/%d.csv",w_lpas[idx]);
     cur_lpa_timing_file = fopen(name,"r");
-    
+#endif
     //params to find block
     block* cur;
     block* ret_targ;
@@ -1346,7 +1343,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     fclose(cur_lpa_timing_file);
 #endif
     gettimeofday(&b,NULL);
-    //printf("[1]%d\n",__calc_time_diff(a,b));
+    printf("[1]%d\n",__calc_time_diff(a,b));
     //printf("lpa : %d, curcp : %ld, cur_lpa_timing : %ld\n",w_lpas[idx],cur_cp,cur_lpa_timing);
     gettimeofday(&a,NULL);
 #ifdef TIMING_ON_MEM
@@ -1359,10 +1356,10 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         longlive = 1;
         tot_longlive_cnt++;
         //printf("cur longlive cnt : %d, cur tot write : %d, ratio : %lf\n",tot_longlive_cnt,metadata->tot_write_cnt,(double)tot_longlive_cnt/(double)metadata->tot_write_cnt);
-        fprintf(longliveratio_fp,"%ld,%d,%d,%lf\n",cur_cp,tot_longlive_cnt,metadata->tot_write_cnt,(double)tot_longlive_cnt/(double)metadata->tot_write_cnt);
+        //fprintf(longliveratio_fp,"%ld,%d,%d,%lf\n",cur_cp,tot_longlive_cnt,metadata->tot_write_cnt,(double)tot_longlive_cnt/(double)metadata->tot_write_cnt);
     }
     gettimeofday(&b,NULL);
-    //printf("[2]%d\n",__calc_time_diff(a,b));
+    printf("[2]%d, cnt : %d\n",__calc_time_diff(a,b),cnt);
     //printf("[MAXINVALID]invalidation order : %d, curfp : %d \n",cnt,curfp);
     //calculation finished. cnt+1 is  current lpa's update order
 
@@ -1374,6 +1371,8 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             while(fb_ptr != NULL){
                 if(youngest > metadata->state[fb_ptr->idx]){
                     target = fb_ptr->idx;
+                    youngest = metadata->state[fb_ptr->idx];
+
                 }
                 fb_ptr = fb_ptr->next;
             }
@@ -1386,7 +1385,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         while(cur != NULL){
             if (cur->next == NULL){
                 gettimeofday(&b,NULL);
-                //printf("[3]%d\n",__calc_time_diff(a,b));
+                printf("[3]%d\n",__calc_time_diff(a,b));
                 return cur->idx;    
             }
             cur = cur->next;
@@ -1399,7 +1398,6 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     cur = write_head->head;
     while(cur != NULL){
         yield_pg += cur->fpnum;
-        ret_targ = cur;
         if(yield_pg > cnt){
             //if current block has enough page to satisfy update order,
             break;
@@ -1416,6 +1414,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             while(fb_ptr != NULL){
                 if(youngest > metadata->state[fb_ptr->idx]){
                     target = fb_ptr->idx;
+                    youngest = metadata->state[fb_ptr->idx];
                 }
                 fb_ptr = fb_ptr->next;
             }
@@ -1440,6 +1439,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             while(fb_ptr != NULL){
                 if(youngest > metadata->state[fb_ptr->idx]){
                     target = fb_ptr->idx;
+                    youngest = metadata->state[fb_ptr->idx];
                 }
                 fb_ptr = fb_ptr->next;
             }
@@ -1452,17 +1452,18 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         while(cur != NULL){
             if (cur->next == NULL){
                 gettimeofday(&b,NULL);
-                //printf("[3]%d\n",__calc_time_diff(a,b));
+                printf("[3]%d\n",__calc_time_diff(a,b));
                 return cur->idx;    
             }
             cur = cur->next;
         }
         longlive = 0;
     }
+
     //initiate findwritesafe() on current block, and see if allocation leads to utilization overflow.
     if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[cur->idx]),cur->idx,w_lpas) == 0){
         gettimeofday(&b,NULL);
-        //printf("[3]%d\n",__calc_time_diff(a,b));
+        printf("[3]%d\n",__calc_time_diff(a,b));
         return cur->idx;
     } else {
         //traverse left and right to find suitable block
@@ -1472,7 +1473,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             if(left_ptr != NULL){
                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[left_ptr->idx]),cur->idx,w_lpas) == 0){
                     gettimeofday(&b,NULL);
-                    //printf("[3]%d\n",__calc_time_diff(a,b));
+                    printf("[3]%d\n",__calc_time_diff(a,b));
                     return left_ptr->idx;
                 } else{
                     left_ptr = left_ptr->prev;
@@ -1481,7 +1482,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             if(right_ptr != NULL){
                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[right_ptr->idx]),cur->idx,w_lpas) == 0){
                     gettimeofday(&b,NULL);
-                    //printf("[3]%d\n",__calc_time_diff(a,b));
+                    printf("[3]%d\n",__calc_time_diff(a,b));
                     return right_ptr->idx;
                 } else{
                     right_ptr = right_ptr->next;
@@ -1491,7 +1492,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     }
     //if findwritesafe() fails on all block, just return cur.
     gettimeofday(&b,NULL);
-    //printf("[3]%d\n",__calc_time_diff(a,b));
+    printf("[3]%d\n",__calc_time_diff(a,b));
     return cur->idx;
 }
 
