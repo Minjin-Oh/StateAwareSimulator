@@ -1343,7 +1343,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     fclose(cur_lpa_timing_file);
 #endif
     gettimeofday(&b,NULL);
-    printf("[1]%d\n",__calc_time_diff(a,b));
+    //printf("[1]%d\n",__calc_time_diff(a,b));
     //printf("lpa : %d, curcp : %ld, cur_lpa_timing : %ld\n",w_lpas[idx],cur_cp,cur_lpa_timing);
     gettimeofday(&a,NULL);
 #ifdef TIMING_ON_MEM
@@ -1359,13 +1359,15 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         //fprintf(longliveratio_fp,"%ld,%d,%d,%lf\n",cur_cp,tot_longlive_cnt,metadata->tot_write_cnt,(double)tot_longlive_cnt/(double)metadata->tot_write_cnt);
     }
     gettimeofday(&b,NULL);
-    printf("[2]%d, cnt : %d\n",__calc_time_diff(a,b),cnt);
+    //printf("[2]%d, cnt : %d\n",__calc_time_diff(a,b),cnt);
     //printf("[MAXINVALID]invalidation order : %d, curfp : %d \n",cnt,curfp);
     //calculation finished. cnt+1 is  current lpa's update order
 
     gettimeofday(&a,NULL);
     if(longlive == 1){//edgecase:: free page is not enough to handle target lpa
         while(fblist_head->blocknum != 0){
+            youngest = MAXPE;
+            target = -1;
             //search through free block list, finding a youngest block, 
             fb_ptr = fblist_head->head;
             while(fb_ptr != NULL){
@@ -1385,7 +1387,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         while(cur != NULL){
             if (cur->next == NULL){
                 gettimeofday(&b,NULL);
-                printf("[3]%d\n",__calc_time_diff(a,b));
+                //printf("[3]%d\n",__calc_time_diff(a,b));
                 return cur->idx;    
             }
             cur = cur->next;
@@ -1409,6 +1411,8 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     }
     if(cur == NULL){//no feasible block in writeblock list.
         while(fblist_head->blocknum != 0){
+            youngest = MAXPE;
+            target = -1;
             //search through free block list, finding a youngest block, 
             fb_ptr = fblist_head->head;
             while(fb_ptr != NULL){
@@ -1434,7 +1438,9 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     }
     if(cur == NULL){//edgecase:: not found corresponding block
         while(fblist_head->blocknum != 0){
-            //search through free block list, finding a youngest block, 
+            //search through free block list, finding a youngest block,
+            youngest = MAXPE;
+            target = -1;
             fb_ptr = fblist_head->head;
             while(fb_ptr != NULL){
                 if(youngest > metadata->state[fb_ptr->idx]){
@@ -1452,7 +1458,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         while(cur != NULL){
             if (cur->next == NULL){
                 gettimeofday(&b,NULL);
-                printf("[3]%d\n",__calc_time_diff(a,b));
+                //printf("[3]%d\n",__calc_time_diff(a,b));
                 return cur->idx;    
             }
             cur = cur->next;
@@ -1463,7 +1469,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     //initiate findwritesafe() on current block, and see if allocation leads to utilization overflow.
     if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[cur->idx]),cur->idx,w_lpas) == 0){
         gettimeofday(&b,NULL);
-        printf("[3]%d\n",__calc_time_diff(a,b));
+        //printf("[3]%d\n",__calc_time_diff(a,b));
         return cur->idx;
     } else {
         //traverse left and right to find suitable block
@@ -1473,7 +1479,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             if(left_ptr != NULL){
                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[left_ptr->idx]),cur->idx,w_lpas) == 0){
                     gettimeofday(&b,NULL);
-                    printf("[3]%d\n",__calc_time_diff(a,b));
+                    //printf("[3]%d\n",__calc_time_diff(a,b));
                     return left_ptr->idx;
                 } else{
                     left_ptr = left_ptr->prev;
@@ -1482,7 +1488,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             if(right_ptr != NULL){
                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[right_ptr->idx]),cur->idx,w_lpas) == 0){
                     gettimeofday(&b,NULL);
-                    printf("[3]%d\n",__calc_time_diff(a,b));
+                    //printf("[3]%d\n",__calc_time_diff(a,b));
                     return right_ptr->idx;
                 } else{
                     right_ptr = right_ptr->next;
@@ -1492,7 +1498,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     }
     //if findwritesafe() fails on all block, just return cur.
     gettimeofday(&b,NULL);
-    printf("[3]%d\n",__calc_time_diff(a,b));
+    //printf("[3]%d\n",__calc_time_diff(a,b));
     return cur->idx;
 }
 

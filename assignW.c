@@ -478,6 +478,6 @@ block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* met
     gettimeofday(&b,NULL);
     sec = (b.tv_sec - a.tv_sec)*1000000;
     usec = (b.tv_usec - a.tv_usec);
-    printf("[assignovhd]:%d\n",sec+usec);
+    //printf("[assignovhd]:%d\n",sec+usec);
     return cur;
 }
