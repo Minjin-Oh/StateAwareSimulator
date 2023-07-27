@@ -10,6 +10,73 @@ extern block** b_glob_young;
 extern block** b_glob_old;
 extern bhead* glob_yb;
 extern bhead* glob_ob;
+
+void make_req_gc(meta* metadata, rttask* tasks, int taskidx, long cur_cp, block* vic, block* rsv, IOhead* gcq, bhead* full_head, bhead* write_head, bhead* fblist_head, GCblock* cur_GC){
+    //a function which 1. makes gc request and 2. inserts request into gc request queue
+    //in this function, copyback operation is done on writeblock, using find_gc_destination() function
+    int rtv_lpa;
+    int vic_offset = PPB*(vic->idx);
+    int vp_count = 0;
+    long gc_exec = 0;
+    block* cur = NULL;
+
+    ll_remove(full_head,vic->idx);
+
+    for(int i=0;i<PPB;i++){
+        if(metadata->invmap[vic_offset+i]==0 && metadata->rmap[vic_offset+i]!=-1){
+            IO* req = (IO*)malloc(sizeof(IO));
+            req->type = GC;
+            req->last = 0;
+            req->taskidx = taskidx;
+            rtv_lpa = metadata->rmap[vic_offset+i];
+            req->gc_old_lpa = rtv_lpa;
+            if(cur != NULL){
+                if(cur->fpnum == 0){
+                    ll_remove(write_head,cur->idx);
+                    ll_append(full_head,cur);
+                    cur = NULL;
+                }
+            }
+            //printf("rtv_lpa : %d\n",rtv_lpa);
+            cur = find_gc_destination(metadata,rtv_lpa,cur_cp,fblist_head,write_head);  
+            req->gc_tar_ppa = (PPB*cur->idx) + PPB - cur->fpnum;
+            cur->fpnum--;
+            //printf("target block : %d, ppa : %d\n",cur->idx,req->gc_tar_ppa);
+            if(cur->fpnum == 0){
+                ll_remove(write_head,cur->idx);
+                ll_append(full_head,cur);
+                cur = NULL;
+            }
+            req->gc_vic_ppa = vic_offset+i;
+            req->IO_start_time = cur_cp;
+            req->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
+            req->exec = (long)floor((double)r_exec(metadata->state[vic->idx])) + 
+                        (long)floor((double)w_exec(metadata->state[req->gc_tar_ppa / PPB]));
+            ll_append_IO(gcq,req);
+            vp_count++;
+            gc_exec += req->exec;
+            
+        }
+    }
+    //append erase operation at the end
+    IO* er = (IO*)malloc(sizeof(IO));
+    er->type = GCER;
+    er->last = 1;
+    er->taskidx = taskidx;
+    er->vic_idx = vic->idx;
+    er->IO_start_time = cur_cp;
+    er->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
+    er->exec = (long)floor((double)e_exec(metadata->state[vic->idx]));
+    er->gc_valid_count = vp_count;
+    gc_exec += er->exec;
+    ll_append_IO(gcq,er);
+    cur_GC->cur_vic = vic;
+
+    //update blockmanager (reserve pages)
+    vic->fpnum = PPB;
+    metadata->runutils[2][taskidx] = (double)gc_exec / (double)tasks[taskidx].gcp;
+}
+
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
                      FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp){
@@ -74,10 +141,10 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             if(cur->fpnum == 0){
                 temp = ll_remove(write_head,cur->idx);                
                 ll_append(full_head,temp);
-                printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
-                printf("free page left : %d\n",metadata->total_fp);
-                printf("cur_cp : %ld\n",cur_cp);
-                print_maxinvalidation_block(metadata, temp->idx);
+                //printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
+                //printf("free page left : %d\n",metadata->total_fp);
+                //printf("cur_cp : %ld\n",cur_cp);
+                //print_maxinvalidation_block(metadata, temp->idx);
                 cur = NULL;
             } else {
                 //do nothing
@@ -264,14 +331,17 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         return;
     }
 
-    //remove the block from blocklist. prevent concurrency issue
+    
+#ifdef GC_ON_WRITEBLOCK
+    make_req_gc(metadata,tasks,taskidx,cur_cp,vic,rsv,gcq,full_head,write_head,fblist_head,cur_GC);
+#endif
+#ifndef GC_ON_WRITEBLOCK
     ll_remove(full_head,vic->idx);
     rsv = ll_pop(rsvlist_head);
     if(rsv == NULL || vic == NULL){
         printf("[%ld]gc fucked up\n");
         abort();
     }
-
     //make copyback requests
     vic_offset = PPB*(vic->idx);
     rsv_offset = PPB*(rsv->idx);
@@ -295,7 +365,6 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             gc_exec += req->exec;
         }
     }
-
     //append erase operation at the end
     IO* er = (IO*)malloc(sizeof(IO));
     er->type = GCER;
@@ -315,10 +384,9 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     cur_GC->cur_vic = vic;
     rsv->fpnum = PPB - vp_count;
     vic->fpnum = PPB;
-    
-    //update runtime util
-    metadata->runutils[2][taskidx] = gc_exec / gc_period;
-    //sleep(1);
+    metadata->runutils[2][taskidx] = gc_exec / gc_period;    
+#endif
+    printf("fbnum : %d, wbnum : %d, fpnum : %d, invnum : %d\n",fblist_head->blocknum,write_head->blocknum,metadata->total_fp,metadata->total_invalid);
 }
 
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,

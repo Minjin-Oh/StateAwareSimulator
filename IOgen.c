@@ -338,9 +338,9 @@ void add_offset_for_timing(meta* metadata, int taskidx, int lpa_lb, int lpa_ub, 
 }
 
 void reset_IO_update(meta* metadata, int lpa_lb, int lpa_ub, long IO_offset){
-    //a function which resets update time of given LPA range
-    //called for first job after I/O rewind
-    //according to the reset time, re-calculate the next update time of designated task.
+    // a function which resets update time of given LPA range
+    // called for first job after I/O rewind
+    // according to the reset time, re-calculate the next update time of designated task.
     char name[30];
     FILE* timing_fp;
     long scan_ret;

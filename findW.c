@@ -27,8 +27,8 @@ extern FILE **fps;
 extern long* lpa_update_timing[NOP];
 extern int update_cnt[NOP];
 extern int tot_longlive_cnt;
-
 extern FILE *longliveratio_fp;
+extern FILE *updateorder_fp;
 
 //Determine rank of current lpa using task & locality information.
 //assuming that locality is fixed, rank of lpa is determined statically.
@@ -1288,10 +1288,11 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
             invalid_per_lpa -= 1;
         }
         ret += invalid_per_lpa;
-        if(ret >= curfp){
-            return ret;
-        }
+//        if(ret >= curfp){
+//            return ret;
+//        }
     }
+    fprintf(updateorder_fp,"%d,\n",ret);
     return ret;
 }
 
@@ -1501,182 +1502,3 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     //printf("[3]%d\n",__calc_time_diff(a,b));
     return cur->idx;
 }
-
-/*
-int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx){
-
-    //params for block sorting
-    int cur_state;
-    int temp;
-    int offset;
-    int t_lpa;
-    long avg_update_diff = 0;
-    long next_update_time;
-    int candidate_num = 0;
-    int old = get_blockstate_meta(metadata,OLD);
-    int* candidate_arr = (int*)malloc(sizeof(int)*(write_head->blocknum+fblist_head->blocknum));
-    int* valids_in_candidate = (int*)malloc(sizeof(int)*(write_head->blocknum+fblist_head->blocknum));
-    long* avg_diff_block = (long*)malloc(sizeof(long)*(write_head->blocknum+fblist_head->blocknum));
-    
-    //params for lpa sorting
-    char name[30];
-    FILE* cur_lpa_timing_file;
-    long cur_lpa_timing;
-    long valid_lpa_timing;
-
-    //params for return value
-    int blockidx;
-    long min_update_diff = __LONG_MAX__;
-    //retrieve update time of current lpa
-    sprintf(name,"./timing/%d.csv",w_lpas[idx]);
-    cur_lpa_timing_file = fopen(name,"r");
-    for(int i=0;i<metadata->write_cnt[w_lpas[idx]]+1;i++){
-        fscanf(cur_lpa_timing_file,"%ld,",&cur_lpa_timing);
-    }
-    fclose(cur_lpa_timing_file);
-
-    //init candidate block list & find valid page num for each candidate
-    block* cur = NULL;
-    cur = fblist_head->head;
-    while(cur != NULL){
-        cur_state = metadata->state[cur->idx];
-        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
-            cur = cur->next;
-            continue;
-        }
-        candidate_arr[candidate_num] = cur->idx;
-        valids_in_candidate[candidate_num] = PPB - cur->fpnum - metadata->invnum[cur->idx];
-        offset = cur->idx * PPB;
-        avg_update_diff = 0;
-        for(int i=0;i<PPB-cur->fpnum;i++){
-            if(metadata->invmap[offset+i] == 1){
-                
-            } 
-            else if(metadata->invmap[offset+i] == 0){
-                t_lpa = metadata->rmap[offset+i];
-                valid_lpa_timing = metadata->next_update[t_lpa];
-                avg_update_diff += abs_long(valid_lpa_timing - cur_lpa_timing);
-                //printf("[%d]t_lpa : %d\n",cur->idx,t_lpa);
-                //printf("[%d]valid_lpa_timing : %ld, cur_lpa_timing : %ld, cur_cp : %ld\n",cur->idx,valid_lpa_timing,cur_lpa_timing,cur_cp);
-            }
-        }
-        if(cur->fpnum != PPB){
-            avg_diff_block[candidate_num] = avg_update_diff / (PPB - cur->fpnum);
-        }
-        else {
-            avg_diff_block[candidate_num] = 0;
-        }
-        //printf("[%d]avgdiffblock : %ld, blockidx : %d\n",candidate_num,avg_diff_block[candidate_num],candidate_arr[candidate_num]);
-        candidate_num++;
-        cur = cur->next;
-    }
-    cur = write_head->head;
-    while(cur != NULL){
-        cur_state = metadata->state[cur->idx];
-        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
-            cur = cur->next;
-            continue;
-        }
-        candidate_arr[candidate_num] = cur->idx;
-        valids_in_candidate[candidate_num] = PPB - cur->fpnum - metadata->invnum[cur->idx];
-        offset = cur->idx * PPB;
-        avg_update_diff = 0;
-        for(int i=0;i<PPB-cur->fpnum;i++){
-            if(metadata->invmap[offset+i] == 1){
-                
-            } 
-            else if(metadata->invmap[offset+i] == 0){
-                t_lpa = metadata->rmap[offset+i];
-                valid_lpa_timing = metadata->next_update[t_lpa];
-                avg_update_diff += abs_long(valid_lpa_timing - cur_lpa_timing);
-                //printf("[%d]t_lpa : %d\n",cur->idx,t_lpa);
-                //printf("[%d]valid_lpa_timing : %ld, cur_lpa_timing : %ld cur_cp : %ld\n",cur->idx,valid_lpa_timing,cur_lpa_timing, cur_cp);
-            }
-        }
-        if(cur->fpnum != PPB){
-            avg_diff_block[candidate_num] = avg_update_diff / (PPB - cur->fpnum);
-        }
-        else {
-            avg_diff_block[candidate_num] = 0;
-        }
-        //printf("[%d]avgdiffblock : %ld, blockidx : %d\n",candidate_num,avg_diff_block[candidate_num],candidate_arr[candidate_num]);
-        candidate_num++;
-        cur = cur->next;
-    }
-    //printf("writeblock : %d, freeblock : %d, candidate_num : %d\n",write_head->blocknum, fblist_head->blocknum, candidate_num);
-    if(candidate_num == 0){
-        printf("no cand block -> get candidate block w/o safety check\n");
-        cur = fblist_head->head;
-        while(cur != NULL){
-            cur_state = metadata->state[cur->idx];
-            candidate_arr[candidate_num] = cur->idx;
-            valids_in_candidate[candidate_num] = PPB - cur->fpnum - metadata->invnum[cur->idx];
-            offset = cur->idx * PPB;
-            avg_update_diff = 0;
-            for(int i=0;i<PPB-cur->fpnum;i++){
-                if(metadata->invmap[offset+i] == 1){
-                    
-                } 
-                else if(metadata->invmap[offset+i] == 0){
-                    t_lpa = metadata->rmap[offset+i];
-                    valid_lpa_timing = metadata->next_update[t_lpa];
-                    avg_update_diff += abs_long(valid_lpa_timing - cur_lpa_timing);
-                }
-            }
-            if(cur->fpnum != PPB){
-                avg_diff_block[candidate_num] = avg_update_diff / (PPB - cur->fpnum);
-            }
-            else {
-                avg_diff_block[candidate_num] = 0;
-            }
-            candidate_num++;
-            cur = cur->next;
-        }
-        cur = write_head->head;
-        while(cur != NULL){
-            cur_state = metadata->state[cur->idx];
-            candidate_arr[candidate_num] = cur->idx;
-            valids_in_candidate[candidate_num] = PPB - cur->fpnum - metadata->invnum[cur->idx];
-            offset = cur->idx * PPB;
-            avg_update_diff = 0;
-            for(int i=0;i<PPB-cur->fpnum;i++){
-                if(metadata->invmap[offset+i] == 1){
-                } 
-                else if(metadata->invmap[offset+i] == 0){
-                    t_lpa = metadata->rmap[offset+i];
-                    valid_lpa_timing = metadata->next_update[t_lpa];
-                    avg_update_diff += abs_long(valid_lpa_timing - cur_lpa_timing);
-                }
-            }
-            if(cur->fpnum != PPB){
-                avg_diff_block[candidate_num] = avg_update_diff / (PPB - cur->fpnum);
-            }
-            else {
-                avg_diff_block[candidate_num] = 0;
-            }
-            candidate_num++;
-            cur = cur->next;
-        }
-    }
-    
-    //sort candidate block
-    //push back blocks with long avg update rate to the end of array.
-
-
-    for(int i=0;i<candidate_num;i++){
-        //printf("avg_diff : %ld, blockidx : %d\n",avg_diff_block[i],candidate_arr[i]);
-        if(min_update_diff > avg_diff_block[i]){
-            min_update_diff = avg_diff_block[i];
-            blockidx = candidate_arr[i];
-        }
-    }
-    //printf("selected : %d\n",blockidx);
-
-    //free dyn memories
-    free(candidate_arr);
-    free(valids_in_candidate);
-    free(avg_diff_block);
-
-    return blockidx;
-}
-*/

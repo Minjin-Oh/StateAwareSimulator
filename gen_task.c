@@ -52,20 +52,22 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
             wp,wnum,rp,rnum,gcp,util_task[0],util_task[1],__calc_gcu(&(tasks[i]),MINRC,0,0,0));
         
     }
-    float checker = 0.0;
+    float utilsum = 0.0;
     float WRsum = 0.0;
+    float utilsum_noblock = 0.0;
     for(int i=0;i<tasknum;i++){
         WRsum += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
         WRsum += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
     }
     for(int i=0;i<tasknum;i++){
-        checker += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
-        checker += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
-        checker += __calc_gcu(&(tasks[i]),MINRC,0,0,0);
+        utilsum += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
+        utilsum += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
+        utilsum += __calc_gcu(&(tasks[i]),MINRC,0,0,0);
     }
-    checker += (float)STARTE/(float)_find_min_period(tasks,tasknum);
-    printf("WRsum : %f, checker : %f\n",WRsum, checker);
-    *result_util = checker;
+    utilsum_noblock = utilsum;
+    utilsum += (float)STARTE/(float)_find_min_period(tasks,tasknum);
+    printf("WRsum : %f, utilsum(noblock): %f, totutil : %f\n",WRsum, utilsum_noblock,utilsum);
+    *result_util = utilsum;
     return tasks;
 }
 
@@ -171,8 +173,11 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
 
 rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle){
     float utils[tasknum];
-    float per_task_portion = 0.05;
-    float offset = 0.04;
+    float per_task_portion = 0.1;
+    float offset = 0.09
+    
+    
+    ;
     float rand_portion = 0.01;
     float r_util[tasknum], w_util[tasknum];
     int wp, rp, gcp, wnum, rnum;

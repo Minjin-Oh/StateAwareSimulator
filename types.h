@@ -7,7 +7,11 @@
 #define RRWR 7
 #define RRER 8
 
-#define NOB 1000
+//differentiate GCTHRESNOB and NOB
+//normally, GCTHRESNOB == NOB
+//to trigger GC earlier, GCTHRESNOB < NOB
+#define GCTHRESNOB 1000
+#define NOB 3000
 #define PPB 128
 #define NOP NOB*PPB
 #define _OP 0.32
@@ -39,6 +43,8 @@
 //scheme option toggle
 #define IOTIMING
 #define TIMING_ON_MEM
+#define TASKGEN_IGNORE_UTILOVER
+//#define GC_ON_WRITEBLOCK
 
 //baseline vs new scheme(deprecated)
 //#define DOGCCONTROL

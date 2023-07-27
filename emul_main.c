@@ -3,7 +3,7 @@
 #include "emul.h"           // contains request process functions for emulation 
 #include "findRR.h"         // contains block selection functions
 #include "IOgen.h"          // contains random workload generation functions
-#include "emul_logger.h"    // contains latency logger function.
+#include "emul_logger.h"    // contains latency logger functions
 
 //globals
 block* cur_fb = NULL;
@@ -32,8 +32,8 @@ int max_valid_pg;
 FILE **fps;
 FILE *test_gc_writeblock[4];
 FILE *updaterate_fp;
-FILE *invfull_fp;
 FILE *longliveratio_fp;
+FILE *updateorder_fp;
 //a space to store lpa update timing(memory)
 long* lpa_update_timing[NOP];
 int update_cnt[NOP];
@@ -47,8 +47,6 @@ bhead* glob_yb;
 bhead* glob_ob;
 
 int tot_longlive_cnt = 0;
-
-
 
 int main(int argc, char* argv[]){
     //init params
@@ -121,8 +119,6 @@ int main(int argc, char* argv[]){
     int over_avg = 0;
     long rr_check = (long)100000;
 
-    //long runtime = WORKLOAD_LENGTH;
-    //long init_runtime = WORKLOAD_LENGTH;
     IO* cur_IO = NULL;
     wq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     rq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
@@ -131,7 +127,7 @@ int main(int argc, char* argv[]){
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
-    //FILE* finish_log;
+    
     long next_w_release[tasknum];
     long next_r_release[tasknum];
     long next_gc_release[tasknum];
@@ -170,7 +166,6 @@ int main(int argc, char* argv[]){
     double write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg;
     
     //TEMPCODE::open file for invfull block check.
-    invfull_fp = fopen("invfull.csv","w");
     longliveratio_fp = fopen("longliveratio.csv","w");
 
     //enable following two lines in a case to check util per cycle.
@@ -189,14 +184,28 @@ int main(int argc, char* argv[]){
     //MINRC is now a configurable value, which can be adjusted like OP
     //reference :: RTGC mechanism (2004, li pin chang et al.) 
     max_valid_pg = (int)((1.0-OP)*(float)(PPB*NOB));
-    int expected_invalid = MINRC*(NOB-tasknum);
+    int expected_invalid = MINRC*(GCTHRESNOB-tasknum);
     int expected_fp = PPB*(NOB-tasknum) - max_valid_pg - expected_invalid;
     printf("expected_invalid : %d, expected_fp : %d, maxvalid : %d\n",expected_invalid,expected_fp,max_valid_pg);
     
     //TASK GENERATOR CODE
     if(taskflag == 1){ //generate taskset and save
         float res = 1.0;
+#ifdef TASKGEN_IGNORE_UTILOVER
+        if(skewness == -1){
+            rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
+        } else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
+            rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg);
+            res = 0.5;//just hardcode and pass
+        } else if(skewness >= 0){
+            rand_tasks = generate_taskset_skew2(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
+        } else if(skewness == -3){ //manually assign w/r utilization for each task. edit parameters for test.
+            rand_tasks = generate_taskset_fixed(max_valid_pg,&res);
+        }
+#endif
+#ifndef TASKGEN_IGNORE_UTILOVER
         while(res >= 1.0){
+
             if(skewness == -1){
                 rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
             } else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
@@ -211,6 +220,7 @@ int main(int argc, char* argv[]){
                 free(rand_tasks);
             }
         }
+#endif
         FILE* taskparams = fopen("taskparam.csv","w");
         for(int i=0;i<tasknum;i++){
             printf("saving %d,%d,%d,%d,%d,%d,%d\n",rand_tasks[i].wn,rand_tasks[i].wp,rand_tasks[i].rn,rand_tasks[i].rp,rand_tasks[i].gcp,
@@ -307,7 +317,8 @@ int main(int argc, char* argv[]){
     }
     IO_close(tasknum,w_workloads,r_workloads);
 #endif
-    //LPA PROFILE GENERATOR CODE :: profile LPA invalidation pattern(per each address)
+    //LPA PROFILE GENERATOR CODE
+    //profile LPA invalidation pattern(per each address)
     if(profflag == 1){
         int prof_targ_lpa;
         int wn_count = 0;
@@ -332,7 +343,7 @@ int main(int argc, char* argv[]){
         }
         return 0;
     }
-    //LPA PROFILE GENERATOR CODE 2 :: 
+    //LPA PROFILE GENERATOR CODE 2
     //profile LPA invalidation pattern in one file for plotting + profile GC pattern for plotting
     if(profflag == 2){
         //main flag :: generate a scatter plot of LPA update vs timestamp
@@ -419,6 +430,7 @@ int main(int argc, char* argv[]){
     rr_profile = fopen("rr_prof.csv","w");
     fplife = fopen("lifetime.csv","a");
     fpovhd = fopen("overhead.csv","a");
+    updateorder_fp = fopen("updateorder.csv", "w");
     //finish_log = fopen("log.csv","w");
     IO_open(tasknum, w_workloads,r_workloads);
     lat_open(tasknum, lat_log_w,lat_log_r,lat_log_gc);
@@ -434,8 +446,14 @@ int main(int argc, char* argv[]){
     
     //initialize blocklist for blockmanage.
     init_metadata(newmeta,tasknum, init_cyc);
+#ifdef GC_ON_WRITEBLOCK
+    fblist_head = init_blocklist(0,NOB-1);
+    rsvlist_head = init_blocklist(0,-1);
+#endif
+#ifndef GC_ON_WRITEBLOCK
     fblist_head = init_blocklist(0, NOB-tasknum-1);
     rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);
+#endif
     full_head = init_blocklist(0,-1);//generate 0 component ll.
     write_head = init_blocklist(0,-1);
     glob_yb = init_blocklist(0,-1);
@@ -676,7 +694,7 @@ int main(int argc, char* argv[]){
             if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){
                 //printf("next gc : %ld, cur cp : %ld, gcjob : %d\n",next_gc_release[j],cur_cp,gcjob_finished[j]);
                 if(newmeta->total_invalid >= expected_invalid){
-                    print_fullblock_profile(fps[tasknum+tasknum+1],cur_cp,newmeta,full_head);
+                    //print_fullblock_profile(fps[tasknum+tasknum+1],cur_cp,newmeta,full_head);
                     gettimeofday(&(algo_start_time),NULL);
                     gc_job_start_q(tasks, j, tasknum, newmeta,
                                fblist_head, full_head, rsvlist_head, write_head, 0,
@@ -789,11 +807,6 @@ int main(int argc, char* argv[]){
         //go to the next checkpoint
         cur_cp = find_next_time(tasks,tasknum,cur_IO_end,rr_check,cur_cp,
                                 next_w_release,next_r_release,next_gc_release);
-        
-        //printf("cur_cp : %ld\n",cur_cp);
-        //sleep(1);
-        
-        //check_block(total_u,newmeta,tasks,tasknum,cur_cp,fp,fplife);
     }
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
     fprintf(fplife,"%ld,",cur_cp);

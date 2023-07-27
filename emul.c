@@ -2,12 +2,10 @@
 #include "emul.h"
 
 extern long cur_cp;
-extern FILE* invfull_fp;
 
 void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     int lpa, ppa, old_ppa, old_block;
-    int target_block;
-    int tot_inv=0;
+    
     lpa = cur_IO->lpa;
     ppa = cur_IO->ppa;
     old_ppa = metadata->pagemap[lpa];
@@ -18,9 +16,6 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     if(metadata->invmap[old_ppa] == 0){
         metadata->invmap[old_ppa] = 1;
         metadata->invnum[old_block] += 1;
-        if(metadata->invnum[old_block] == PPB){
-            print_fullblock_info(metadata,full_head,cur_cp,invfull_fp);
-        }
     }
     metadata->vmap_task[old_ppa] = -1;
     metadata->total_invalid++;
@@ -34,15 +29,6 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     //update access profile
     metadata->access_tracker[cur_IO->taskidx][ppa/PPB] = 1;
     metadata->vmap_task[ppa] = cur_IO->taskidx;
-    if((old_block == 1) || (old_block == 6)){
-        for(int i=0;i<PPB;i++){
-            if(metadata->invmap[old_block*PPB+i] == 1){
-                tot_inv++;
-            }
-        }
-        //printf("[WR-fin]lpa : %d, invalid targ:%d,inv?:%d,block : %d,cur_inv:%d, check : %d\n",lpa, old_ppa,metadata->invmap[old_ppa],old_block,metadata->invnum[old_block], tot_inv);
-    }
-    target_block = metadata->pagemap[cur_IO->lpa] / PPB;
 }
 
 void finish_RD(rttask* tasks, IO* cur_IO, meta* metadata){
@@ -52,8 +38,8 @@ void finish_RD(rttask* tasks, IO* cur_IO, meta* metadata){
 }
 
 void finish_GC(rttask* task, IO* cur_IO, meta* metadata){
-    int rsvidx, old_lpa, new_ppa, old_ppa;
-    rsvidx = cur_IO->gc_tar_ppa / (int)PPB;
+    int taridx, old_lpa, new_ppa, old_ppa;
+    taridx = cur_IO->gc_tar_ppa / (int)PPB;
     old_lpa = cur_IO->gc_old_lpa;
     new_ppa = cur_IO->gc_tar_ppa;
     old_ppa = cur_IO->gc_vic_ppa;
@@ -69,9 +55,16 @@ void finish_GC(rttask* task, IO* cur_IO, meta* metadata){
     else{
         metadata->rmap[new_ppa] = -1;
         metadata->invmap[new_ppa] = 1;
-        metadata->invnum[rsvidx]++;
+        metadata->invnum[taridx]++;
         metadata->vmap_task[new_ppa] = -1;
     }
+#ifdef GC_ON_WRITEBLOCK
+    //when GC relocates page on writeblock, total fp is decreased & access tracker is updated
+    metadata->total_fp--;
+    if(metadata->pagemap[old_lpa]==old_ppa){
+        metadata->access_tracker[cur_IO->taskidx][new_ppa/PPB] = 1;
+    }
+#endif
 }
 
 void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, bhead* rsvlist_head, GCblock* cur_GC){
@@ -91,8 +84,19 @@ void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
     metadata->state[vicidx]++;
     metadata->EEC[vicidx]++;
     metadata->total_invalid -= PPB - cur_IO->gc_valid_count;
+
+#ifdef GC_ON_WRITEBLOCK
+    //when GC relocates page on writeblock, victim block directly becomes free block
+    metadata->total_fp += PPB;
+    if(cur_GC->cur_vic == NULL){
+        printf("vic null!\n");
+        abort();
+    }
+    ll_append(fblist_head,cur_GC->cur_vic);
+    cur_GC->cur_vic = NULL;
+#endif
+#ifndef GC_ON_WRITEBLOCK
     metadata->total_fp += PPB - cur_IO->gc_valid_count;
-    //printf("idx check : vic %d, rsv %d\n",vicidx,rsvidx);
     if(cur_GC->cur_rsv == NULL){
         printf("rsv null!\n");
         abort();
@@ -100,12 +104,12 @@ void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
         printf("vic null!\n");
         abort();
     }
-    //printf("target block : %d\n",vicidx);
-    //printf("listcheck:fb %d rsv %d\n",fblist_head->blocknum,rsvlist_head->blocknum);
     ll_append(fblist_head,cur_GC->cur_rsv);
     ll_append(rsvlist_head,cur_GC->cur_vic);
     cur_GC->cur_rsv = NULL;
     cur_GC->cur_vic = NULL;
+#endif
+    
 }
 
 void finish_RRRE(){

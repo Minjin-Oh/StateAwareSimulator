@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -Wall 
+CFLAGS = -g -W 
 TARGET = statesimul.out
 OBJS =  init.o parse.o misc.o util.o \
 		list.o IOlist.o \

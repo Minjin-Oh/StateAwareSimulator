@@ -13,7 +13,7 @@ extern long cur_cp;
 //FIXME:: a temporary solution to expose 
 extern int update_cnt[NOP];
 extern int max_valid_pg;
-extern
+extern long* lpa_update_timing[NOP];
 
 int _find_gc_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util, int cur_b, int rsv_b){
     //check if current I/O job does not violate util test along with recently released other jobs.
@@ -639,7 +639,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     return best_idx;
 }
 
-int find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead* fblist_head, bhead* write_head){
+block* find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead* fblist_head, bhead* write_head){
     //find a destination of current page, similar to find_maxinvalid function.
     //FIXME:: this prototype function is hardcoded for TIMING_ON_MEM
     long cur_lpa_timing;
@@ -653,12 +653,16 @@ int find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead
     cur_lpa_nextupdatenum = metadata->write_cnt_per_cycle[lpa] + 1;
     if(cur_lpa_nextupdatenum >= update_cnt[lpa]){
         cur_lpa_timing = workload_reset_time + WORKLOAD_LENGTH;
+    } 
+    else {
+        cur_lpa_timing = lpa_update_timing[lpa][cur_lpa_nextupdatenum];
     }
     cnt = __calc_invorder_mem(max_valid_pg, metadata, cur_lpa_timing, workload_reset_time, metadata->total_fp);
-
-    if(cnt >= metadata->total_fp){//edgecase:: free page is not enough to handle target lpa
+    
+    //edgecase 1:: free page is not enough to handle target lpa
+    if(cnt >= metadata->total_fp){
         while(fblist_head->blocknum != 0){
-            //search through free block list, finding a youngest block, 
+            //search through free block list, finding a youngest block,
             target = find_block_in_list(metadata,fblist_head,YOUNG);
             wb_new = ll_remove(fblist_head,target);
             ll_append(write_head,wb_new);
@@ -667,11 +671,13 @@ int find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead
         cur = write_head->head;
         while(cur != NULL){
             if (cur->next == NULL){
-                return cur->idx;    
+                return cur;    
             }
             cur = cur->next;
         }
     }
+
+    //normal case. find order within write block list.
     yield_pg = 0;
     cur = write_head->head;
     while(cur != NULL){
@@ -684,7 +690,8 @@ int find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead
             cur = cur->next;
         }
     }
-    if(cur==NULL){//edgecase 1. write block list X have corresponding block.
+    //edgecase 2:: write block list X have corresponding block.
+    if(cur==NULL){
         while(fblist_head->blocknum != 0){
             //search through free block list, finding a youngest block, 
             target = find_block_in_list(metadata,fblist_head,YOUNG);
@@ -700,8 +707,12 @@ int find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead
             }
             //printf("[FB]yieldpg : %d\n",yield_pg);
         }
+        if(cur != NULL){
+            return cur;
+        }
     }
-    if(cur==NULL){//final edge case. somehow no corresponding block.
+    //edgecase 3::somehow no corresponding block.
+    if(cur==NULL){
         while(fblist_head->blocknum != 0){
             //search through free block list, finding a youngest block, 
             target = find_block_in_list(metadata,fblist_head,YOUNG);
@@ -712,9 +723,10 @@ int find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead
         cur = write_head->head;
         while(cur != NULL){
             if (cur->next == NULL){
-                return cur->idx;    
+                return cur;    
             }
             cur = cur->next;
         }
     }
+    return cur;
 }
