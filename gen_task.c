@@ -55,6 +55,7 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
     float utilsum = 0.0;
     float WRsum = 0.0;
     float utilsum_noblock = 0.0;
+    float utilsum_nogc = 0.0;
     for(int i=0;i<tasknum;i++){
         WRsum += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
         WRsum += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
@@ -66,7 +67,8 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
     }
     utilsum_noblock = utilsum;
     utilsum += (float)STARTE/(float)_find_min_period(tasks,tasknum);
-    printf("WRsum : %f, utilsum(noblock): %f, totutil : %f\n",WRsum, utilsum_noblock,utilsum);
+    utilsum_nogc += (float)STARTE/(float)_find_min_period(tasks,tasknum);
+    printf("WRsum : %f, utilsum(noblock): %f, utilsum(nogc): %f totutil : %f\n",WRsum,utilsum_noblock,utilsum_nogc,utilsum);
     *result_util = utilsum;
     return tasks;
 }
