@@ -337,7 +337,7 @@ int find_block_in_list(meta* metadata, bhead* head, int cond){
     //a function wihch finds a block in given blocklist, considering its state.
     //cond == YOUNG ; find youngest block in blocklist
     //cond == OLD ; find oldest block in blocklist
-    int ret;
+    int ret = -1;
     block* b;
     int compare;
     if(cond == YOUNG){

@@ -3,11 +3,11 @@
 void init_metadata(meta* metadata, int tasknum, int cycle){
     FILE* cyc_fp;
     FILE* timing_fp;
+    FILE* rank_fp;
     char name[30];
     int cyc_b;
     long next_update_time;
     for (int i=0;i<NOP;i++){
-        printf("page %d\n",i);
         metadata->pagemap[i] = -1;
         metadata->rmap[i] = -1;
         metadata->invmap[i] = 0;
@@ -42,6 +42,20 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
             metadata->state[i] = cyc_b;
         }
     }
+    //if writerank csv file exists, import the rank
+    rank_fp = fopen("writerank.csv","r");
+    if(rank_fp != NULL){
+        fscanf(rank_fp,"%d, ",&(metadata->ranknum));
+        metadata->rank_bounds = (int*)malloc(sizeof(int)*metadata->ranknum + 1);
+        metadata->rank_bounds[0] = 0;
+        for(int i=1;i<metadata->ranknum+1;i++){
+            fscanf(rank_fp,"%d, ", &(metadata->rank_bounds[i]));
+        }
+    }
+    //printf("clusternum : %d\n",metadata->ranknum);
+    //for(int i=0;i<metadata->ranknum+1;i++){
+    //    printf("[%d]%d\n",i,metadata->rank_bounds[i]);
+    //}
     //REFACTOR::for per-task tracking, malloc these member variables.
     //because number of task is declared in main, not header.
     metadata->read_cnt_task = (int*)malloc(sizeof(int)*tasknum);
@@ -69,6 +83,7 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
     for(int i=0;i<tasknum;i++){
         metadata->cur_read_worst[i] = 0;
     }
+    sleep(1);
 }
 
 void free_metadata(meta* metadata){
@@ -77,6 +92,7 @@ void free_metadata(meta* metadata){
     free(metadata->write_cnt_task);
     free(metadata->runutils);
     free(metadata->access_tracker);
+    free(metadata->rank_bounds);
     free(metadata);
 }
 

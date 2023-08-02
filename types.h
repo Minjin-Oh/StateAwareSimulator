@@ -11,7 +11,7 @@
 //normally, GCTHRESNOB == NOB
 //to trigger GC earlier, GCTHRESNOB < NOB
 #define GCTHRESNOB 1000
-#define NOB 3000
+#define NOB 1000
 #define PPB 128
 #define NOP NOB*PPB
 #define _OP 0.32
@@ -41,20 +41,19 @@
 #define DORELOCATE
 
 //scheme option toggle
-#define IOTIMING
-#define TIMING_ON_MEM
-#define TASKGEN_IGNORE_UTILOVER
-//#define GC_ON_WRITEBLOCK
+#define IOTIMING                    //updates timing for each LPA at init & write req init
+#define TIMING_ON_MEM               //loads update timing info on memory
+//#define TASKGEN_IGNORE_UTILOVER   //generates taskset with WCutil over 1.0
+//#define GC_ON_WRITEBLOCK          //redirects GC on write block & removes rsv block
+//#define MAXINVALID_RANK
 
-//baseline vs new scheme(deprecated)
+//deprecated params
 //#define DOGCCONTROL
 //#define GCBASE
 //#define DOWCONTROL
 //#define WRITEBASE
 //#define DORRCONTROL
 //#define RRBASE
-
-//deprecated params
 //#define DOWRCONTROL
 //#define DOGCNOTHRES
 //#define FORCEDCONTROL
@@ -89,6 +88,7 @@ typedef struct _block{
     struct _block* prev;
     int idx;
     int fpnum;
+    int wb_rank;
 }block;
 
 typedef struct _IO{
@@ -177,4 +177,6 @@ typedef struct _meta{
     char** access_tracker;
     int* cur_read_worst;
     long* rewind_time_per_task;
+    int ranknum;
+    int* rank_bounds;
 }meta;

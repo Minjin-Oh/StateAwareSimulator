@@ -657,9 +657,6 @@ int main(int argc, char* argv[]){
         //job release logic
         //release I/O task jobs
         for(int j=0;j<tasknum;j++){
-            //printf("[%d]fin flags : %d, %d, %d\n",j,wjob_finished[j],rjob_finished[j],gcjob_finished[j]);
-        }
-        for(int j=0;j<tasknum;j++){
             if(newmeta->total_fp < newmeta->reserved_write + tasks[j].wn){
                 printf("%d task write deferred\n",j);
                 wjob_deferred[j] = 1;
@@ -673,7 +670,7 @@ int main(int argc, char* argv[]){
                                               w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
                 write_release_num++;
                 gettimeofday(&(algo_end_time),NULL);
-                printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+                //printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                 write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
                 wjob_finished[j] = 0;

@@ -1224,6 +1224,25 @@ long abs_long(long x){
     }
 }
 
+int abs_int(int x){
+    if (x < 0){
+        return -x;
+    } else {
+        return x;
+    }
+}
+
+int __get_rank(int order, meta* metadata){
+    int ranknum = metadata->ranknum;
+    for(int i=0;i<ranknum;i++){
+        if(order >= metadata->rank_bounds[i] && order < metadata->rank_bounds[i+1]){
+            //printf("inbound order : %d, rank : %d\n",order,i);
+            return i;
+        }
+    }
+    //printf("outofbound order : %d, rank : %d(lastrank)\n", order, ranknum);
+    return ranknum;
+}
 int __calc_invorder_file(int pagenum, meta* metadata, long cur_lpa_timing, long workload_reset_time, int curfp){
     int invalid_per_lpa = 0;
     int ret = 0;
@@ -1288,9 +1307,6 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
             invalid_per_lpa -= 1;
         }
         ret += invalid_per_lpa;
-//        if(ret >= curfp){
-//            return ret;
-//        }
     }
     fprintf(updateorder_fp,"%d,\n",ret);
     return ret;
@@ -1356,14 +1372,55 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     if(cnt >= curfp){
         longlive = 1;
         tot_longlive_cnt++;
-        //printf("cur longlive cnt : %d, cur tot write : %d, ratio : %lf\n",tot_longlive_cnt,metadata->tot_write_cnt,(double)tot_longlive_cnt/(double)metadata->tot_write_cnt);
-        //fprintf(longliveratio_fp,"%ld,%d,%d,%lf\n",cur_cp,tot_longlive_cnt,metadata->tot_write_cnt,(double)tot_longlive_cnt/(double)metadata->tot_write_cnt);
     }
     gettimeofday(&b,NULL);
     //printf("[2]%d, cnt : %d\n",__calc_time_diff(a,b),cnt);
     //printf("[MAXINVALID]invalidation order : %d, curfp : %d \n",cnt,curfp);
     //calculation finished. cnt+1 is  current lpa's update order
 
+#ifdef MAXINVALID_RANK
+    int rank = __get_rank(cnt,metadata);
+    int ret_b_idx;
+    cur = write_head->head;
+    //find a corresponding rank block in wblist 
+    while(cur != NULL){ 
+        if(cur->wb_rank == rank){
+            //printf("[1]rank : %d, wbrank : %d\n",rank,cur->wb_rank);
+            return cur->idx;
+        }
+        cur = cur->next;
+    }
+    //if block not in wblist, try getting a new block
+    if(cur == NULL){
+        int temp = find_block_in_list(metadata,fblist_head,YOUNG);
+        //if block found in fblist, append to write block & return idx
+        if (temp != -1){
+            block* wb_new = ll_remove(fblist_head,temp);
+            wb_new->wb_rank = rank;
+            ll_append(write_head,wb_new);
+            //printf("[2]rank : %d, wbrank : %d\n",rank,wb_new->wb_rank);
+            return wb_new->idx;
+        }
+        //if block not in fblist, do edge case handling
+        else{
+            cur = write_head->head;
+            int offset = abs_int(cur->wb_rank - rank);
+            ret_b_idx = cur->idx;
+            while(cur != NULL){
+                if(offset >= abs_int(cur->wb_rank - rank)){
+                    offset = abs_int(cur->wb_rank - rank);
+                    ret_b_idx = cur->idx;
+                }
+                cur = cur->next;
+            }
+            //printf("[e]rank : %d alloc to other block...\n",rank);
+            return ret_b_idx;
+        }
+    }
+    printf("[MAXINV]write block alloc error!\n");
+    abort();
+#endif
+#ifndef MAXINVALID_RANK
     gettimeofday(&a,NULL);
     if(longlive == 1){//edgecase:: free page is not enough to handle target lpa
         while(fblist_head->blocknum != 0){
@@ -1501,4 +1558,5 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     gettimeofday(&b,NULL);
     //printf("[3]%d\n",__calc_time_diff(a,b));
     return cur->idx;
+#endif
 }
