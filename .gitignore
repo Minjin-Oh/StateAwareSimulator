@@ -1,8 +1,16 @@
 *.o
 
+*.d 
+
 *.out
 
 *.csv
 
 /Experimentdata/
 /evaluation_shells/
+/grad_test_shells/
+/results/
+/test_shells/
+/timing/
+
+

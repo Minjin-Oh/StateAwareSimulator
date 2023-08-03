@@ -1,9 +1,0 @@
-./statesimul.out NO NO NO WORKGEN 4 -1 0.1
-./statesimul.out DOGC DOW DORR nogen 4 -1 0.1
-./statesimul.out NO DOW DORR nogen 4 -1 0.1
-./statesimul.out DOGC NO DORR nogen 4 -1 0.1
-./statesimul.out DOGC DOW NO nogen 4 -1 0.1
-./statesimul.out NO NO DORR nogen 4 -1 0.1
-./statesimul.out NO DOW NO nogen 4 -1 0.1
-./statesimul.out DOGC NO NO nogen 4 -1 0.1
-./statesimul.out NO NO NO nogen 4 -1 0.1
