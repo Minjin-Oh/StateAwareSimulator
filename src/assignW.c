@@ -7,8 +7,6 @@ extern long cur_cp;
 extern int max_valid_pg;
 extern FILE **fps;
 
-extern block** b_glob_young;
-extern block** b_glob_old;
 extern bhead* glob_yb;
 extern bhead* glob_ob;
 extern long* lpa_update_timing[NOP];
@@ -404,7 +402,6 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
                     cur = cur->next;
                     continue;
                 }
-                //if current free block is younger, change b_glob_young[taskidx].
                 if(ret == NULL){
                     ret = cur;
                 } 
@@ -428,7 +425,6 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
                     cur = cur->next;
                     continue;
                 }
-                //if current free block is older, change b_glob_old[taskidx].
                 if(ret == NULL){
                     ret = cur;
                 } 

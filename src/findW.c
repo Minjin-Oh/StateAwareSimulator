@@ -23,12 +23,14 @@ extern long cur_cp;
 extern int max_valid_pg;
 extern FILE **fps;
 
-//FIXME:: a temporary solutio to expose update timing & info to find_write_invalidmax function.
+//FIXME:: a temporary solution to expose update timing & info to find_write_maxinvalid function.
 extern long* lpa_update_timing[NOP];
 extern int update_cnt[NOP];
 extern int tot_longlive_cnt;
 extern FILE *longliveratio_fp;
 extern FILE *updateorder_fp;
+extern FILE **w_workloads;
+extern FILE **r_workloads;
 
 //Determine rank of current lpa using task & locality information.
 //assuming that locality is fixed, rank of lpa is determined statically.
@@ -117,41 +119,9 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
             }
         }
     }
-
-    //check code
-    
-    for(int i=0;i<tasknum*2;i++){
-//        printf("[W]section : %d, intensity : %.10lf\n",write_idx[i],write_intensity[i]);
-    }
-    for(int i=0;i<tasknum*2;i++){
-//        printf("[R]section : %d, intensity : %.10lf\n",read_idx[i],read_intensity[i]);
-    }
-    
+  
     //with the sorted intensity, calculate proportion of each section.
-    /*
-    //a proportion case 1 :: is calculated as (cur lpa weight / maximum lpa weight)
-    double max_w_intensity = 0.0, max_r_intensity = 0.0, max_gc_intensity = 0.0;
-    for(int i=0;i<tasknum*2;i++){
-        if(max_w_intensity <= write_intensity[i]){
-            max_w_intensity = write_intensity[i];
-        }
-        if(max_r_intensity <= read_intensity[i]){
-            max_r_intensity = read_intensity[i];
-        }
-        if(max_gc_intensity <= gc_intensity[i]){
-            max_gc_intensity = gc_intensity[i];
-        }
-    }
-    for(int i=0;i<tasknum*2;i++){
-        w_prop[write_idx[i]] = 1.0 - write_intensity[i] / max_w_intensity;
-        r_prop[read_idx[i]] = 1.0 - read_intensity[i] / max_r_intensity;
-        gc_prop[gc_idx[i]] = 1.0 - gc_intensity[i] / max_gc_intensity;
-        printf("[W]%d-th section : %f\n",write_idx[i],w_prop[write_idx[i]]);
-        printf("[R]%d-th section : %f\n",read_idx[i],r_prop[read_idx[i]]);
-        printf("[G]%d-th section : %f\n",gc_idx[i],gc_prop[gc_idx[i]]);
-    }
-    */
-    //a proportion case 2 :: is calculated as (sum of weight of upper rank lpa section / total sum of weight)
+    //calculated as (sum of weight of upper rank lpa section / total sum of weight)
     //calculate sum of weight for each section. weight of section is calc as (num of lpa * intensity)
     for(int i=0;i<tasknum*2;i++){
         if(write_idx[i] % 2 == 0){//hotspace
@@ -169,12 +139,6 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
         } else {
             gci_sum_arr[i] = (double)(tasks[i/2].addr_ub - tasks[i/2].addr_lb - hotspace[i]) * gc_intensity[i];
         }
-    }
-    for(int i=0;i<tasknum*2;i++){
-//       printf("[W]intensity_sum : %.10lf\n",wi_sum_arr[i]);
-    }
-    for(int i=0;i<tasknum*2;i++){
-//        printf("[R]intensity_sum : %.10lf\n",ri_sum_arr[i]);
     }
 
     //calculate total sum of intensity
@@ -204,12 +168,6 @@ void _find_rank_lpa(rttask* tasks, int tasknum){
         gc_proportion[i] = upper_weight / gc_weight_sum;
     }
     
-    for(int i=0;i<tasknum*2;i++){
-//        printf("[W]proportion(sorted) : %.10lf\n",w_proportion[i]);
-    }
-    for(int i=0;i<tasknum*2;i++){
-//        printf("[R]proportion(sorted) : %.10lf\n",r_proportion[i]);
-    }
     for(int i=0;i<tasknum*2;i++){
         w_prop[write_idx[i]] = w_proportion[i];
         r_prop[read_idx[i]] = r_proportion[i];
@@ -298,6 +256,157 @@ int _find_write_safe(rttask* tasks, int tasknum, meta* metadata, int old, int ta
     } else if (total_u > 1.0){
         return -1;
     }
+}
+
+void _get_jobnum_interval(long curtime, long offset, rttask* task, int tasknum, int* jobnum_per_task){
+    //printf("curtime : %ld, offset : %ld",curtime,offset);
+    long start = curtime;
+    long end = curtime + offset;
+    long point = start;
+    long closest_next_release[tasknum];
+    long next;
+    while(point <= end){
+        //check if cur time is job release time
+        for(int i=0;i<tasknum;i++){
+            if(point % task[i].wp == 0){
+                jobnum_per_task[i]++;
+            }
+        }
+        //find closest next time
+        next = __LONG_MAX__;
+        for(int i=0;i<tasknum;i++){
+            closest_next_release[i] = ((point/(long)task[i].wp) + 1) * (long)task[i].wp;
+            if(next >= closest_next_release[i]){
+                next = closest_next_release[i];
+            }
+        }
+        point = next;
+    }
+}
+
+void  _get_write_reqs(FILE** w_workloads, int tasknum, int taskidx, rttask* task, int* w_lpas, long length, int* jobnum, int** lpas_to_arrange){
+    long orig_fp_offset[tasknum];
+    for(int i=0;i<tasknum;i++){
+        orig_fp_offset[i] = ftell(w_workloads[i]);
+    }
+    //for(int i=0;i<tasknum;i++){
+    //    printf("reqnums=%d X %d = %d\n",jobnum[i],task[i].wn,task[i].wn * jobnum[i]);
+    //}
+    //get lpas to arrange (어떤 순서로 오더라도 상관 없나?)
+    for (int i=0;i<tasknum;i++){ 
+        int lpas_offset = 0;
+        int scan_ret = 0;
+        int ret_val;
+        for(int j=0;j<jobnum[i];j++){
+            if(i == taskidx && j == 0){
+                for(int k=0;k<task[i].wn;k++){
+                    lpas_to_arrange[i][lpas_offset] = w_lpas[k];
+                    //printf("lpas_to_arrange[%d][%d] : %d\n",i,lpas_offset,lpas_to_arrange[i][lpas_offset]);
+                    lpas_offset++;
+                }
+            }
+            else {
+                for(int k=0;k<task[i].wn;k++){ 
+                    scan_ret = fscanf(w_workloads[i],"%d,",&(ret_val));
+                    if(scan_ret != EOF){
+                        lpas_to_arrange[i][lpas_offset] = ret_val;
+                        //printf("lpas_to_arrange[%d][%d] : %d\n",i,lpas_offset,lpas_to_arrange[i][lpas_offset]);
+                        
+                    } 
+                    else {
+                        rewind(w_workloads[i]);
+                        fscanf(w_workloads[i],"%d,",&(lpas_to_arrange[i][lpas_offset]));
+                    }
+                    lpas_offset++;
+                }
+            }
+        }
+    }
+    //for(int i=0;i<tasknum;i++){
+    //    printf("task %d :: ",i);
+    //    for(int j=0;j<task[i].wn * jobnum[i];j++){
+    //        printf("%d, ",lpas_to_arrange[i][j]);
+    //    }
+    //    printf("\n");
+    //}
+
+    //return file pointer to original position (for trace read during "real" write req generation)
+    for(int i=0;i<tasknum;i++){
+        long cur_fp_position = ftell(w_workloads[i]);
+        fseek(w_workloads[i],orig_fp_offset[i],SEEK_SET);
+    }
+    //sleep(3);
+}
+
+void _get_write_updateorder(int* jobnum, int** lpas_to_arrange, int tasknum, rttask* task, meta* metadata, long** updateorder_per_task){
+    
+    for(int i=0;i<tasknum;i++){
+        //printf("uporder of task %d :: ",i);
+        for(int j=0;j<jobnum[i]*task[i].wn;j++){
+            int lpa_cur = lpas_to_arrange[i][j];
+            int lpa_cyc = metadata->write_cnt_per_cycle[lpa_cur];
+            if(lpa_cyc <= update_cnt[lpa_cur]-1){
+                updateorder_per_task[i][j] = lpa_update_timing[lpa_cur][lpa_cyc+1];
+            } else {
+                updateorder_per_task[i][j] = WORKLOAD_LENGTH+cur_cp;
+            }
+            //printf("%ld, ",updateorder_per_task[i][j]);
+        }
+        //printf("\n");
+    }
+    return updateorder_per_task;
+}
+
+void __swap_int_array(int* arr, int idx, int idx2){
+    int temp;
+    temp = arr[idx];
+    arr[idx2] = arr[idx];
+    arr[idx] = temp;
+}
+
+int __calc_time_diff(struct timeval a, struct timeval b){
+    int sec = (b.tv_sec - a.tv_sec)*1000000;
+    int usec = (b.tv_usec - a.tv_usec);
+    return sec+usec;
+}
+long abs_long(long x){
+    if (x < 0L){
+        return -x;
+    } else {
+        return x;
+    }
+}
+
+int abs_int(int x){
+    if (x < 0){
+        return -x;
+    } else {
+        return x;
+    }
+}
+
+int __get_rank(int order, meta* metadata){
+    int ranknum = metadata->ranknum;
+    for(int i=0;i<ranknum;i++){
+        if(order >= metadata->rank_bounds[i] && order < metadata->rank_bounds[i+1]){
+            //printf("inbound order : %d, rank : %d\n",order,i);
+            return i;
+        }
+    }
+    //printf("outofbound order : %d, rank : %d(lastrank)\n", order, ranknum);
+    return ranknum;
+}
+
+int __get_rank_long_dyn(long order, long* rank, int ranknum){
+    for(int i=0;i<ranknum;i++){
+        if(order <= rank[i] && i == 0){
+            return 0;
+        } 
+        else if (order > rank[i-1] && order <= rank[i]){
+            return i;
+        }
+    }
+    return ranknum;
 }
 
 int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head){
@@ -1204,45 +1313,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     return res;
 }
 
-void __swap_int_array(int* arr, int idx, int idx2){
-    int temp;
-    temp = arr[idx];
-    arr[idx2] = arr[idx];
-    arr[idx] = temp;
-}
 
-int __calc_time_diff(struct timeval a, struct timeval b){
-    int sec = (b.tv_sec - a.tv_sec)*1000000;
-    int usec = (b.tv_usec - a.tv_usec);
-    return sec+usec;
-}
-long abs_long(long x){
-    if (x < 0L){
-        return -x;
-    } else {
-        return x;
-    }
-}
-
-int abs_int(int x){
-    if (x < 0){
-        return -x;
-    } else {
-        return x;
-    }
-}
-
-int __get_rank(int order, meta* metadata){
-    int ranknum = metadata->ranknum;
-    for(int i=0;i<ranknum;i++){
-        if(order >= metadata->rank_bounds[i] && order < metadata->rank_bounds[i+1]){
-            //printf("inbound order : %d, rank : %d\n",order,i);
-            return i;
-        }
-    }
-    //printf("outofbound order : %d, rank : %d(lastrank)\n", order, ranknum);
-    return ranknum;
-}
 int __calc_invorder_file(int pagenum, meta* metadata, long cur_lpa_timing, long workload_reset_time, int curfp){
     int invalid_per_lpa = 0;
     int ret = 0;
@@ -1336,6 +1407,148 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     int youngest = MAXPE;
     int target = -1;
     int longlive = -1;
+    int cur_fpnum;
+    int* jobnum;
+    int** req_per_task;
+    long** updateorders;
+#ifdef MAXINVALID_RANK_DYN
+    //active rank calculation-based method
+    
+    if(metadata->cur_rank_info.cur_left_write[taskidx] == 0){
+        //if pre-assigned write is finished, re-assign ranks for future N writes.
+        //1. find jobs and their corresponding update timing within given interval (cur interval = 500ms)
+        jobnum = (int*)malloc(sizeof(int)*tasknum);
+        req_per_task = (int**)malloc(sizeof(int*)*(unsigned long)tasknum);
+        updateorders = (long**)malloc(sizeof(long*)*(unsigned long)tasknum);
+        
+        for(int i=0;i<tasknum;i++){
+            jobnum[i] = 0;
+        }
+        _get_jobnum_interval(cur_cp,5000000,task,tasknum,jobnum);
+        
+        for(int i=0;i<tasknum;i++){
+            req_per_task[i] = (int*)malloc(sizeof(int)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
+            updateorders[i] = (long*)malloc(sizeof(long)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
+        }
+        
+        _get_write_reqs(w_workloads,tasknum,taskidx,task,w_lpas,500000,jobnum,req_per_task);
+        _get_write_updateorder(jobnum,req_per_task,tasknum,task,metadata,updateorders);
+        //1-1. put update timing values in single array
+        int reqnum = 0;
+        for(int i=0;i<tasknum;i++){
+            reqnum += jobnum[i] * task[i].wn;
+        }
+        long* invorders_sort = (long*)malloc(sizeof(long)*reqnum);
+        int invorderarr_idx = 0;
+        for(int i=0;i<tasknum;i++){
+            for(int j=0;j<jobnum[i]*task[i].wn;j++){
+                invorders_sort[invorderarr_idx] = updateorders[i][j];
+                invorderarr_idx++;
+            }
+        }
+        
+        //2. sort update timing array and find bounds for each rank
+        long* bounds = (long*)malloc(sizeof(long)*(metadata->ranknum));
+        int cluster_cur = 0;
+        int member_num = 0;
+        int req_per_rank = reqnum / metadata->ranknum;
+        qsort(invorders_sort,reqnum,sizeof(long),compare);
+        for(int i=0;i<reqnum;i++){
+            member_num++;
+            if(member_num == req_per_rank){
+                bounds[cluster_cur] = invorders_sort[i];
+                cluster_cur++;
+                member_num = 0;
+            }
+            if(cluster_cur == metadata->ranknum){
+                break;
+            }
+        }
+
+        //3. update cur_rank_info structure in metadata
+        for(int i=0;i<tasknum;i++){
+            int record_idx = 0;
+            if(metadata->cur_rank_info.cur_left_write[i] != 0){
+                //if a task has a leftover rank records, move them to front of rank array.
+                for(int j=0;j<metadata->cur_rank_info.cur_left_write[i];j++){
+                    int offset = metadata->cur_rank_info.tot_ranked_write[i] - metadata->cur_rank_info.cur_left_write[i] + j;
+                    metadata->cur_rank_info.ranks_for_write[record_idx] = metadata->cur_rank_info.ranks_for_write[offset];
+                    record_idx++;
+                }
+            }
+            metadata->cur_rank_info.cur_left_write[i] += jobnum[i] * task[i].wn;
+            metadata->cur_rank_info.tot_ranked_write[i] = metadata->cur_rank_info.cur_left_write[i];
+            for(int j=0;j<jobnum[i]*task[i].wn;j++){
+                //find rank of each reqs & make a rank record.
+                metadata->cur_rank_info.ranks_for_write[i][record_idx] = __get_rank_long_dyn(updateorders[i][j],bounds,metadata->ranknum);
+                record_idx++;
+            }
+        }
+        //4. free malloc spaces
+        
+        free(jobnum);
+        for(int i=1;i<tasknum;i++){
+            free(req_per_task[i]);
+            free(updateorders[i]);
+        }
+        free(req_per_task);
+        free(updateorders);
+        free(invorders_sort);
+        free(bounds);
+        
+        //5. (test) print ranks for each task.
+        //for(int i=0;i<tasknum;i++){
+        //    printf("task %d, left write : %d, tot write : %d :: ",i,metadata->cur_rank_info.cur_left_write[i],metadata->cur_rank_info.tot_ranked_write[i]);
+        //    for(int j=0;j<metadata->cur_rank_info.cur_left_write[i];j++){
+        //        printf("%d, ",metadata->cur_rank_info.ranks_for_write[i][j]);
+        //    }
+        //    printf("\n");
+        //}
+    }
+
+    //[1]get rank info from metadata & update left write
+    int offset = metadata->cur_rank_info.tot_ranked_write[taskidx] - metadata->cur_rank_info.cur_left_write[taskidx];
+    int cur_rank = metadata->cur_rank_info.ranks_for_write[taskidx][offset];
+    metadata->cur_rank_info.cur_left_write[taskidx] -= 1;
+    printf("[%ld]cur_rank : %d\n",cur_cp,cur_rank);
+    //[2]find corresponding block
+    cur = write_head->head;
+    while(cur != NULL){ 
+        if(cur->wb_rank == cur_rank){
+            return cur->idx;
+        }
+        cur = cur->next;
+    }
+    //if block not in wblist, try getting a new block
+    int ret_b_idx;
+    if(cur == NULL){
+        int temp = find_block_in_list(metadata,fblist_head,YOUNG);
+        //if block found in fblist, append to write block & return idx
+        if (temp != -1){
+            block* wb_new = ll_remove(fblist_head,temp);
+            wb_new->wb_rank = cur_rank;
+            ll_append(write_head,wb_new);
+            //printf("[2]rank : %d, wbrank : %d\n",rank,wb_new->wb_rank);
+            return wb_new->idx;
+        }
+        //if block not in fblist, do edge case handling
+        else{
+            cur = write_head->head;
+            int offset = abs_int(cur->wb_rank - cur_rank);
+            ret_b_idx = cur->idx;
+            while(cur != NULL){
+                if(offset >= abs_int(cur->wb_rank - cur_rank)){
+                    offset = abs_int(cur->wb_rank - cur_rank);
+                    ret_b_idx = cur->idx;
+                }
+                cur = cur->next;
+            }
+            //printf("[e]rank : %d alloc to other block...\n",rank);
+            return ret_b_idx;
+        }
+    }
+    //!end of active rank calculation-based method
+#endif
 
     //overhead measurement values
     struct timeval a;
@@ -1378,7 +1591,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     //printf("[MAXINVALID]invalidation order : %d, curfp : %d \n",cnt,curfp);
     //calculation finished. cnt+1 is  current lpa's update order
 
-#ifdef MAXINVALID_RANK
+#ifdef MAXINVALID_RANK_STAT
     int rank = __get_rank(cnt,metadata);
     int ret_b_idx;
     cur = write_head->head;
@@ -1420,7 +1633,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     printf("[MAXINV]write block alloc error!\n");
     abort();
 #endif
-#ifndef MAXINVALID_RANK
+#ifdef MAXINVALID_RANK_FIXED
     gettimeofday(&a,NULL);
     if(longlive == 1){//edgecase:: free page is not enough to handle target lpa
         while(fblist_head->blocknum != 0){

@@ -6,8 +6,6 @@
 #include "IOgen.h"
 
 extern int rrflag;
-extern block** b_glob_young;
-extern block** b_glob_old;
 extern bhead* glob_yb;
 extern bhead* glob_ob;
 

@@ -45,8 +45,10 @@
 #define TIMING_ON_MEM               //loads update timing info on memory
 //#define TASKGEN_IGNORE_UTILOVER   //generates taskset with WCutil over 1.0
 //#define GC_ON_WRITEBLOCK          //redirects GC on write block & removes rsv block
-//#define MAXINVALID_RANK
 
+//#define MAXINVALID_RANK_FIXED     //
+//#define MAXINVALID_RANK_STAT
+#define MAXINVALID_RANK_DYN
 //deprecated params
 //#define DOGCCONTROL
 //#define GCBASE
@@ -149,6 +151,12 @@ typedef struct _bhead{
     int blocknum;
 }bhead;
 
+typedef struct _currankinfo{
+    int* cur_left_write;
+    int* tot_ranked_write;
+    int** ranks_for_write;
+}currankinfo;
+
 typedef struct _meta{
     int pagemap[NOP];
     int rmap[NOP];
@@ -179,4 +187,5 @@ typedef struct _meta{
     long* rewind_time_per_task;
     int ranknum;
     int* rank_bounds;
+    currankinfo cur_rank_info;
 }meta;

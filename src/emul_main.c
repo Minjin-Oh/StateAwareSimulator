@@ -26,27 +26,30 @@ double* w_prop;
 double* r_prop;
 double* gc_prop;
 
+//FIXME:: set these as global to expose workloads to find_write_invalid function
+FILE** w_workloads;
+FILE** r_workloads;
+
 //FIXME:: set these as global to expose log file pointers and system parameters
 long cur_cp;
 int max_valid_pg;
+int tot_longlive_cnt = 0;
 FILE **fps;
 FILE *test_gc_writeblock[4];
 FILE *updaterate_fp;
 FILE *longliveratio_fp;
 FILE *updateorder_fp;
+FILE *getupdateorder_fp;
+
+//FIXME:: set these as global to expose global write block to assign_write_invalid function
+bhead* glob_yb;
+bhead* glob_ob;
+
 //a space to store lpa update timing(memory)
 long* lpa_update_timing[NOP];
 int update_cnt[NOP];
 int cur_length[NOP];
 int init_length = 10;
-
-//FIXME:: set these as global to expose global write block to assign_write_invalid function
-block** b_glob_young;
-block** b_glob_old;
-bhead* glob_yb;
-bhead* glob_ob;
-
-int tot_longlive_cnt = 0;
 
 int main(int argc, char* argv[]){
     //init params
@@ -59,12 +62,11 @@ int main(int argc, char* argv[]){
     bhead* coldlist;
     meta* newmeta = (meta*)malloc(sizeof(meta));    //metadata structure
     
-    //initialize flag variables first.
+    //initialize flag variables
     int gcflag = 0;
     int wflag = 0;
     int rrcond = 0; 
     int tasknum;
-    float totutil;                   //a total utilization of current system
     int genflag = 0;
     int taskflag = 0;
     int profflag = 0;
@@ -72,7 +74,7 @@ int main(int argc, char* argv[]){
     int skewnum;                     //number of skewed task
     int OPflag;
     int init_cyc = 0;
-    
+    float totutil;                   //a total utilization of current system
     //get flags
     set_scheme_flags(argv,
                      &gcflag, &wflag, &rrflag, &rrcond);
@@ -82,27 +84,26 @@ int main(int argc, char* argv[]){
                    &OPflag, &init_cyc, &OP, &MINRC);
     
     //initialize misc variables
-    int g_cur = 0;                   //pointer for current writing page
-    int last_task = tasknum-1;       //index of last I/O task
-    float rrutil;                    //a utilization allowed to data relocation job
-    cur_cp = 0;                      //current checkpoint time
-    long cur_IO_end = __LONG_MAX__;  //absolute time when current req finishes
+    int g_cur = 0;                   //pointer for current writing page @ dummy write phase
     int wl_init = 0;                 //flag for wear-leveling initiation
-    float WU;                        //worst-case utilization tracker.
-    int do_rr = 0;
     int rr_finished = 1;
     int hot_cold_list = 0;
+    int do_rr = 0;
+    long cur_IO_end = __LONG_MAX__;  //absolute time when current req finishes
+    float WU;                        //worst-case utilization tracker.
+    float rrutil;                    //a utilization allowed to data relocation job
+    cur_cp = 0;                      //current checkpoint time
     
+    //log file pointers
     FILE* rr_profile;
-    FILE* w_workloads[tasknum];
-    FILE* r_workloads[tasknum];
     FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
-    b_glob_old = (block**)malloc(sizeof(block*)*tasknum);
-    b_glob_young = (block**)malloc(sizeof(block*)*tasknum);
-    for(int i=0;i<tasknum;i++){
-        b_glob_old[i] = NULL;
-        b_glob_young[i] = NULL;
-    }
+    FILE* lat_log_w[tasknum];
+    FILE* lat_log_r[tasknum];
+    FILE* lat_log_gc[tasknum];
+    //IO file pointer init
+    w_workloads = (FILE**)malloc(sizeof(FILE*)*tasknum);
+    r_workloads = (FILE**)malloc(sizeof(FILE*)*tasknum);
+    
     block *cur_wb[tasknum];
     GCblock cur_GC[tasknum];
     RRblock cur_rr;
@@ -112,6 +113,7 @@ int main(int argc, char* argv[]){
     w_prop = (double*)malloc(sizeof(double)*tasknum*2);
     r_prop = (double*)malloc(sizeof(double)*tasknum*2);
     gc_prop = (double*)malloc(sizeof(double)*tasknum*2);
+    
     //simulate I/O(init related params)
     float total_u;
     int oldest;
@@ -124,9 +126,7 @@ int main(int argc, char* argv[]){
     rq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     gcq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     IOhead* rr;
-    FILE* lat_log_w[tasknum];
-    FILE* lat_log_r[tasknum];
-    FILE* lat_log_gc[tasknum];
+    
     
     long next_w_release[tasknum];
     long next_r_release[tasknum];
