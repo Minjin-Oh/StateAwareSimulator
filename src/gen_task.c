@@ -14,7 +14,19 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
     int wp, rp, gcp;
     char pass = 0;
     rttask* tasks;
+
     //generate a portion for each task
+#ifdef UUNIFAST
+    double cur_util = (double)tot_util;
+    double randfloat = (double)rand()/(double)RAND_MAX;
+    for(int i=1;i<tasknum;i++){
+        double nextsum = cur_util * pow(randfloat,1.0/(double)(tasknum-i));
+        utils[i-1] = (float)(cur_util - nextsum);
+        cur_util = nextsum;
+    }
+    utils[tasknum-1] = cur_util;
+#endif
+#ifndef UUNIFAST
     util_ratio_sum = 0;
     for(int i=0;i<tasknum;i++){
         util_ratio[i] = rand()%10 + 1;
@@ -25,7 +37,7 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
     for(int i=0;i<tasknum;i++){
         utils[i] = ((float)util_ratio[i]/(float)util_ratio_sum) * tot_util;
     }
-
+#endif
     //assign wn, wp, rn, rp according to utilization & make taskset
     tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
     for(int i=0;i<tasknum;i++){

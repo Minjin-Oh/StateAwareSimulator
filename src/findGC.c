@@ -626,6 +626,9 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
 #endif
     //using offset factor, choose best block
     cur_offset_int = (int)(cur_offset * (float)vic_num);
+#ifdef UTILSORT_BEST
+    cur_offset_int = 0;
+#endif
     best_idx = vic_arr[cur_offset_int];
 #ifdef utilsort_writecheck
     int test_cur_offset_int = (int)(cur_offset * (float)test_vicnum);

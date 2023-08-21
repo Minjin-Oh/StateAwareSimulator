@@ -44,11 +44,14 @@
 #define IOTIMING                    //updates timing for each LPA at init & write req init
 #define TIMING_ON_MEM               //loads update timing info on memory
 //#define TASKGEN_IGNORE_UTILOVER   //generates taskset with WCutil over 1.0
+#define UUNIFAST
 //#define GC_ON_WRITEBLOCK          //redirects GC on write block & removes rsv block
 
-//#define MAXINVALID_RANK_FIXED     //
-//#define MAXINVALID_RANK_STAT
-#define MAXINVALID_RANK_DYN
+//#define MAXINVALID_RANK_FIXED     //assign write pages strictly aligned with invalidation order
+//#define MAXINVALID_RANK_STAT      //assign write pages w.r.t offline profile (used K-means)
+#define MAXINVALID_RANK_DYN         //assign write pages w.r.t dynamically changing criteria.
+#define UTILSORT_BEST               //make find_gc_utilsort function to pick a block with shortest exec time
+
 //deprecated params
 //#define DOGCCONTROL
 //#define GCBASE
