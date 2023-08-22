@@ -25,6 +25,14 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
         cur_util = nextsum;
     }
     utils[tasknum-1] = cur_util;
+    //check code
+    float test_util_tot=0.0;
+    printf("::UUNIFAST GEN::\n");
+    for(int i=0;i<tasknum;i++){
+        printf("[%d]%f\n",i,utils[i]);
+        test_util_tot += utils[i];
+    }
+    printf("[ALL]%f\n",test_util_tot);
 #endif
 #ifndef UUNIFAST
     util_ratio_sum = 0;
