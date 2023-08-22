@@ -93,7 +93,7 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         fps[tasknum+tasknum] = fopen("prof_WLcomb_fbdist.csv","w");
         fps[tasknum+tasknum+1] = fopen("prof_WLcomb_invdist.csv","w");
     }
-    else if(wflag == 12 && gcflag == 6 && rrflag ==  1){//ours
+    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){//ours
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_ours_t%d.csv",i);
             fps[i] = fopen(name,"w");
@@ -105,7 +105,7 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         fps[tasknum+tasknum] = fopen("prof_ours_fbdist.csv","w");
         fps[tasknum+tasknum+1] = fopen("prof_ours_invdist.csv","w");
     }
-    else if(wflag == 12 && gcflag == 0 && rrflag == -1){//Wonly
+    else if(wflag == 14 && gcflag == 0 && rrflag == -1){//Wonly
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_wonly_t%d.csv",i);
             fps[i] = fopen(name,"w");
@@ -141,7 +141,7 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         fps[tasknum+tasknum] = fopen("prof_rronly_fbdist.csv","w");
         fps[tasknum+tasknum+1] = fopen("prof_rronly_invdist.csv","w");
     }
-    else if(wflag == 12 && gcflag == 6 && rrflag == -1){//W+GC
+    else if(wflag == 14 && gcflag == 6 && rrflag == -1){//W+GC
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_wgc_t%d.csv",i);
             fps[i] = fopen(name,"w");
@@ -165,7 +165,7 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
         fps[tasknum+tasknum] = fopen("prof_gcrr_fbdist.csv","w");
         fps[tasknum+tasknum+1] = fopen("prof_gcrr_invdist.csv","w");
     } 
-    else if (gcflag == 0 && wflag == 12 && rrflag == 1){//W+RR
+    else if (gcflag == 0 && wflag == 14 && rrflag == 1){//W+RR
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_wrr_t%d.csv",i);
             fps[i] = fopen(name,"w");

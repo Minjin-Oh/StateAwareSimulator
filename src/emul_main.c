@@ -421,8 +421,8 @@ int main(int argc, char* argv[]){
         return 0;
     }
 
-    //run gradient tests for write in offline, and assign offset value for WGRAD policy.
-    _find_rank_lpa(tasks,tasknum);
+    //(deprecated)run gradient tests for write in offline, and assign offset value for WGRAD policy.
+    //_find_rank_lpa(tasks,tasknum);
     offset = (int)((float)(tasks[0].addr_ub - tasks[0].addr_lb)*sploc/2.0);
 
     //init csv files

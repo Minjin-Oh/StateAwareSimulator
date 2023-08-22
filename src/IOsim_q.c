@@ -384,7 +384,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     vic->fpnum = PPB;
     metadata->runutils[2][taskidx] = gc_exec / gc_period;    
 #endif
-    printf("fbnum : %d, wbnum : %d, fpnum : %d, invnum : %d\n",fblist_head->blocknum,write_head->blocknum,metadata->total_fp,metadata->total_invalid);
+    //printf("fbnum : %d, wbnum : %d, fpnum : %d, invnum : %d\n",fblist_head->blocknum,write_head->blocknum,metadata->total_fp,metadata->total_invalid);
 }
 
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
