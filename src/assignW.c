@@ -98,7 +98,7 @@ block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata,
         }
     }
     //if state is different, get another write block
-    print_writeblock_profile(fps[tasknum+taskidx],cur_cp,metadata,fblist_head,write_head,-1,cur->idx,-1,-1,-1.0,cur->idx,-1);
+    //print_writeblock_profile(fps[tasknum+taskidx],cur_cp,metadata,fblist_head,write_head,-1,cur->idx,-1,-1,-1.0,cur->idx,-1);
     return cur;
 }
 

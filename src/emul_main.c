@@ -544,11 +544,11 @@ int main(int argc, char* argv[]){
         }
         for(int idx=0;idx<NOB;idx++){
             if(newmeta->state[idx] >= MAXPE){
-                //total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-                //printf("[%ld]a block reach maximum P/E, util : %d\n",total_u);
-                //fprintf(fplife,"%ld,",cur_cp);
-                //sleep(1);
-                //return 1;
+                total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
+                printf("[%ld]a block reach maximum P/E, util : %d\n",total_u);
+                fprintf(fplife,"%ld,",cur_cp);
+                sleep(1);
+                return 1;
             } else {
                 /*do nothing*/
             }
