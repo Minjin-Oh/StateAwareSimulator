@@ -123,7 +123,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         if(wflag == 0){
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         } else if(wflag == 11){
-            cur = assign_writehot_motiv(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas[i],wflag);
+            cur = assign_write_dynwl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         } else if(wflag == 12 || wflag == 13){
             cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
         } else if(wflag == 14){
@@ -406,7 +406,7 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     }
     //cancel WL
     if(vic1 == -1 || vic2 == -1){
-        //printf("skiprr\n");
+        //printf("vic1 %d, vic2 %d, skiprr\n",vic1,vic2);
         return;
     }
     

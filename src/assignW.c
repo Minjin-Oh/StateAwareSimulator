@@ -42,6 +42,50 @@ block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadat
     return cur;
 }
 
+block* assign_write_dynwl(rttask* task, int taskidx, int tasknum, meta* metadata,
+                           bhead* fblist_head, bhead* write_head, block* cur_b){
+    int target;
+    int youngest_fb_idx = -1;
+    int youngest_wb_idx = -1;
+    block* ret = NULL;
+    //1. search through free block list / write block list
+    if(fblist_head->blocknum > 0){
+        youngest_fb_idx = find_block_in_list(metadata,fblist_head,YOUNG);
+    }
+    if(write_head->blocknum > 0){
+        youngest_wb_idx = find_block_in_list(metadata,write_head,YOUNG);
+    }
+
+    //2. choose youngest block in fblist or wblist.
+    if(youngest_fb_idx != -1 && youngest_wb_idx != -1){
+        //both list has at least 1 component.
+        if(metadata->state[youngest_fb_idx] < metadata->state[youngest_wb_idx]){
+            ret = ll_remove(fblist_head,youngest_fb_idx);
+            ll_append(write_head,ret);
+            return ret;
+        } else {
+            ret = ll_find(metadata,write_head,YOUNG);
+            return ret;
+        }
+    }
+    else if (youngest_fb_idx != -1 && youngest_wb_idx == -1){
+        //no write block, so we must get new free block.
+        ret = ll_remove(fblist_head,youngest_fb_idx);
+        ll_append(write_head,ret);
+        return ret;
+    }
+    else if (youngest_fb_idx == -1 && youngest_wb_idx != -1){
+        //no free block, so we must use current write block.
+        ret = ll_find(metadata,write_head,YOUNG);
+        return ret;
+    }
+    else if (youngest_fb_idx == -1 && youngest_wb_idx == -1){
+        //full??
+        printf("ssd full\n");
+        abort();
+    }
+
+}
 block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b){
     //printf("fbnum : %d, writenum : %d\n",fblist_head->blocknum,write_head->blocknum);
@@ -259,31 +303,38 @@ block* assign_writehot_motiv(rttask* task, int taskidx, int tasknum, meta* metad
     int target;
     block* cur = NULL;
     target = find_write_hotness_motiv(task,taskidx,tasknum,metadata,fblist_head,write_head,lpa,policy);
+    printf("targ found : %d\n",target);
     if(cur_b != NULL){
-        if(metadata->state[target] == metadata->state[cur_b->idx] && cur_b->fpnum > 0){
-        //don't have to change wb? just return current block pointer.
-        //remember that when current block runs out of fp, we must change block
-            //printf("do not change wb, left fp : %d\n",cur_b->fpnum);
-            return cur_b;
-        } else {
+        if(is_idx_in_list(write_head,cur_b->idx) == 1){
+            if(metadata->state[target] == metadata->state[cur_b->idx] && cur_b->fpnum > 0){
+                printf("do not change wb, left fp : %d\n",cur_b->fpnum);
+                return cur_b;
+            }    
+        }
+        else {
             //printf("target block : %d\n",target);
             cur = ll_remove(fblist_head,target);
             if (cur != NULL){
-                //printf("retreived %d\n",cur->idx);
+                printf("[DynWL]retreived %d\n",cur->idx);
                 ll_append(write_head,cur);
-            } else {
+            } 
+            else {
                 cur = ll_findidx(write_head,target);
             }
         }
-    } else { //initial case :: cur_b == NULL. find new block
+    }
+    else{ //initial case :: cur_b == NULL. find new block
         printf("[INIT]target block : %d\n",target);
         cur = ll_remove(fblist_head,target);
         if (cur != NULL){
+            printf("[DynWL]retreived %d\n",cur->idx);
             ll_append(write_head,cur);
-        } else {
+        }
+        else {
             cur = ll_findidx(write_head,target);
         }
     }//if state is different, get another write block
+    printf("returning %d\n",cur->idx);
     return cur;
 }
 
@@ -463,17 +514,18 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
 
 block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, 
                              bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, long cur_cp){
-    struct timeval a;
-    struct timeval b;
-    int sec, usec;
+    //struct timeval a;
+    //struct timeval b;
+    //int sec, usec;
     int target;
     block* cur = NULL;
-    gettimeofday(&a,NULL);
+    
+    //gettimeofday(&a,NULL);
     target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,cur_cp);
     cur = ll_findidx(write_head,target);
-    gettimeofday(&b,NULL);
-    sec = (b.tv_sec - a.tv_sec)*1000000;
-    usec = (b.tv_usec - a.tv_usec);
+    //gettimeofday(&b,NULL);
+    //sec = (b.tv_sec - a.tv_sec)*1000000;
+    //usec = (b.tv_usec - a.tv_usec);
     //printf("[assignovhd]:%d\n",sec+usec);
     return cur;
 }

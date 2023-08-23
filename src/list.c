@@ -74,8 +74,10 @@ block* ll_findidx(bhead* head, int tar){
     
     while(cur != NULL){
         //printf("cur->idx:%d\n",cur->idx);
-        if(cur->idx == tar)
+        if(cur->idx == tar){
+            //printf("found %d\n",cur->idx);
             break;
+        }    
         else{
             cur = cur->next;
         }
@@ -91,7 +93,7 @@ block* ll_remove(bhead* head, int tar){
     cur = head->head;
     
     while(cur != NULL){
-        //printf("cur->idx:%d\n",cur->idx);
+        //printf("[rmv traverse]cur->idx:%d\n",cur->idx);
         if(cur->idx == tar)
             break;
         else{

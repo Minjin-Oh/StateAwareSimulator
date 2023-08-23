@@ -174,7 +174,7 @@ void finish_RRWR(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
             } 
             else {
                 ll_append(fblist_head,cur_RR->cur_vic2);
-                //printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
+                printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
             }
             
         } 
@@ -186,7 +186,7 @@ void finish_RRWR(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
             } 
             else {
                 ll_append(fblist_head,cur_RR->cur_vic1);
-                //printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
+                printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
             }
         }
     }

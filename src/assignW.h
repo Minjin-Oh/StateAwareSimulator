@@ -3,6 +3,8 @@
 
 block* assign_write_FIFO(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b);
+block* assign_write_dynwl(rttask* task, int taskidx, int tasknum, meta* metadata,
+                           bhead* fblist_head, bhead* write_head, block* cur_b);
 block* assign_write_ctrl(rttask* task, int taskidx, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* write_head, block* cur_b);
 block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadata,
