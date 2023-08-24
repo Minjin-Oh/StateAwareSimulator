@@ -328,11 +328,6 @@ void add_offset_for_timing(meta* metadata, int taskidx, int lpa_lb, int lpa_ub, 
         
     }
     printf("reset %d ~ %d, offset : %ld to %ld\n",lpa_lb,lpa_ub,metadata->rewind_time_per_task[taskidx],cur_cp);
-    for(int i=lpa_lb;i<lpa_ub;i++){
-        if(update_cnt[i] >= 1){
-            printf("[timing offset test][%d] %ld to %ld\n",i,lpa_update_timing[i][0] - IO_offset, lpa_update_timing[i][0]);
-        }
-    }
     metadata->rewind_time_per_task[taskidx] = cur_cp;
     sleep(1);
 }
