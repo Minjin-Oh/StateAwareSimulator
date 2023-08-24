@@ -195,17 +195,12 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
 
 rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle){
     float utils[tasknum];
-    float per_task_portion = 0.1;
-    float offset = 0.09
-    
-    
-    ;
-    float rand_portion = 0.01;
+    float per_task_portion = 0.05;
+    float offset = 0.045;
+    float rand_portion = 0.005;
     float r_util[tasknum], w_util[tasknum];
     int wp, rp, gcp, wnum, rnum;
-    char pass = 0;
     rttask* tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
-
     
     //generate util for each task
     for(int i=0;i<tasknum;i++){
@@ -218,6 +213,7 @@ rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* res
             w_util[i] = per_task_portion - r_util[i];
         }
     }
+
     //assign 90% of util for write if task is write-intensive
     for(int i=0;i<tasknum;i++){
         wnum = rand()%30 + 1;
@@ -229,6 +225,8 @@ rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* res
         printf("wp: %d, wn : %d, rp : %d, rn : %d, gcp : %d wu: %f, ru: %f, gcu : %f\n",
             wp,wnum,rp,rnum,gcp,w_util[i],r_util[i],__calc_gcu(&(tasks[i]),MINRC,0,0,0));
     }
+
+
     float checker = 0.0;
     for(int i=0;i<tasknum;i++){
         checker += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
