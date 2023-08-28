@@ -211,7 +211,7 @@ void gen_loc(rttask* task, int rank, float* _sploc, float* _tploc, int* offset){
         *_tploc = (float)0.65 + (float)rand_param / (float)100;
         *_sploc = 1.0 - *_tploc;
     }
-    else if (rank == 3){
+    else if (rank == 3){ 
         rand_param = rand()%15;
         *_tploc = (float)0.50 + (float)rand_param / (float)100;
         *_sploc = 1.0 - *_tploc;

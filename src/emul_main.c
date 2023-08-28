@@ -663,12 +663,8 @@ int main(int argc, char* argv[]){
                 printf("%d task write deferred\n",j);
                 wjob_deferred[j] = 1;
             }
-            if(cur_cp == next_w_release[j]){
-                printf("cur_cp %d, wjob_finished %d, wjob_deferred %d\n",next_w_release[j],wjob_finished[j],wjob_deferred[j]);
-            }
             if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){
                 gettimeofday(&(algo_start_time),NULL);
-                printf("job %d write start\n",j);
                 cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
                                               fblist_head, full_head, write_head,
                                               w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);

@@ -20,7 +20,7 @@
 #define SPLOCAL 0.05
 #define TPLOCAL 0.95
 #define WORKLOAD_LENGTH 8000000000L
-#define RUNTIME 1000000000000L
+#define RUNTIME 10000000000000L
 //lifetime params
 #define _MINRC 35
 #define MAXPE 1000
