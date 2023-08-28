@@ -2,7 +2,7 @@
 
 bhead* ll_init(){
     //init and return head poiner
-    bhead* head;
+    bhead* head = NULL;
     head = (bhead*)malloc(sizeof(bhead));
     head->blocknum = 0;
     head->head = NULL;

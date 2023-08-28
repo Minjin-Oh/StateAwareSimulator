@@ -80,6 +80,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                      FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp){
 
     //makes write job according to workload and task parameter
+    printf("[%d]write start, time : %d\n",taskidx,cur_cp);
     block *cur = NULL;
     block *temp = NULL;
     block *last_access_block = NULL;
@@ -192,6 +193,10 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             req->init = 0;
             req->last = 0;
         }
+        if(tasks[taskidx].wn == 1){
+            req->init = 1;
+            req->last = 1;
+        }
         //printf("tp:%d,lpa:%d,ppa:%d,dl:%ld,exec:%ld\n",req->type,req->lpa,req->ppa,req->deadline,req->exec);
     }
         
@@ -234,6 +239,10 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
         } else {
             req->init = 0;
             req->last = 0;
+        }
+        if(task[taskidx].rn == 1){
+            req->init = 1;
+            req->last = 1;
         }
         metadata->read_cnt[lpa]++;
         metadata->read_cnt_task[taskidx]++;

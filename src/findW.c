@@ -1424,15 +1424,16 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         for(int i=0;i<tasknum;i++){
             jobnum[i] = 0;
         }
-        _get_jobnum_interval(cur_cp,5000000,task,tasknum,jobnum);
-        
+        _get_jobnum_interval(cur_cp,9000000,task,tasknum,jobnum);
         for(int i=0;i<tasknum;i++){
+            printf("jobnums:%d, reqnums : %d\n",jobnum[i],task[i].wn*jobnum[i]);
             req_per_task[i] = (int*)malloc(sizeof(int)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
             updateorders[i] = (long*)malloc(sizeof(long)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
         }
         
-        _get_write_reqs(w_workloads,tasknum,taskidx,task,w_lpas,500000,jobnum,req_per_task);
+        _get_write_reqs(w_workloads,tasknum,taskidx,task,w_lpas,9000000,jobnum,req_per_task);
         _get_write_updateorder(jobnum,req_per_task,tasknum,task,metadata,updateorders);
+    
         //1-1. put update timing values in single array
         int reqnum = 0;
         for(int i=0;i<tasknum;i++){
@@ -1471,6 +1472,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             if(metadata->cur_rank_info.cur_left_write[i] != 0){
                 //if a task has a leftover rank records, move them to front of rank array.
                 for(int j=0;j<metadata->cur_rank_info.cur_left_write[i];j++){
+                    //printf("[leftover]cur rec idx : %d\n",record_idx);
                     int offset = metadata->cur_rank_info.tot_ranked_write[i] - metadata->cur_rank_info.cur_left_write[i] + j;
                     metadata->cur_rank_info.ranks_for_write[record_idx] = metadata->cur_rank_info.ranks_for_write[offset];
                     record_idx++;
@@ -1480,6 +1482,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             metadata->cur_rank_info.tot_ranked_write[i] = metadata->cur_rank_info.cur_left_write[i];
             for(int j=0;j<jobnum[i]*task[i].wn;j++){
                 //find rank of each reqs & make a rank record.
+                //printf("cur rec idx : %d\n",record_idx);
                 metadata->cur_rank_info.ranks_for_write[i][record_idx] = __get_rank_long_dyn(updateorders[i][j],bounds,metadata->ranknum);
                 record_idx++;
             }
@@ -1510,6 +1513,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     int offset = metadata->cur_rank_info.tot_ranked_write[taskidx] - metadata->cur_rank_info.cur_left_write[taskidx];
     int cur_rank = metadata->cur_rank_info.ranks_for_write[taskidx][offset];
     metadata->cur_rank_info.cur_left_write[taskidx] -= 1;
+    printf("[%d]left_write : %d\n",taskidx,metadata->cur_rank_info.cur_left_write[taskidx]);
     //printf("[%ld]cur_rank : %d\n",cur_cp,cur_rank);
     //[2]find corresponding block
     cur = write_head->head;

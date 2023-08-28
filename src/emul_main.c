@@ -54,7 +54,7 @@ int init_length = 10;
 int main(int argc, char* argv[]){
     //init params
     srand(time(NULL)); 
-    bhead* fblist_head;                             //heads for block list
+    bhead* fblist_head = NULL;                             //heads for block list
     bhead* rsvlist_head;
     bhead* full_head;
     bhead* write_head;
@@ -663,10 +663,12 @@ int main(int argc, char* argv[]){
                 printf("%d task write deferred\n",j);
                 wjob_deferred[j] = 1;
             }
+            if(cur_cp == next_w_release[j]){
+                printf("cur_cp %d, wjob_finished %d, wjob_deferred %d\n",next_w_release[j],wjob_finished[j],wjob_deferred[j]);
+            }
             if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){
-
-                //printf("next w : %ld, cur cp : %ld, wjob : %d\n",next_w_release[j],cur_cp,wjob_finished[j]);
                 gettimeofday(&(algo_start_time),NULL);
+                printf("job %d write start\n",j);
                 cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
                                               fblist_head, full_head, write_head,
                                               w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
@@ -806,6 +808,7 @@ int main(int argc, char* argv[]){
         //go to the next checkpoint
         cur_cp = find_next_time(tasks,tasknum,cur_IO_end,rr_check,cur_cp,
                                 next_w_release,next_r_release,next_gc_release);
+        //printf("[fnt res]next_time : %ld\n",cur_cp);
     }
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
     fprintf(fplife,"%ld,",cur_cp);
