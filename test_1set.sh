@@ -1,19 +1,19 @@
 ### program execution flag explanation
 ### ./statesimul.out W_POLICY GC_POLICY RR_POLICY TASKNUM TASKUTIL SKEWFLAG T_LOC S_LOC SKEWNUM INITCYC
 
-#./statesimul.out NO NO NO TASKGEN 4 0.3 -1 0.5 0.5 -1
-./statesimul.out NO NO NO WORKGEN 4 0.3 -1 0.5 0.5 -1
+#./statesimul.out NO NO NO TASKGEN 4 0.3 -1 -2.0 -2.0 0
+./statesimul.out NO NO NO WORKGEN 4 0.3 -1 -2.0 -2.0 0
 mkdir ./timing
 cd ./timing
-rm *.csv
+find . -maxdepth 1 -name '*.csv' -delete
 cd ../
-./statesimul.out NO NO SKIPRR PROFGEN 4 0.3 -1 0.5 0.5 -1
-#./statesimul.out NO NO SKIPRR SCATTERGEN 4 0.2 0 -2.0 -2.0 4
+./statesimul.out NO NO SKIPRR PROFGEN 4 0.3 -1 -2.0 -2.0 -1
+./statesimul.out NO NO SKIPRR SCATTERGEN 4 0.2 0 -2.0 -2.0 4
 
-#./statesimul.out NO NO SKIPRR nogen 4 0.3 -1 0.5 0.5 -1
-#./statesimul.out NO INVW SKIPRR nogen 4 0.3 -1 0.5 0.5 -1
+./statesimul.out NO NO SKIPRR nogen 4 0.3 -1 -2.0 -2.0 0
+#./statesimul.out NO INVW SKIPRR nogen 4 0.3 -1 -1.0 -1.0 -1
 #./statesimul.out NO GRADW SKIPRR nogen 4 0.3 -1 0.5 0.5 -1
-#./statesimul.out NO MOTIVALLY SKIPRR nogen 4 0.3 -1 0.5 0.5 -1
+#./statesimul.out NO MOTIVALLY BASE005 nogen 4 0.3 -1 0.5 0.5 -1
 
 
 #./statesimul.out NO OLDW SKIPRR nogen 4 0.2 -1 -1 -1

@@ -39,8 +39,9 @@ void IOgen_task(rttask* task, long runtime, int offset, float _splocal, float _t
     r_size = (int)(runtime / (long)task->rp * (long)task->rn);
     int reqsize = 0;
     for(int i=0;i<w_size;i++){
-        //generate lpa. make sure that lpa does not overlap in single job
+        //generate lpa. 
         lpa = gen_lpa_rand(hotspace,lb,space,_tplocal);
+        //make sure that lpa does not overlap in single job.
         for(int a=0;a<reqsize;a++){
             if(temp_write[a] == lpa){
                 while(temp_write[a] == lpa){

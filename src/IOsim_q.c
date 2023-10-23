@@ -112,10 +112,6 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             if(cur->fpnum == 0){
                 temp = ll_remove(write_head,cur->idx);
                 ll_append(full_head,temp);
-                //printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
-                //printf("free page left : %d\n",metadata->total_fp);
-                //printf("cur_cp : %ld\n",cur_cp);
-                //print_maxinvalidation_block(metadata, temp->idx);
                 cur = NULL;
             } else {
                 //do nothing
@@ -130,6 +126,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         } else if(wflag == 14){
             cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,cur_cp);
         }
+        block* checktemp = fblist_head->head; 
         cur_offset = PPB - cur->fpnum;
         ppa_dest[i] = cur->idx*PPB + cur_offset;
         ppa_state[i] = metadata->state[cur->idx];
@@ -140,9 +137,6 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             if(cur->fpnum == 0){
                 temp = ll_remove(write_head,cur->idx);                
                 ll_append(full_head,temp);
-                //printf("append %d, fullbnum : %d, wbnum : %d, freebnum: %d\n",temp->idx,full_head->blocknum,write_head->blocknum,fblist_head->blocknum);
-                //printf("free page left : %d\n",metadata->total_fp);
-                //printf("cur_cp : %ld\n",cur_cp);
                 //print_maxinvalidation_block(metadata, temp->idx);
                 cur = NULL;
             } else {
@@ -173,6 +167,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         req->IO_start_time = cur_cp;
         req->deadline = (long)cur_cp + (long)tasks[taskidx].wp;
         req->exec = (long)floor((double)w_exec(ppa_state[i]));
+        
 #ifdef IOTIMING
         IO_timing_update(metadata,lpa,metadata->write_cnt_per_cycle[lpa],cur_cp);
 #endif
@@ -412,18 +407,21 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     }
     else if (rrflag == 1){
         find_RR_target_util(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
-    }
-    //cancel WL
-    if(vic1 == -1 || vic2 == -1){
-        //printf("vic1 %d, vic2 %d, skiprr\n",vic1,vic2);
-        return;
+    } 
+
+    //if victim block is not found, cancel WL
+    if(rrflag == 0 || rrflag == 1){
+        if(vic1 == -1 || vic2 == -1){
+            //printf("vic1 %d, vic2 %d, skiprr\n",vic1,vic2);
+            return;
+        }
     }
     
     //if decided to do WL, reset access window for future.
-
     for(int i=0;i<NOB;i++){
         metadata->access_window[i] = 0;
     }
+    //find vb1 and vb2
     cur = full_head->head;
     while(cur != NULL){
         if(cur->idx == vic1){
@@ -493,4 +491,26 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     //printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
     //printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
 
+}
+
+void BWR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* write_head,
+                  IOhead* bwrq, long cur_cp){
+    printf("[BWR]sched BWR, %ld\n",cur_cp);
+    int vic, tar;
+    long bwrp;
+    int execution_time;
+    
+    //background relocation logic
+    //find_BWR_victim_updatetiming(tasks, tasknum, metadata, fblist_head, full_head, &vic);
+    //find_BWR_target_updatetiming(tasks, tasknum, metadata, write_head, &tar);
+    vic = 0;
+    tar = 0;
+    //schedule simple relocation job, if possible.
+    if(vic == -1 || tar == -1){
+        return ;
+    }
+    bwrp = __LONG_MAX__ - cur_cp;
+    execution_time += gen_bwr_rr(vic, tar, cur_cp, bwrp, metadata, bwrq);
+    //reloc for write does not have to consider blocks.
+    return;
 }

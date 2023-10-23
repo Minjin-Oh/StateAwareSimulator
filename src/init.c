@@ -43,13 +43,16 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         }
     }
     //if writerank csv file exists, import the rank
+    //since rank_bounds can be either "update order" or "update time", type should be long.
     rank_fp = fopen("writerank.csv","r");
     if(rank_fp != NULL){
         fscanf(rank_fp,"%d, ",&(metadata->ranknum));
-        metadata->rank_bounds = (int*)malloc(sizeof(int)*metadata->ranknum + 1);
+        metadata->rank_bounds = (long*)malloc(sizeof(long)*metadata->ranknum + 1);
         metadata->rank_bounds[0] = 0;
         for(int i=1;i<metadata->ranknum+1;i++){
-            fscanf(rank_fp,"%d, ", &(metadata->rank_bounds[i]));
+            int temp_rank;
+            fscanf(rank_fp,"%d, ", &(temp_rank));
+            metadata->rank_bounds[i] = (long)temp_rank;
         }
     }
     
@@ -82,13 +85,16 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
     }
     metadata->cur_rank_info.cur_left_write = (int*)malloc(sizeof(int)*tasknum);
     metadata->cur_rank_info.tot_ranked_write = (int*)malloc(sizeof(int)*tasknum);
-    metadata->cur_rank_info.ranks_for_write = (int**)malloc(sizeof(int)*tasknum);
+    metadata->cur_rank_info.ranks_for_write = (int**)malloc(sizeof(int*)*tasknum);
+    metadata->cur_rank_info.timings_for_write = (long**)malloc(sizeof(long*)*tasknum);
     for(int i=0;i<tasknum;i++){
         metadata->cur_rank_info.cur_left_write[i] = 0;
         metadata->cur_rank_info.tot_ranked_write[i] = 0; 
         metadata->cur_rank_info.ranks_for_write[i]=(int*)malloc(sizeof(int)*2000);
+        metadata->cur_rank_info.timings_for_write[i] = (long*)malloc(sizeof(long)*2000);
         for(int j=0;j<2000;j++){
             metadata->cur_rank_info.ranks_for_write[i][j] = 0;
+            metadata->cur_rank_info.timings_for_write[i][j] = 0;
         }
     }
     sleep(1);

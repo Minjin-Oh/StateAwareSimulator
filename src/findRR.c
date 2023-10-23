@@ -1,6 +1,6 @@
 #include "stateaware.h"
 
-extern int rrflag;
+extern long* lpa_update_timing[NOP];    //global variable which determines 
 
 void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_head, bhead* hotlist, bhead* coldlist, int* res1, int* res2){
     
@@ -299,6 +299,153 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
     *res2 = vic2;
 }
 
+void find_BWR_victim_updatetiming(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res){
+    block* cur;
+    cur = full_head->head;
+    long nu[PPB];       //array which contains next update timings
+    long diff, diff_temp;
+    double avg, var, max_b_var, max_b_avg;
+    int ppa, vnum, lpa, res_b_idx, res_p_idx;
+    block* res_b_ptr;
+    max_b_var = 0.0;
+    max_b_avg = 0.0;
+    res_b_idx = -1;
+    res_b_ptr = NULL;
+
+    //search through full blocks, finding a worst allocation block
+    while(cur != NULL){
+        avg = 0.0;
+        var = 0.0;
+        ppa = 0;
+        vnum = 0;
+        lpa = 0;
+        for(int i=0;i<PPB;i++){
+            nu[i] = 0L;
+        }
+        //find average & variance of update timing of valid pages
+        for(int i=0;i<PPB;i++){
+            ppa = cur->idx * PPB + i;
+            if(metadata->invmap[ppa] == 0){
+                //valid
+                lpa = metadata->rmap[ppa];
+                nu[vnum] = metadata->next_update[lpa];
+                avg += (double)nu[vnum];
+                vnum++;
+            } 
+            else{
+                //do nothing.
+            }
+        }
+        if (vnum == 0){
+            //no valid pg in block
+            cur = cur->next;
+            continue;
+        }
+        avg = avg / (double)vnum;
+        for(int i=0;i<vnum;i++){
+            var += pow((double)nu[i] - avg,2.0);
+        }
+        var = var / (double)vnum;
+        //compare the variance with previous worst block
+        if(max_b_var > var){
+            max_b_var = var;
+            max_b_avg = avg;
+            res_b_idx = cur->idx;
+            res_b_ptr = cur;
+        }
+    }
+
+    //edge case handling
+    if(res_b_ptr == NULL){
+        //none of the blocks have valid page
+        *res = -1;
+        return;
+    }
+
+    //find the worst-allocated page in worst-allocated block
+    diff = 0L;
+    for(int i=0;i<PPB;i++){
+        diff_temp = 0L;
+        ppa = res_b_ptr->idx * PPB + i;
+        if(metadata->invmap[ppa] == 0){
+            lpa = metadata->rmap[ppa];
+            diff_temp = labs(metadata->next_update[lpa] - (long)max_b_avg);
+            if(diff_temp >= diff){
+                res_p_idx = ppa;
+                diff = diff_temp;
+            }
+        }
+    }
+    *res = res_p_idx;
+    return;
+}
+
+void find_BWR_target_updatetiming(long update_timing, meta* metadata, int tasknum, bhead* write_head, bhead* fblist_head, int* res){
+    int ranknum = metadata->ranknum;
+    int num_per_rank[ranknum];
+    int target_rank = -1;
+    double avg_per_rank[ranknum];
+    double sdv_per_rank[ranknum];
+    for(int i=0;i<tasknum;i++){
+        num_per_rank[i] = 0;
+        avg_per_rank[i] = 0.0;
+        sdv_per_rank[i] = 0.0;
+    }
+    //get avg per rank
+    for(int i=0;i<tasknum;i++){
+        for(int j=0;j<metadata->cur_rank_info.tot_ranked_write[i];j++){
+            int r = metadata->cur_rank_info.ranks_for_write[i][j];
+            avg_per_rank[r] += (double)metadata->cur_rank_info.timings_for_write[i][j];
+            num_per_rank[r] += 1;
+        }
+    }
+    for(int i=0;i<ranknum;i++){
+        if(num_per_rank[i] != 0)
+            avg_per_rank[i] = avg_per_rank[i] / (double)num_per_rank[i];
+        else   
+            avg_per_rank[i] = -1.0;
+    }
+    //get stdev per rank
+    for(int i=0;i<tasknum;i++){
+        for(int j=0;j<metadata->cur_rank_info.tot_ranked_write[i];j++){
+            int r = metadata->cur_rank_info.ranks_for_write[i][j];
+            double timing = (double)metadata->cur_rank_info.timings_for_write[i][j];
+            sdv_per_rank[r] += pow(fabs(avg_per_rank[r] - timing), 2.0);
+        }
+    }
+    for(int i=0;i<ranknum;i++){
+        if(num_per_rank[i] != 0)
+            sdv_per_rank[i] = pow(sdv_per_rank[i],0.5);
+        else   
+            sdv_per_rank[i] = 0.0;
+    }
+    //check if current victim can be placed in rank
+    for(int i=0;i<ranknum;i++){
+        if((double)update_timing >= avg_per_rank[i]-sdv_per_rank[i] && (double)update_timing <= avg_per_rank[i]+sdv_per_rank[i]){
+            target_rank = i;
+            break;
+        }
+        
+    }
+    //get corresponding block
+    block* cur = write_head->head;
+    while(cur != NULL){
+        if(cur->wb_rank == target_rank){
+            *res = (cur->idx+1)*PPB - cur->fpnum;
+            return;
+        }
+    }
+    if(cur==NULL){
+        *res = 1;
+        return;
+    }
+    if(target_rank == -1){
+        *res = 1;
+        return;
+    }
+
+}
+
 long find_RR_period(int v1, int v2, int vp1_cnt, int vp2_cnt, double rrutil, meta* metadata){
     long rexec, rexec2, wexec, wexec2, eexec, eexec2, tot_exec, period;
     if(rrutil <= 0.0){
@@ -316,3 +463,4 @@ long find_RR_period(int v1, int v2, int vp1_cnt, int vp2_cnt, double rrutil, met
     }
     return period;
 }
+

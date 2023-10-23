@@ -84,6 +84,9 @@ int main(int argc, char* argv[]){
                    &OPflag, &init_cyc, &OP, &MINRC);
     
     //initialize misc variables
+    char IO_end_bwr_flag = 0;       //notify that cur_cp is end of I/O req
+    char qempty_bwr_flag = 1;       //notify that other queue is empty
+    char wr_end_bwr_flag = 0;       //notify that cur_cp is end of write job.
     int g_cur = 0;                   //pointer for current writing page @ dummy write phase
     int wl_init = 0;                 //flag for wear-leveling initiation
     int rr_finished = 1;
@@ -126,7 +129,7 @@ int main(int argc, char* argv[]){
     rq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     gcq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     IOhead* rr;
-    
+    IOhead* bwr;
     
     long next_w_release[tasknum];
     long next_r_release[tasknum];
@@ -149,7 +152,7 @@ int main(int argc, char* argv[]){
         wjob_deferred[i] = 0;
     }
     rr = ll_init_IO();
-
+    bwr = ll_init_IO();
     //overhead tracker params
     struct timeval algo_start_time;
     struct timeval algo_end_time;
@@ -446,6 +449,7 @@ int main(int argc, char* argv[]){
     
     //initialize blocklist for blockmanage.
     init_metadata(newmeta,tasknum, init_cyc);
+
 #ifdef GC_ON_WRITEBLOCK
     fblist_head = init_blocklist(0,NOB-1);
     rsvlist_head = init_blocklist(0,-1);
@@ -454,6 +458,7 @@ int main(int argc, char* argv[]){
     fblist_head = init_blocklist(0, NOB-tasknum-1);
     rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);
 #endif
+    
     full_head = init_blocklist(0,-1);//generate 0 component ll.
     write_head = init_blocklist(0,-1);
     glob_yb = init_blocklist(0,-1);
@@ -493,9 +498,22 @@ int main(int argc, char* argv[]){
         g_cur++;
     }
     printf("total fp after dummy : %d\n",newmeta->total_fp);
-    ll_append(fblist_head,cur_fb);
+    //return dummy task's block into blocklist.
+    if(cur_fb->fpnum == 0){
+        ll_append(full_head,cur_fb);
+    } 
+    else {
+        ll_append(fblist_head,cur_fb);
+    }
     //!!finish initialization
-
+    printf("fblist sanity check :");
+    block* test = fblist_head->head;
+    while(test != NULL){ 
+        printf("[%d]%d, ",test->idx,test->fpnum);
+        test = test->next;
+    }
+    printf("\n");
+    sleep(5);
     //run simulation
     FILE* u_check = fopen("rrchecker.csv","w");
 #ifdef utilsort_writecheck
@@ -507,6 +525,7 @@ int main(int argc, char* argv[]){
 #endif
     updaterate_fp = fopen("updaterate.csv","w");
     gettimeofday(&(tot_start_time),NULL);
+    //start of simulation
     while(cur_cp <= RUNTIME){
         yngest = get_blockstate_meta(newmeta,YOUNG);
         oldest = get_blockstate_meta(newmeta,OLD);
@@ -514,6 +533,8 @@ int main(int argc, char* argv[]){
         if(cur_cp % 1000000L == 0){
             total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
             
+            //utilization overflow(exit)
+            /*
             if(total_u >= 1.0){
                 printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                 gettimeofday(&tot_end_time,NULL);
@@ -540,7 +561,7 @@ int main(int argc, char* argv[]){
                 print_profile_updaterate(newmeta,updaterate_fp);
                 sleep(1);
                 return 1;
-            }
+            }*/
         }
         for(int idx=0;idx<NOB;idx++){
             if(newmeta->state[idx] >= MAXPE){
@@ -558,7 +579,7 @@ int main(int argc, char* argv[]){
         //req completion logic
         if(cur_IO_end == cur_cp){
             if(cur_IO != NULL){
-                /* a logic to handle I/O finish*/
+                //a logic to handle I/O to finish
                 if(cur_IO->type == GCER){
                     //for(int i=0;i<4;i++){
                     //    print_hotdist_profile(fps[tasknum+i],tasks,cur_cp, newmeta,-1,i);
@@ -568,7 +589,8 @@ int main(int argc, char* argv[]){
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
                                     newmeta->total_fp,cur_IO->gc_valid_count);
-                    
+                    //utilization overflow(exit code)
+                    /*
                     if(total_u > 1.0){
                         printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                         gettimeofday(&tot_end_time,NULL);
@@ -595,8 +617,9 @@ int main(int argc, char* argv[]){
                         print_profile_updaterate(newmeta,updaterate_fp);
                         sleep(1);
                         return 1;
-                    }
+                    }*/
                 }
+                
                 //if last req is finished, do the following
                 if(cur_IO->last == 1){
                     //check I/O latency
@@ -643,6 +666,7 @@ int main(int argc, char* argv[]){
                 //set start flags to schedule new WL
                 if(cur_IO->type == WR && cur_IO->islastreq == 1){
                     do_rr = 1;
+                    wr_end_bwr_flag = 1;
                 }
                 //finish request
                 finish_req(tasks, cur_IO, newmeta, 
@@ -653,6 +677,7 @@ int main(int argc, char* argv[]){
                 //reset I/O pointer and IO end time tracker
                 cur_IO = NULL;
                 cur_IO_end = __LONG_MAX__;
+                IO_end_bwr_flag = 1; //notify that IO is ended
             }
         }
 
@@ -674,20 +699,25 @@ int main(int argc, char* argv[]){
                 write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
                 wjob_finished[j] = 0;
-            } else if (cur_cp == next_w_release[j] && wjob_finished[j] == 0){
+            } 
+            else if (cur_cp == next_w_release[j] && wjob_finished[j] == 0){
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
-            } else if (cur_cp == next_w_release[j] && wjob_deferred[j] == 1){
+            } 
+            else if (cur_cp == next_w_release[j] && wjob_deferred[j] == 1){
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
             }
+
             if(cur_cp == next_r_release[j] && rjob_finished[j] == 1){
                 //printf("next r : %ld, cur cp : %ld, rjob : %d\n",next_r_release[j],cur_cp,rjob_finished[j]);
                 read_job_start_q(tasks,j,newmeta,
                                  r_workloads[j],rq[j], cur_cp);
                 next_r_release[j] = cur_cp + (long)tasks[j].rp;
                 rjob_finished[j] = 0;
-            } else if (cur_cp == next_r_release[j] && rjob_finished[j] == 0){
+            } 
+            else if (cur_cp == next_r_release[j] && rjob_finished[j] == 0){
                 next_r_release[j] = cur_cp + (long)tasks[j].rp;
             }
+
             if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){
                 //printf("next gc : %ld, cur cp : %ld, gcjob : %d\n",next_gc_release[j],cur_cp,gcjob_finished[j]);
                 if(newmeta->total_invalid >= expected_invalid){
@@ -701,11 +731,13 @@ int main(int argc, char* argv[]){
                     gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                     gcjob_finished[j] = 0;
                     next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
-                } else {
+                } 
+                else {
                     next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
                     gcjob_finished[j] = 1;
                 }
-            } else if (cur_cp == next_gc_release[j] && gcjob_finished[j] == 0){
+            } 
+            else if (cur_cp == next_gc_release[j] && gcjob_finished[j] == 0){
                 next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
             }
         }
@@ -730,12 +762,38 @@ int main(int argc, char* argv[]){
             //printf("[RR]%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
             if(rr->reqnum != 0){
                 rr_finished = 0;
-            } else {
+            } 
+            else {
                 rr_finished = 1;
             }
             do_rr = 0;
         }
+        /*
+        //release BWR jobs if possible
+        //check if every queue is empty
+        qempty_bwr_flag = 1;
+        for(int k=0;k<tasknum;k++){
+            if(wq[k]->reqnum != 0 || rq[k]->reqnum != 0 || gcq[k]->reqnum != 0){
+                qempty_bwr_flag = 0;
+                break;
+            }
+        }
+        if(rr->reqnum != 0){
+            qempty_bwr_flag = 0;
+        }
+        
+        if(qempty_bwr_flag == 1 && IO_end_bwr_flag == 1 && wr_end_bwr_flag == 1){
+            printf("[bwr]queuestat : %c, IO_end_bwr_flag : %c, wr_end_bwr_flag : %c\n",qempty_bwr_flag, IO_end_bwr_flag, wr_end_bwr_flag);
+            printf("[bwr]cur_cp : %ld\n",cur_cp);
+            //release BWR job
 
+            BWR_job_start_q(tasks,tasknum,newmeta,fblist_head,full_head,write_head,bwr,cur_cp);
+            //reset qempty flag and IO end flag
+            qempty_bwr_flag = 1;
+            IO_end_bwr_flag = 0;
+            wr_end_bwr_flag = 0;
+        }
+        */
         //req pick logic
         if(cur_IO == NULL){
             //init params
@@ -744,12 +802,18 @@ int main(int argc, char* argv[]){
             int target_type = -1;
 
             //iterate through per-task queues and pick the I/O with earliest deadline.
-            //operation priority is RR > GC > W > R.
+            //operation priority is RR < GC < W < R.
             //note that deadline is updated when dl is "less than " cur_dl
             if(rr->head != NULL){
                 if(rr->head->deadline <= cur_dl){
                     target_type = RR;
                     cur_dl = rr->head->deadline;
+                }
+            }
+            if(bwr->head != NULL){
+                if(bwr->head->deadline <= cur_dl){
+                    target_type = BWR;
+                    cur_dl = bwr->head->deadline;
                 }
             }
             for(int k=0;k<tasknum;k++){
@@ -792,11 +856,16 @@ int main(int argc, char* argv[]){
             else if (target_type == RR){
                 cur_IO = ll_pop_IO(rr);
             }
+            else if (target_type == BWR){
+                cur_IO = ll_pop_IO(bwr);
+                printf("[BWR]pop BWR, %ld\n",cur_cp);
+            }
 
             //if something's popped out, update cur_IO_end
             if(cur_IO != NULL){
                 cur_IO_end = cur_cp + cur_IO->exec;
-            } else {
+            }
+            else {
                 cur_IO_end = __LONG_MAX__;
             }
         }

@@ -135,3 +135,19 @@ long gen_erase_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
     //printf("[RR_e]%ld\n",tot_exec);
     return tot_exec;
 }
+
+long gen_bwr_rr(int vic1, int tar, long cur_cp, long rrp, meta* metadata, IOhead* bwrq){
+    long tot_exec = 0L;
+    IO* bwr = (IO*)malloc(sizeof(IO));
+    bwr->type = BWR;
+    bwr->rr_vic_ppa = vic1;
+    bwr->rr_tar_ppa = tar;
+    bwr->rr_old_lpa = metadata->rmap[vic1];
+    bwr->deadline = (long)rrp + (long)cur_cp;
+    bwr->exec = (long)floor((double)w_exec(metadata->state[vic1/(int)PPB]));
+    bwr->islastreq = 1;
+    bwr->isrrfinish = 1;
+    tot_exec += bwr->exec;
+    ll_append_IO(bwrq,bwr);
+    return tot_exec;
+}

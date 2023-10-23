@@ -6,6 +6,7 @@
 #define RRRE 6
 #define RRWR 7
 #define RRER 8
+#define BWR 9
 
 //differentiate GCTHRESNOB and NOB
 //normally, GCTHRESNOB == NOB
@@ -48,7 +49,7 @@
 //#define GC_ON_WRITEBLOCK          //redirects GC on write block & removes rsv block
 
 //#define MAXINVALID_RANK_FIXED     //assign write pages strictly aligned with invalidation order
-//#define MAXINVALID_RANK_STAT      //assign write pages w.r.t offline profile (used K-means)
+//#define MAXINVALID_RANK_STAT      //assign write pages w.r.t offline profile (use K-means)
 #define MAXINVALID_RANK_DYN         //assign write pages w.r.t dynamically changing criteria.
 #define UTILSORT_BEST               //make find_gc_utilsort function to pick a block with shortest exec time
 
@@ -124,6 +125,7 @@ typedef struct _IO{
     long IO_start_time;
     long IO_end_time;
     int order;
+    block* IO_dest_block;
 }IO;
 
 typedef struct _IOhead{
@@ -158,6 +160,7 @@ typedef struct _currankinfo{
     int* cur_left_write;
     int* tot_ranked_write;
     int** ranks_for_write;
+    long** timings_for_write;
 }currankinfo;
 
 typedef struct _meta{
@@ -189,6 +192,6 @@ typedef struct _meta{
     int* cur_read_worst;
     long* rewind_time_per_task;
     int ranknum;
-    int* rank_bounds;
+    long* rank_bounds;
     currankinfo cur_rank_info;
 }meta;

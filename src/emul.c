@@ -31,6 +31,51 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     metadata->vmap_task[ppa] = cur_IO->taskidx;
 }
 
+void finish_BWR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
+    //currently, BWR does nothing.(testing sched)
+    printf("[BWR]%d goto %d\n",cur_IO->rr_vic_ppa, cur_IO->rr_tar_ppa);
+    sleep(1);
+    /*
+    //similar to WR, but have to check concurrency issue
+    int old_ppa, old_lpa, new_ppa, old_block;
+    int new_block = cur_IO->rr_tar_ppa / (int)PPB;
+    old_lpa = cur_IO->rr_old_lpa;
+    new_ppa = cur_IO->rr_tar_ppa;
+    old_ppa = cur_IO->rr_vic_ppa;
+    old_block = (int)(old_ppa/PPB);
+
+    //invalidate old ppa (1 == invalid, 0 == valid)
+    //!! do invalidtion only if the page X relocated before BG write
+    if(metadata->invmap[old_ppa] == 0 && metadata->pagemap[old_lpa] == old_ppa){
+        metadata->rmap[old_ppa] = -1;
+        metadata->vmap_task[old_ppa] = -1;
+        metadata->invmap[old_ppa] = 1;
+        metadata->invnum[old_block] += 1;
+    }
+    
+    //validate or invalidate new ppa
+    if(metadata->pagemap[old_lpa] == old_ppa){
+        //if still valid data, update mapping
+        metadata->pagemap[old_lpa] = new_ppa;
+        metadata->rmap[new_ppa] = old_lpa;
+        metadata->invmap[new_ppa] = 0;
+        metadata->vmap_task[new_ppa] = cur_IO->taskidx;
+    } 
+    else {
+        //else, invalidate newly written page
+        metadata->rmap[new_ppa] = -1;
+        metadata->invmap[new_ppa] = 1;
+        metadata->invnum[new_block]++;
+        metadata->vmap_task[new_ppa] = -1;
+    }
+
+    //update total fp and access tracker
+    metadata->total_fp--;
+    if(metadata->pagemap[old_lpa]==old_ppa){
+        metadata->access_tracker[cur_IO->taskidx][new_ppa/PPB] = 1;
+    }*/
+}
+
 void finish_RD(rttask* tasks, IO* cur_IO, meta* metadata){
     int target_block;
     target_block = metadata->pagemap[cur_IO->lpa] / PPB;
@@ -219,7 +264,10 @@ void finish_req(rttask* task, IO* cur_IO, meta* metadata,
     else if(cur_IO->type==RRWR){
         finish_RRWR(task,cur_IO,metadata,fblist_head,full_head,cur_RR);
     }
-    free(cur_IO);
+    else if(cur_IO->type==BWR){
+        finish_BWR(task,cur_IO,metadata,full_head);
+        printf("finish BWR, timing : %ld, exec : %ld\n",cur_cp,cur_IO->exec);
+    }
 }
 
 long find_closenum(long cur_cp, long period){
