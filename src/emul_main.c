@@ -675,6 +675,7 @@ int main(int argc, char* argv[]){
 
 
                 //reset I/O pointer and IO end time tracker
+                free(cur_IO);
                 cur_IO = NULL;
                 cur_IO_end = __LONG_MAX__;
                 IO_end_bwr_flag = 1; //notify that IO is ended
