@@ -490,7 +490,6 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         //printf("gc_util, gc_exec : %f, %f\n",gc_util,gc_exec);
         //restriction 1. util
         if(_find_gc_safe(task,tasknum,metadata,old,taskidx,GC,gc_util,cur->idx,rsvlist_head->head->idx) == -1){
-        //if(0){
             cur = cur->next;
             continue;
         }
@@ -517,7 +516,6 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         block_origin[vic_num] = 0;
 #endif
         vic_num++;
-        //printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
         cur = cur->next;
     }
 #ifdef utilsort_writecheck
@@ -592,6 +590,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     }
     //!EDGE CASE HANDLING
     gettimeofday(&a,NULL);
+    
     //sort candidate block list
     for(int i=vic_num-1;i>0;i--){
         for(int j=0;j<i;j++){

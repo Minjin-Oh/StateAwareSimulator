@@ -1421,7 +1421,6 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     long** updateorders;
 #ifdef MAXINVALID_RANK_DYN
     //active rank calculation-based method
-    
     if(metadata->cur_rank_info.cur_left_write[taskidx] == 0){
         //if pre-assigned write is finished, re-assign ranks for future N writes.
         //1. find jobs and their corresponding update timing within given interval (cur interval = 500ms)
@@ -1458,7 +1457,8 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         long* bounds = (long*)malloc(sizeof(long)*(metadata->ranknum));
         int cluster_cur = 0;
         int member_num = 0;
-        int req_per_rank = reqnum / metadata->ranknum;
+        int req_per_rank = reqnum / (metadata->ranknum+1);
+        printf("reqnum : %d, req_per_rank : %d, ranknum : %d\n",reqnum,req_per_rank,metadata->ranknum);
         qsort(invorders_sort,reqnum,sizeof(long),compare);
         for(int i=0;i<reqnum;i++){
             member_num++;
@@ -1508,15 +1508,6 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         free(updateorders);
         free(invorders_sort);
         free(bounds);
-        
-        //5. (test) print ranks for each task.
-        //for(int i=0;i<tasknum;i++){
-        //    printf("task %d, left write : %d, tot write : %d :: ",i,metadata->cur_rank_info.cur_left_write[i],metadata->cur_rank_info.tot_ranked_write[i]);
-        //    for(int j=0;j<metadata->cur_rank_info.cur_left_write[i];j++){
-        //        printf("%d, ",metadata->cur_rank_info.ranks_for_write[i][j]);
-        //    }
-        //    printf("\n");
-        //}
     }
 
     //[1]get rank info from metadata & update left write
@@ -1586,8 +1577,6 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     fclose(cur_lpa_timing_file);
 #endif
     gettimeofday(&b,NULL);
-    //printf("[1]%d\n",__calc_time_diff(a,b));
-    //printf("lpa : %d, curcp : %ld, cur_lpa_timing : %ld\n",w_lpas[idx],cur_cp,cur_lpa_timing);
     gettimeofday(&a,NULL);
 #ifdef TIMING_ON_MEM
     cnt = __calc_invorder_mem(max_valid_pg, metadata, cur_lpa_timing, workload_reset_time, curfp);
@@ -1600,10 +1589,6 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         tot_longlive_cnt++;
     }
     gettimeofday(&b,NULL);
-    //printf("[2]%d, cnt : %d\n",__calc_time_diff(a,b),cnt);
-    //printf("[MAXINVALID]invalidation order : %d, curfp : %d \n",cnt,curfp);
-    //calculation finished. cnt+1 is  current lpa's update order
-
 #ifdef MAXINVALID_RANK_STAT
     int rank = __get_rank(cnt,metadata);
     int ret_b_idx;
@@ -1785,4 +1770,89 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     //printf("[3]%d\n",__calc_time_diff(a,b));
     return cur->idx;
 #endif
+}
+
+int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, long workload_reset_time){
+    if(metadata->left_rankwrite_num == 0){
+        int req_per_rank = LIFESPAN_WINDOW / (metadata->ranknum+1);
+        int cur_num = 0;
+        int cluster_cur = 1;
+
+        //0-1. sort data_lifespan_window
+        qsort(metadata->data_lifespan,LIFESPAN_WINDOW,sizeof(long),compare);
+        //0-2. assign interval for each rank
+        for(int i=0;i<LIFESPAN_WINDOW;i++){
+            cur_num++;
+            if(cur_num == req_per_rank){
+                metadata->rank_bounds[cluster_cur] = metadata->data_lifespan[i];
+                cluster_cur++;
+                cur_num = 0;
+            }
+            if(cluster_cur == metadata->ranknum+1){
+                break;
+            }
+        }
+        //printf("[cur_bounds]\n");
+        //for(int i=0;i<metadata->ranknum+1;i++){
+        //    printf("%ld, %d\n",metadata->rank_bounds[i],metadata->rank_write_count[i]);
+        //}
+        //sleep(1);
+        //0-3. reset data_lifespan_window and window_cnt
+        for(int i=0;i<LIFESPAN_WINDOW;i++){
+            metadata->data_lifespan[i] = 0L;
+        }
+        for(int i=0;i<metadata->ranknum+1;i++){
+            metadata->rank_write_count[i] = 0;
+        }
+        metadata->left_rankwrite_num = LIFESPAN_WINDOW;
+        metadata->lifespan_record_num = 0;
+    }
+    //1. calculate current data's lifespan
+    long cur_lifespan = cur_cp - metadata->recent_update[w_lpas[idx]];
+    //2. get rank of current write
+    int cur_rank = 0;
+    for(int i=0;i<metadata->ranknum;i++){
+        if(cur_lifespan < metadata->rank_bounds[i+1] && cur_lifespan >= metadata->rank_bounds[i]){
+            cur_rank = i;
+        }
+    }
+    if(cur_lifespan >= metadata->rank_bounds[metadata->ranknum]){
+        cur_rank = metadata->ranknum;
+    }
+    metadata->rank_write_count[cur_rank]++;
+    //printf("[%d]cur_lifespan : %ld, cur_rank : %d, cur - recent : %ld - %ld\n",w_lpas[idx],cur_lifespan, cur_rank, cur_cp, metadata->recent_update[w_lpas[idx]]);
+    //3. assign corresponding block
+    block* cur = write_head->head;
+    while(cur != NULL){ 
+        if(cur->wb_rank == cur_rank){
+            return cur->idx;
+        }
+        cur = cur->next;
+    }
+    //if block not in wblist, try getting a new block
+    int ret_b_idx;
+    if(cur == NULL){
+        int temp = find_block_in_list(metadata,fblist_head,YOUNG);
+        //if block found in fblist, append to write block & return idx
+        if (temp != -1){
+            block* wb_new = ll_remove(fblist_head,temp);
+            wb_new->wb_rank = cur_rank;
+            ll_append(write_head,wb_new);
+            return wb_new->idx;
+        }
+        //if block not in fblist, do edge case handling
+        else{
+            cur = write_head->head;
+            int offset = abs_int(cur->wb_rank - cur_rank);
+            ret_b_idx = cur->idx;
+            while(cur != NULL){
+                if(offset >= abs_int(cur->wb_rank - cur_rank)){
+                    offset = abs_int(cur->wb_rank - cur_rank);
+                    ret_b_idx = cur->idx;
+                }
+                cur = cur->next;
+            }
+            return ret_b_idx;
+        }
+    }
 }

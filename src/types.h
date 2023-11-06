@@ -30,6 +30,7 @@
 #define OLD 0
 #define YOUNG -1
 #define INITCYC 0
+#define LIFESPAN_WINDOW 3000
 //sorting
 #define ASC 0
 #define DES 1
@@ -44,10 +45,9 @@
 //scheme option toggle
 #define IOTIMING                    //updates timing for each LPA at init & write req init
 #define TIMING_ON_MEM               //loads update timing info on memory
-//#define TASKGEN_IGNORE_UTILOVER   //generates taskset with WCutil over 1.0
+//#define TASKGEN_IGNORE_UTILOVER     //generates taskset with WCutil over 1.0
 #define UUNIFAST
 //#define GC_ON_WRITEBLOCK          //redirects GC on write block & removes rsv block
-
 //#define MAXINVALID_RANK_FIXED     //assign write pages strictly aligned with invalidation order
 //#define MAXINVALID_RANK_STAT      //assign write pages w.r.t offline profile (use K-means)
 #define MAXINVALID_RANK_DYN         //assign write pages w.r.t dynamically changing criteria.
@@ -176,7 +176,7 @@ typedef struct _meta{
     char vmap_task[NOP];
     int invnum[NOB];
     int state[NOB];
-    int access_window[NOB];
+    int access_window[NOB];             //number of read counts per physical flash block.
     int EEC[NOB];
     long GC_locktime[NOB];
     int* read_cnt_task;
@@ -194,4 +194,9 @@ typedef struct _meta{
     int ranknum;
     long* rank_bounds;
     currankinfo cur_rank_info;
+    int left_rankwrite_num;
+    int lifespan_record_num;
+    int* rank_write_count;
+    long data_lifespan[LIFESPAN_WINDOW];
+    
 }meta;

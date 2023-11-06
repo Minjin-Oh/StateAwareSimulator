@@ -198,7 +198,7 @@ int main(int argc, char* argv[]){
         if(skewness == -1){
             rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
         } else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
-            rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg);
+            rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg,&res);
             res = 0.5;//just hardcode and pass
         } else if(skewness >= 0){
             rand_tasks = generate_taskset_skew2(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
@@ -212,8 +212,7 @@ int main(int argc, char* argv[]){
             if(skewness == -1){
                 rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
             } else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
-                rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg);
-                res = 0.5;//just hardcode and pass
+                rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg,&res);
             } else if(skewness >= 0){
                 rand_tasks = generate_taskset_skew2(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
             } else if(skewness == -3){ //manually assign w/r utilization for each task. edit parameters for test.
@@ -534,7 +533,7 @@ int main(int argc, char* argv[]){
             total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
             
             //utilization overflow(exit)
-            /*
+            
             if(total_u >= 1.0){
                 printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                 gettimeofday(&tot_end_time,NULL);
@@ -561,7 +560,7 @@ int main(int argc, char* argv[]){
                 print_profile_updaterate(newmeta,updaterate_fp);
                 sleep(1);
                 return 1;
-            }*/
+            }
         }
         for(int idx=0;idx<NOB;idx++){
             if(newmeta->state[idx] >= MAXPE){
@@ -590,7 +589,7 @@ int main(int argc, char* argv[]){
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
                                     newmeta->total_fp,cur_IO->gc_valid_count);
                     //utilization overflow(exit code)
-                    /*
+                    
                     if(total_u > 1.0){
                         printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                         gettimeofday(&tot_end_time,NULL);
@@ -617,7 +616,7 @@ int main(int argc, char* argv[]){
                         print_profile_updaterate(newmeta,updaterate_fp);
                         sleep(1);
                         return 1;
-                    }*/
+                    }
                 }
                 
                 //if last req is finished, do the following
@@ -719,16 +718,17 @@ int main(int argc, char* argv[]){
                 next_r_release[j] = cur_cp + (long)tasks[j].rp;
             }
 
-            if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){
-                //printf("next gc : %ld, cur cp : %ld, gcjob : %d\n",next_gc_release[j],cur_cp,gcjob_finished[j]);
+            if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){          
                 if(newmeta->total_invalid >= expected_invalid){
-                    //print_fullblock_profile(fps[tasknum+tasknum+1],cur_cp,newmeta,full_head);
+                    printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
+                    printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
                     gettimeofday(&(algo_start_time),NULL);
                     gc_job_start_q(tasks, j, tasknum, newmeta,
                                fblist_head, full_head, rsvlist_head, write_head, 0,
                                gcq[j], &(cur_GC[j]), gcflag, cur_cp);
                     gc_release_num++;
                     gettimeofday(&(algo_end_time),NULL);
+                    //printf("gcovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                     gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                     gcjob_finished[j] = 0;
                     next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
@@ -753,14 +753,13 @@ int main(int argc, char* argv[]){
             }
             //rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
             rrutil = -1.0; //override util so that WL always run in background mode.
-            //printf("[WL]rrcheck : %ld, cur_cp : %ld, util allowed : %lf\n",cur_rr.rrcheck, cur_cp, (double)rrutil);
             gettimeofday(&(algo_start_time),NULL);
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
                             rr,&(cur_rr),(double)rrutil,cur_cp);
             rr_release_num++;
             gettimeofday(&(algo_end_time),NULL);
+            //printf("rrovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
             rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-            //printf("[RR]%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
             if(rr->reqnum != 0){
                 rr_finished = 0;
             } 

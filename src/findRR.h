@@ -6,6 +6,8 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata,
                     bhead* fblist_head, bhead* full_head, int* res1, int* res2);
 void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, 
                          bhead* fblist_head, bhead* full_head, int* res1, int* res2);
+void find_RR_target_simple(rttask* tasks, int tasknum, meta* metadata, 
+                         bhead* fblist_head, bhead* full_head, int* res1, int* res2);
 void find_BWR_victim_updatetiming(rttask* tasks, int tasknum, meta* metadata, 
                                  bhead* fblist_head, bhead* full_head, int* res);
 void find_BWR_target_updatetiming(rttask* tasks, int tasknum, meta* metadata,

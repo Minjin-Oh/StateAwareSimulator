@@ -521,7 +521,7 @@ block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* met
     block* cur = NULL;
     
     //gettimeofday(&a,NULL);
-    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,cur_cp);
+    target = find_write_maxinv_prac(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,cur_cp);
     cur = ll_findidx(write_head,target);
     //gettimeofday(&b,NULL);
     //sec = (b.tv_sec - a.tv_sec)*1000000;

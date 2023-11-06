@@ -299,6 +299,57 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
     *res2 = vic2;
 }
 
+void find_RR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
+    block* cur;
+    block* ho = NULL;
+    block* cy = NULL;
+    int access_avg = 0;
+    //find threshold for access_count.
+    for(int i=0;i<NOB;i++){
+        access_avg += metadata->access_window[i];
+        
+    }
+    access_avg = access_avg/NOB;
+    //search through flash blocks & find hot-old, cold-yng
+    cur = full_head->head;
+    while (cur != NULL){
+        //find hot-old flash blocks(read count >> avg && oldest)
+        if(metadata->access_window[cur->idx] > access_avg+100){
+            if (ho == NULL){
+                ho = cur;
+            } 
+            else if (metadata->state[ho->idx] < metadata->state[cur->idx]){
+                ho = cur;
+            }
+        }
+        //find cold-yng flash blocks(read count << avg && youngest)
+        else if (metadata->access_window[cur->idx] < access_avg-100){
+            if (cy == NULL){
+                cy = cur;
+            }
+            else if (metadata->state[cy->idx] > metadata->state[cur->idx]){
+                cy = cur;
+            }
+        }
+        cur = cur->next;
+    }
+    //edge case handling
+    if(ho == NULL || cy == NULL){
+        *res1 = -1;
+        *res2 = -1;
+        return;
+    } 
+    else if(metadata->state[ho->idx] - metadata->state[cy->idx] < THRESHOLD){
+        *res1 = -1;
+        *res2 = -1;
+        return;
+    }
+    //return found block
+    *res1 = ho->idx;
+    *res2 = cy->idx;
+    return;
+}
+
 void find_BWR_victim_updatetiming(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res){
     block* cur;
     cur = full_head->head;

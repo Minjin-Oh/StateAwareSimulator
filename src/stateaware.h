@@ -108,7 +108,7 @@ float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* 
 rttask* generate_taskset(int tasknum, float util, int addr, float* result_util, int cycle);
 rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
 rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
-rttask* generate_taskset_hardcode(int tasknum, int addr);
+rttask* generate_taskset_hardcode(int tasknum, int addr, float* result_util);
 rttask* generate_taskset_fixed(int addr, float* result_util);
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile);
 void get_loc_from_file(rttask* tasks, int tasknum, FILE* locfile);

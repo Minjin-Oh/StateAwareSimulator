@@ -131,13 +131,18 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         ppa_dest[i] = cur->idx*PPB + cur_offset;
         ppa_state[i] = metadata->state[cur->idx];
         cur->fpnum--;
+        //update lifespan related metadata (!!!!ONLY WHEN lifespan metadata is required!!!!)
+        if(wflag == 14){
+            metadata->left_rankwrite_num--;
+            metadata->data_lifespan[metadata->lifespan_record_num] = cur_cp - metadata->recent_update[lpas[i]];
+            metadata->lifespan_record_num++;
+        }
         last_access_block = cur;
         //allocate current block to full B.
         if(cur != NULL){
             if(cur->fpnum == 0){
                 temp = ll_remove(write_head,cur->idx);                
                 ll_append(full_head,temp);
-                //print_maxinvalidation_block(metadata, temp->idx);
                 cur = NULL;
             } else {
                 //do nothing
@@ -158,8 +163,8 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         metadata->write_cnt_per_cycle[lpa]++;
         metadata->reserved_write++;
         metadata->avg_update[lpa] = (metadata->avg_update[lpa]*(metadata->write_cnt[lpa]-1)+(cur_cp - metadata->recent_update[lpa]))/(long)metadata->write_cnt[lpa];
-        metadata->recent_update[lpa] = cur_cp;
         //printf("avg : %ld, recent : %ld\n",metadata->avg_update[lpa],metadata->recent_update[lpa]);
+        metadata->recent_update[lpa] = cur_cp;
         req->type = WR;
         req->taskidx = taskidx;
         req->lpa = lpa;
@@ -322,7 +327,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
         //sleep(1);
     }
-    //printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
+    printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
 
     if(vic==NULL){
         printf("[GC]no feasible block\n");

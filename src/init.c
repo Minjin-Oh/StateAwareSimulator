@@ -16,7 +16,7 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         metadata->write_cnt[i] = 0;
         metadata->write_cnt_per_cycle[i] = 0;
         metadata->avg_update[i] = 0;
-        metadata->recent_update[i] = 0;
+        metadata->recent_update[i] = 0L;
 #ifdef IOTIMING
         IO_timing_update(metadata,i,0,0L);
 #endif
@@ -28,9 +28,14 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         metadata->access_window[i] = 0;
         metadata->GC_locktime[i] = 0L;
     }
+    for (int i=0;i<LIFESPAN_WINDOW;i++){
+        metadata->data_lifespan[i] = 0L;
+    }
     metadata->total_invalid = 0;
     metadata->tot_read_cnt = 0;
     metadata->tot_write_cnt = 0;
+    metadata->left_rankwrite_num = LIFESPAN_WINDOW;
+    metadata->lifespan_record_num = 0;
     metadata->total_fp = NOP-PPB*tasknum;
     metadata->reserved_write = 0;
 
@@ -47,12 +52,14 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
     rank_fp = fopen("writerank.csv","r");
     if(rank_fp != NULL){
         fscanf(rank_fp,"%d, ",&(metadata->ranknum));
-        metadata->rank_bounds = (long*)malloc(sizeof(long)*metadata->ranknum + 1);
+        metadata->rank_bounds = (long*)malloc(sizeof(long)*(metadata->ranknum + 1));
+        metadata->rank_write_count = (int*)malloc(sizeof(int)*(metadata->ranknum + 1));
         metadata->rank_bounds[0] = 0;
         for(int i=1;i<metadata->ranknum+1;i++){
             int temp_rank;
             fscanf(rank_fp,"%d, ", &(temp_rank));
             metadata->rank_bounds[i] = (long)temp_rank;
+            metadata->rank_write_count[i] = 0;
         }
     }
     
