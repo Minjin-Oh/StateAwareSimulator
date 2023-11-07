@@ -1808,19 +1808,31 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         metadata->lifespan_record_num = 0;
     }
     //1. calculate current data's lifespan
+    long real_lifespan;
     long cur_lifespan = cur_cp - metadata->recent_update[w_lpas[idx]];
+    long avg_lifespan = metadata->avg_update[w_lpas[idx]] * (long)metadata->write_cnt[w_lpas[idx]] + cur_lifespan;
+    avg_lifespan = avg_lifespan / (long)(metadata->write_cnt[w_lpas[idx]] + 1);
+    if(update_cnt[w_lpas[idx]] > metadata->write_cnt_per_cycle[w_lpas[idx]]+1){
+        real_lifespan = lpa_update_timing[w_lpas[idx]][metadata->write_cnt_per_cycle[w_lpas[idx]]+1]-cur_cp;
+    }
+    else {
+        real_lifespan = WORKLOAD_LENGTH; 
+    }
+    long expected_lifespan = cur_lifespan;
+    //printf("lifespan record: cur:%ld, avg:%ld, real:%ld\n",cur_lifespan,avg_lifespan,real_lifespan);
+    //printf("cur cp : %ld, recent : %ld, next : %ld\n",cur_cp, metadata->recent_update[w_lpas[idx]],lpa_update_timing[w_lpas[idx]][metadata->write_cnt_per_cycle[w_lpas[idx]]+1]);
     //2. get rank of current write
     int cur_rank = 0;
     for(int i=0;i<metadata->ranknum;i++){
-        if(cur_lifespan < metadata->rank_bounds[i+1] && cur_lifespan >= metadata->rank_bounds[i]){
+        if(expected_lifespan < metadata->rank_bounds[i+1] && expected_lifespan >= metadata->rank_bounds[i]){
             cur_rank = i;
         }
     }
-    if(cur_lifespan >= metadata->rank_bounds[metadata->ranknum]){
+    if(expected_lifespan >= metadata->rank_bounds[metadata->ranknum]){
         cur_rank = metadata->ranknum;
     }
     metadata->rank_write_count[cur_rank]++;
-    //printf("[%d]cur_lifespan : %ld, cur_rank : %d, cur - recent : %ld - %ld\n",w_lpas[idx],cur_lifespan, cur_rank, cur_cp, metadata->recent_update[w_lpas[idx]]);
+    //printf("[%d]expected_lifespan : %ld, cur_rank : %d, cur - recent : %ld - %ld\n",w_lpas[idx],expected_lifespan, cur_rank, cur_cp, metadata->recent_update[w_lpas[idx]]);
     //3. assign corresponding block
     block* cur = write_head->head;
     while(cur != NULL){ 
