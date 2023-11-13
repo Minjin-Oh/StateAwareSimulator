@@ -1773,6 +1773,8 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
 }
 
 int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, long workload_reset_time){
+    block* cur = NULL;
+    char b_changed = 0;
     if(metadata->left_rankwrite_num == 0){
         int req_per_rank = LIFESPAN_WINDOW / (metadata->ranknum+1);
         int cur_num = 0;
@@ -1781,12 +1783,14 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         //0-1. sort data_lifespan_window
         qsort(metadata->data_lifespan,LIFESPAN_WINDOW,sizeof(long),compare);
         //0-2. assign interval for each rank
-        for(int i=0;i<LIFESPAN_WINDOW;i++){
+        metadata->rank_bounds[0] = 0;
+        for(int i=0;i<LIFESPAN_WINDOW;i++){   
             cur_num++;
             if(cur_num == req_per_rank){
                 metadata->rank_bounds[cluster_cur] = metadata->data_lifespan[i];
                 cluster_cur++;
                 cur_num = 0;
+
             }
             if(cluster_cur == metadata->ranknum+1){
                 break;
@@ -1796,7 +1800,6 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         //for(int i=0;i<metadata->ranknum+1;i++){
         //    printf("%ld, %d\n",metadata->rank_bounds[i],metadata->rank_write_count[i]);
         //}
-        //sleep(1);
         //0-3. reset data_lifespan_window and window_cnt
         for(int i=0;i<LIFESPAN_WINDOW;i++){
             metadata->data_lifespan[i] = 0L;
@@ -1806,6 +1809,33 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         }
         metadata->left_rankwrite_num = LIFESPAN_WINDOW;
         metadata->lifespan_record_num = 0;
+        //0-4. change current block's rank.
+        cur = write_head->head;
+        while(cur != NULL){
+            b_changed = 0;
+            //verify if each block is promotable
+            for(int i=0;i<metadata->ranknum;i++){
+                //promote range = (0 ~ ranknum) becomes (0 ~ ranknum - 1) 
+                if(cur->wb_rank != metadata->ranknum){
+                    //check blocks which are NOT lowest ranked block
+                    if(cur->ub < metadata->rank_bounds[i+1]+cur_cp){
+                        //if abs upper bound < current abs upper bound of i-th rank
+                        //printf("ub:%ld,rankbound:%ld+%ld\n",cur->ub,metadata->rank_bounds[i+1],cur_cp);
+                        //printf("wb %d, %d->%d\n",cur->idx,cur->wb_rank,i);
+                        cur->lb = cur_cp+metadata->rank_bounds[i];
+                        cur->ub = cur_cp+metadata->rank_bounds[i+1];
+                        
+                        cur->wb_rank = i;
+                        b_changed = 1;
+                    }
+                }
+                //do not check lower ranks if rank is changed
+                if(b_changed == 1){
+                    break;
+                }
+            }
+            cur = cur->next;
+        }
     }
     //1. calculate current data's lifespan
     long real_lifespan;
@@ -1819,9 +1849,10 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         real_lifespan = WORKLOAD_LENGTH; 
     }
     long expected_lifespan = cur_lifespan;
-    //printf("lifespan record: cur:%ld, avg:%ld, real:%ld\n",cur_lifespan,avg_lifespan,real_lifespan);
-    //printf("cur cp : %ld, recent : %ld, next : %ld\n",cur_cp, metadata->recent_update[w_lpas[idx]],lpa_update_timing[w_lpas[idx]][metadata->write_cnt_per_cycle[w_lpas[idx]]+1]);
-    //2. get rank of current write
+    //if(w_lpas[idx] == 66191){
+    //    printf("lifespan record: cur:%ld, avg:%ld, real:%ld\n",cur_lifespan,avg_lifespan,real_lifespan);
+    //    printf("cur cp : %ld, recent : %ld, next : %ld\n",cur_cp, metadata->recent_update[w_lpas[idx]],lpa_update_timing[w_lpas[idx]][metadata->write_cnt_per_cycle[w_lpas[idx]]+1]);
+    //}//2. get rank of current write
     int cur_rank = 0;
     for(int i=0;i<metadata->ranknum;i++){
         if(expected_lifespan < metadata->rank_bounds[i+1] && expected_lifespan >= metadata->rank_bounds[i]){
@@ -1834,7 +1865,7 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
     metadata->rank_write_count[cur_rank]++;
     //printf("[%d]expected_lifespan : %ld, cur_rank : %d, cur - recent : %ld - %ld\n",w_lpas[idx],expected_lifespan, cur_rank, cur_cp, metadata->recent_update[w_lpas[idx]]);
     //3. assign corresponding block
-    block* cur = write_head->head;
+    cur = write_head->head;
     while(cur != NULL){ 
         if(cur->wb_rank == cur_rank){
             return cur->idx;
@@ -1849,6 +1880,14 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         if (temp != -1){
             block* wb_new = ll_remove(fblist_head,temp);
             wb_new->wb_rank = cur_rank;
+            if(cur_rank != metadata->ranknum){
+                wb_new->lb = cur_cp + metadata->rank_bounds[cur_rank];
+                wb_new->ub = cur_cp + metadata->rank_bounds[cur_rank+1];
+            } 
+            else {
+                wb_new->lb = cur_cp + metadata->rank_bounds[cur_rank];
+                wb_new->ub = __LONG_MAX__;
+            }
             ll_append(write_head,wb_new);
             return wb_new->idx;
         }

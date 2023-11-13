@@ -55,6 +55,7 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         metadata->rank_bounds = (long*)malloc(sizeof(long)*(metadata->ranknum + 1));
         metadata->rank_write_count = (int*)malloc(sizeof(int)*(metadata->ranknum + 1));
         metadata->rank_bounds[0] = 0;
+        metadata->rank_write_count[0] = 0L;
         for(int i=1;i<metadata->ranknum+1;i++){
             int temp_rank;
             fscanf(rank_fp,"%d, ", &(temp_rank));
@@ -125,6 +126,9 @@ bhead* init_blocklist(int start, int end){
         new->idx = i;
         new->prev = NULL;
         new->next = NULL;
+        new->lb = 0;
+        new->ub = 0;
+        new->wb_rank = 0;
         ll_append(newlist,new);
     }
     printf("init done\n");

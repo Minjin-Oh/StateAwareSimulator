@@ -132,11 +132,11 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         ppa_state[i] = metadata->state[cur->idx];
         cur->fpnum--;
         //update lifespan related metadata (!!!!ONLY WHEN lifespan metadata is required!!!!)
-        if(wflag == 14){
-            metadata->left_rankwrite_num--;
-            metadata->data_lifespan[metadata->lifespan_record_num] = cur_cp - metadata->recent_update[lpas[i]];
-            metadata->lifespan_record_num++;
-        }
+        //if(wflag == 14){
+        //    metadata->left_rankwrite_num--;
+        //    metadata->data_lifespan[metadata->lifespan_record_num] = cur_cp - metadata->recent_update[lpas[i]];
+        //    metadata->lifespan_record_num++;
+        //}
         last_access_block = cur;
         //allocate current block to full B.
         if(cur != NULL){
@@ -327,7 +327,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
         //sleep(1);
     }
-    printf("target is %d, inv : %d",vic->idx,metadata->invnum[vic->idx]);
+    printf("target is %d, inv : %d\n",vic->idx,metadata->invnum[vic->idx]);
 
     if(vic==NULL){
         printf("[GC]no feasible block\n");
@@ -411,7 +411,7 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         find_RR_dualpool(tasks, tasknum, metadata, full_head, hotlist, coldlist, &vic1, &vic2);
     }
     else if (rrflag == 1){
-        find_RR_target_util(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
+        find_RR_target_simple(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
     } 
 
     //if victim block is not found, cancel WL

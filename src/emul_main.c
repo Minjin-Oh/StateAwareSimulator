@@ -720,7 +720,7 @@ int main(int argc, char* argv[]){
 
             if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){          
                 if(newmeta->total_invalid >= expected_invalid){
-                    printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
+                    //printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
                     printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
                     gettimeofday(&(algo_start_time),NULL);
                     gc_job_start_q(tasks, j, tasknum, newmeta,

@@ -11,8 +11,8 @@
 //differentiate GCTHRESNOB and NOB
 //normally, GCTHRESNOB == NOB
 //to trigger GC earlier, GCTHRESNOB < NOB
-#define GCTHRESNOB 1000
-#define NOB 1000
+#define GCTHRESNOB 4000
+#define NOB 4000
 #define PPB 128
 #define NOP NOB*PPB
 #define _OP 0.32
@@ -20,7 +20,7 @@
 //locality param
 #define SPLOCAL 0.05
 #define TPLOCAL 0.95
-#define WORKLOAD_LENGTH 8000000000L
+#define WORKLOAD_LENGTH 32000000000L
 #define RUNTIME 10000000000000L
 //lifetime params
 #define _MINRC 35
@@ -95,6 +95,8 @@ typedef struct _block{
     int idx;
     int fpnum;
     int wb_rank;
+    long lb;
+    long ub;
 }block;
 
 typedef struct _IO{
