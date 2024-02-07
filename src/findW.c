@@ -1392,6 +1392,11 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
 }
 
 int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, long workload_reset_time){
+    //function for write block selection
+    //3 variants
+    //MAXINVALID_RANK_DYN :: window-based request clustering. dynamically change range for cluster
+    //MAXINVALID_RANK_STAT :: window-based request clutsering, based on pre-assigned threshold
+    //MAXINVALID_RANK_FIXED :: request clustering, strictly following absolute request order
 
     //params to find lpa rank
     char name[30];
@@ -1411,6 +1416,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     block* fb_ptr;
     block* left_ptr;
     block* right_ptr;
+    int cur_state = -1;
     int yield_pg = 0;
     int youngest = MAXPE;
     int target = -1;
@@ -1510,46 +1516,67 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         free(bounds);
     }
 
-    //[1]get rank info from metadata & update left write
+    //get rank info from metadata & update left write
     int offset = metadata->cur_rank_info.tot_ranked_write[taskidx] - metadata->cur_rank_info.cur_left_write[taskidx];
     int cur_rank = metadata->cur_rank_info.ranks_for_write[taskidx][offset];
     metadata->cur_rank_info.cur_left_write[taskidx] -= 1;
     //printf("[%ld]cur_rank : %d\n",cur_cp,cur_rank);
     //[2]find corresponding block
     cur = write_head->head;
-    while(cur != NULL){ 
+    while(cur != NULL){
+        cur_state = metadata->state[cur->idx];
+        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+            cur = cur->next;
+            continue;
+        }
         if(cur->wb_rank == cur_rank){
             return cur->idx;
         }
         cur = cur->next;
     }
-    //if block not in wblist, try getting a new block
-    int ret_b_idx;
-    if(cur == NULL){
-        int temp = find_block_in_list(metadata,fblist_head,YOUNG);
-        //if block found in fblist, append to write block & return idx
-        if (temp != -1){
-            block* wb_new = ll_remove(fblist_head,temp);
-            wb_new->wb_rank = cur_rank;
-            ll_append(write_head,wb_new);
-            //printf("[2]rank : %d, wbrank : %d\n",rank,wb_new->wb_rank);
-            return wb_new->idx;
+    //[3]. if block not in wblist, try getting a new block
+    //[3]-1. search through free block list
+    int ret_b_idx = -1;
+    int ret_b_state = __LONG_MAX__;
+    cur = fblist_head->head;
+    while(cur != NULL){
+        
+        cur_state = metadata->state[cur->idx];
+        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+            cur = cur->next;
+            continue;
         }
-        //if block not in fblist, do edge case handling
-        else{
-            cur = write_head->head;
-            int offset = abs_int(cur->wb_rank - cur_rank);
+        if(ret_b_state > metadata->state[cur->idx]){
+            ret_b_state = metadata->state[cur->idx];
             ret_b_idx = cur->idx;
-            while(cur != NULL){
-                if(offset >= abs_int(cur->wb_rank - cur_rank)){
-                    offset = abs_int(cur->wb_rank - cur_rank);
-                    ret_b_idx = cur->idx;
-                }
-                cur = cur->next;
-            }
-            //printf("[e]rank : %d alloc to other block...\n",rank);
-            return ret_b_idx;
         }
+    }
+    //[3]-1-1. if free block found, append to write block and return index.
+    if(ret_b_idx != -1){
+        block* wb_new = ll_remove(fblist_head,ret_b_idx);
+        wb_new->wb_rank = cur_rank;
+        ll_append(write_head,wb_new);
+        return wb_new->idx;
+    }
+    //[3]-1-2. if free block not found, find closest cluster in write block list.
+    else{
+        cur = write_head->head;
+        int offset = abs_int(cur->wb_rank - cur_rank);
+        ret_b_idx = cur->idx;
+        while(cur != NULL){
+            cur_state = metadata->state[cur->idx];
+            if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+                cur = cur->next;
+                continue;
+            }   
+            if(offset >= abs_int(cur->wb_rank - cur_rank)){
+                offset = abs_int(cur->wb_rank - cur_rank);
+                ret_b_idx = cur->idx;
+            }
+            cur = cur->next;
+        }
+        //printf("[e]rank : %d alloc to other block...\n",rank);
+        return ret_b_idx;
     }
     //!end of active rank calculation-based method
 #endif
