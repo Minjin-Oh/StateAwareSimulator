@@ -1520,7 +1520,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     int offset = metadata->cur_rank_info.tot_ranked_write[taskidx] - metadata->cur_rank_info.cur_left_write[taskidx];
     int cur_rank = metadata->cur_rank_info.ranks_for_write[taskidx][offset];
     metadata->cur_rank_info.cur_left_write[taskidx] -= 1;
-    //printf("[%ld]cur_rank : %d\n",cur_cp,cur_rank);
+    printf("[%ld]cur_rank : %d\n",cur_cp,cur_rank);
     //[2]find corresponding block
     cur = write_head->head;
     while(cur != NULL){
@@ -1537,7 +1537,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     //[3]. if block not in wblist, try getting a new block
     //[3]-1. search through free block list
     int ret_b_idx = -1;
-    int ret_b_state = __LONG_MAX__;
+    int ret_b_state = __INT_MAX__;
     cur = fblist_head->head;
     while(cur != NULL){
         
@@ -1550,6 +1550,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             ret_b_state = metadata->state[cur->idx];
             ret_b_idx = cur->idx;
         }
+	cur = cur->next;
     }
     //[3]-1-1. if free block found, append to write block and return index.
     if(ret_b_idx != -1){
