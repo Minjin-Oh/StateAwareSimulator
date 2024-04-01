@@ -224,7 +224,7 @@ int _find_write_safe(rttask* tasks, int tasknum, meta* metadata, int old, int ta
     /*when write happens after GC, GC reqs are not affected at all*/
     for (int i=0;i<tasknum;i++){
         cur = rq[i]->head;
-        while (cur != NULL){
+        while(cur != NULL){
            for(int j=0;j<tasks[taskidx].wn;j++){
                 if(cur->lpa == lpas[j]){
                     //printf("collision detected, %d vs %d ",cur->lpa,lpas[j]);
@@ -1537,7 +1537,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     //[3]. if block not in wblist, try getting a new block
     //[3]-1. search through free block list
     int ret_b_idx = -1;
-    int ret_b_state = __LONG_MAX__;
+    int ret_b_state = __INT_MAX__;
     cur = fblist_head->head;
     while(cur != NULL){
         
@@ -1550,6 +1550,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             ret_b_state = metadata->state[cur->idx];
             ret_b_idx = cur->idx;
         }
+        cur = cur->next;
     }
     //[3]-1-1. if free block found, append to write block and return index.
     if(ret_b_idx != -1){

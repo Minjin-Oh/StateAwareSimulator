@@ -64,8 +64,8 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         }
     }
     
-    //REFACTOR::for per-task tracking, malloc these member variables.
-    //because number of task is declared in main, not header.
+    //malloc these member variable for per-task tracking
+    //this is because number of task is declared in main, not header.
     metadata->read_cnt_task = (int*)malloc(sizeof(int)*tasknum);
     metadata->write_cnt_task = (int*)malloc(sizeof(int)*tasknum);
     metadata->access_tracker = (char**)malloc(sizeof(char*)*tasknum);
@@ -138,7 +138,49 @@ bhead* init_blocklist(int start, int end){
 void free_blocklist(bhead* head){
     ll_free(head);
 }
-void init_utillist(float* rutils, float* wutils, float* gcutils){}
+
+void init_prof_exec(prof_exec* pe){
+    FILE* fpexec = fopen("execution_profile.csv","r");
+    if(fpexec == NULL){
+        printf("no profile result available. Please specify csv file or try linear mode.\n");
+        abort();
+    }
+    pe->pe_steps = (int*)malloc(sizeof(int)*OPTYPENUM);
+    pe->pe_values = (int**)malloc(sizeof(int*)*OPTYPENUM);
+    pe->pe_thres = (int**)malloc(sizeof(int*)*OPTYPENUM);
+    for(int i=0;i<OPTYPENUM;i++){
+        fscanf(fpexec,"%d, ",&(pe->pe_steps[i]));
+        pe->pe_values[i] = (int*)malloc(sizeof(int)*(pe->pe_steps[i]+1));
+        pe->pe_thres[i] = (int*)malloc(sizeof(int)*(pe->pe_steps[i]+1));
+        for(int j=0;j<pe->pe_steps[i]+1;j++){
+            fscanf(fpexec,"%d, ",&(pe->pe_values[i][j]));
+        }
+        for(int j=0;j<pe->pe_steps[i];j++){
+            fscanf(fpexec,"%d, ",&(pe->pe_thres[i][j]));
+        }
+        pe->pe_thres[i][pe->pe_steps[i]] = MAXPE;
+    }
+    //check exec time structure
+    printf("testing exec profile\n");
+    for(int i=0;i<OPTYPENUM;i++){
+        printf("%d, ",pe->pe_steps[i]);
+        for(int j=0;j<pe->pe_steps[i]+1;j++){
+            printf("%d until %d, ",pe->pe_values[i][j],pe->pe_thres[i][j]);
+        }
+        printf("\n");
+    }
+}
+
+void free_prof_exec(prof_exec* pe){
+    free(pe->pe_steps);
+    for(int i=0;i<OPTYPENUM;i++){
+        free(pe->pe_values[i]);
+        free(pe->pe_thres[i]);
+    }
+    free(pe->pe_values);
+    free(pe->pe_thres);
+}
+
 void init_task(rttask* task,int idx, int wp, int wn, int rp ,int rn, int gcp,int lb, int ub){
     task->idx = idx;
     task->wp = wp;

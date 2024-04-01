@@ -2,27 +2,56 @@
 
 extern double OP;
 extern int MINRC;
+#ifdef EXECSTEP
+    extern prof_exec exec_steps;
+    float w_exec(int cycle){
+        for(int i=0;i<exec_steps.pe_steps[0];i++){
+            if(cycle < exec_steps.pe_thres[0][i]){
+                return (float)exec_steps.pe_values[0][i];
+            }
+        }
+        return (float)exec_steps.pe_values[0][exec_steps.pe_steps[0]];
+    }
+    float r_exec(int cycle){
+        for(int i=0;i<exec_steps.pe_steps[1];i++){
+            if(cycle < exec_steps.pe_thres[1][i]){
+                return (float)exec_steps.pe_values[1][i];
+            }
+        }
+        return (float)exec_steps.pe_values[1][exec_steps.pe_steps[1]];
+    }
+    float e_exec(int cycle){
+        for(int i=0;i<exec_steps.pe_steps[2];i++){
+            if(cycle < exec_steps.pe_thres[2][i]){
+                return (float)exec_steps.pe_values[2][i];
+            }
+        }
+        return (float)exec_steps.pe_values[2][exec_steps.pe_steps[2]];
+    }
+   
+#endif
+#ifndef EXECSTEP
+    float w_exec(int cycle){
+        //!!!write exec tends to decrease, so be aware of that!!!
+        float wgrad = (float)(ENDW-STARTW)/(float)MAXPE;
+        float wconst = STARTW;
+        return wgrad*cycle + wconst;
+    }
 
-float w_exec(int cycle){
-    //!!!write exec tends to decrease, so be aware of that!!!
-    float wgrad = (float)(ENDW-STARTW)/(float)MAXPE;
-    float wconst = STARTW;
-    return wgrad*cycle + wconst;
-}
+    float r_exec(int cycle){
+        //!!!read exec tends to increase, so be aware of that!!!
+        float rgrad = (float)(ENDR-STARTR)/(float)MAXPE;
+        float rconst = STARTR;
+        return rgrad*cycle + rconst;
+    }
 
-float r_exec(int cycle){
-    //!!!read exec tends to increase, so be aware of that!!!
-    float rgrad = (float)(ENDR-STARTR)/(float)MAXPE;
-    float rconst = STARTR;
-    return rgrad*cycle + rconst;
-}
-
-float e_exec(int cycle){
-    //!!!read exec tends to increase, so be aware of that!!!
-    float egrad = (float)(ENDE-STARTE)/(float)MAXPE;
-    float econst = STARTE;
-    return egrad*cycle + econst;
-}
+    float e_exec(int cycle){
+        //!!!read exec tends to increase, so be aware of that!!!
+        float egrad = (float)(ENDE-STARTE)/(float)MAXPE;
+        float econst = STARTE;
+        return egrad*cycle + econst;
+    }
+#endif
 
 int myceil(float a){
     int b = (int)a;

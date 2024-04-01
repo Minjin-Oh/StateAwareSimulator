@@ -327,7 +327,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
         //sleep(1);
     }
-    printf("target is %d, inv : %d\n",vic->idx,metadata->invnum[vic->idx]);
+    // %d, inv : %d\n",vic->idx,metadata->invnum[vic->idx]);
 
     if(vic==NULL){
         printf("[GC]no feasible block\n");

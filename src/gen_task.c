@@ -65,7 +65,6 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
         //generate a taskset parameter
         wp = (int)((float)(wnum*STARTW) / util_task[0]);
         rp = (int)((float)(rnum*STARTR) / util_task[1]);
-           
         gcp = __calc_gcmult(wp,wnum,MINRC);
         init_task(&(tasks[i]),i,wp,wnum,rp,rnum,gcp,addr/tasknum*(i),addr/tasknum*(i+1)-1);
         printf("wp: %d, wn : %d, rp : %d, rn : %d, gcp : %d wu: %f, ru: %f, gcu : %f\n",

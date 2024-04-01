@@ -10,6 +10,9 @@ block* cur_fb = NULL;
 int rrflag = 0;
 int MINRC;
 double OP;
+#ifdef EXECSTEP
+    prof_exec exec_steps;
+#endif
 
 //FIXME::set these as global to expose to find_util_safe function
 IOhead** wq;
@@ -45,7 +48,7 @@ FILE *getupdateorder_fp;
 bhead* glob_yb;
 bhead* glob_ob;
 
-//a space to store lpa update timing(memory)
+//a space to store lpa update timing (memory)
 long* lpa_update_timing[NOP];
 int update_cnt[NOP];
 int cur_length[NOP];
@@ -82,11 +85,14 @@ int main(int argc, char* argv[]){
                    &genflag, &taskflag, &profflag,
                    &skewness, &sploc, &tploc, &skewnum,
                    &OPflag, &init_cyc, &OP, &MINRC);
-    
+#ifdef EXECSTEP
+    init_prof_exec(&(exec_steps));
+#endif
     //initialize misc variables
     char IO_end_bwr_flag = 0;       //notify that cur_cp is end of I/O req
     char qempty_bwr_flag = 1;       //notify that other queue is empty
     char wr_end_bwr_flag = 0;       //notify that cur_cp is end of write job.
+    char task_gen_success = 0;      //notify that task generation was successful.
     int g_cur = 0;                   //pointer for current writing page @ dummy write phase
     int wl_init = 0;                 //flag for wear-leveling initiation
     int rr_finished = 1;
@@ -117,7 +123,7 @@ int main(int argc, char* argv[]){
     r_prop = (double*)malloc(sizeof(double)*tasknum*2);
     gc_prop = (double*)malloc(sizeof(double)*tasknum*2);
     
-    //simulate I/O(init related params)
+    //simulate I/O (init related params)
     float total_u;
     int oldest;
     int yngest;
@@ -207,18 +213,33 @@ int main(int argc, char* argv[]){
         }
 #endif
 #ifndef TASKGEN_IGNORE_UTILOVER
-        while(res >= 1.0){
-
+        task_gen_success = 0;
+        while(task_gen_success == 0){
             if(skewness == -1){
                 rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
-            } else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
+            }
+            else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
                 rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg,&res);
-            } else if(skewness >= 0){
+            }
+            else if(skewness >= 0){
                 rand_tasks = generate_taskset_skew2(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
-            } else if(skewness == -3){ //manually assign w/r utilization for each task. edit parameters for test.
+            }
+            else if(skewness == -3){ //manually assign w/r utilization for each task. edit parameters for test.
                 rand_tasks = generate_taskset_fixed(max_valid_pg,&res);
             }
-            if(res > 1.0){
+            task_gen_success = 1; //mark flag as 1, and check edge cases.
+            if(res > 1.0){//initial total utilization > 1.0
+                task_gen_success = 0;
+            }
+            else{//period < 0 due to overflow
+                for(int i=0;i<tasknum;i++){
+                    if(rand_tasks[i].wp <= 0 || rand_tasks[i].rp <= 0 || rand_tasks[i].gcp <= 0){
+                        task_gen_success = 0;
+                    }
+                }
+            }
+            //if task gen fails, retry generation
+            if(task_gen_success == 0){
                 free(rand_tasks);
             }
         }
@@ -272,8 +293,6 @@ int main(int argc, char* argv[]){
     fclose(main_taskparam);
     fclose(locfile);    
 
-    
-
 #ifdef TIMING_ON_MEM
     int prof_targ_lpa;
     int wn_count = 0;
@@ -319,6 +338,8 @@ int main(int argc, char* argv[]){
     }
     IO_close(tasknum,w_workloads,r_workloads);
 #endif
+
+
     //LPA PROFILE GENERATOR CODE
     //profile LPA invalidation pattern(per each address)
     if(profflag == 1){
@@ -424,7 +445,6 @@ int main(int argc, char* argv[]){
     }
 
     //(deprecated)run gradient tests for write in offline, and assign offset value for WGRAD policy.
-    //_find_rank_lpa(tasks,tasknum);
     offset = (int)((float)(tasks[0].addr_ub - tasks[0].addr_lb)*sploc/2.0);
 
     //init csv files
@@ -448,7 +468,6 @@ int main(int argc, char* argv[]){
     
     //initialize blocklist for blockmanage.
     init_metadata(newmeta,tasknum, init_cyc);
-
 #ifdef GC_ON_WRITEBLOCK
     fblist_head = init_blocklist(0,NOB-1);
     rsvlist_head = init_blocklist(0,-1);
@@ -531,10 +550,9 @@ int main(int argc, char* argv[]){
         //flash state checker
         if(cur_cp % 1000000L == 0){
             total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-            
-            //utilization overflow(exit)
-            
-            if(total_u >= 1.0){
+            printf("cur_u:%f\n",total_u);
+            //utilization overflow(exit code)
+            if(total_u >= 1.0){                
                 printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                 gettimeofday(&tot_end_time,NULL);
                 tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
@@ -616,6 +634,7 @@ int main(int argc, char* argv[]){
                         print_profile_updaterate(newmeta,updaterate_fp);
                         sleep(1);
                         return 1;
+                        
                     }
                 }
                 
@@ -721,7 +740,7 @@ int main(int argc, char* argv[]){
             if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){          
                 if(newmeta->total_invalid >= expected_invalid){
                     //printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
-                    printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
+                    //printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
                     gettimeofday(&(algo_start_time),NULL);
                     gc_job_start_q(tasks, j, tasknum, newmeta,
                                fblist_head, full_head, rsvlist_head, write_head, 0,

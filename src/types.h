@@ -11,8 +11,8 @@
 //differentiate GCTHRESNOB and NOB
 //normally, GCTHRESNOB == NOB
 //to trigger GC earlier, GCTHRESNOB < NOB
-#define GCTHRESNOB 4000
-#define NOB 4000
+#define GCTHRESNOB 1000
+#define NOB 1000
 #define PPB 128
 #define NOP NOB*PPB
 #define _OP 0.32
@@ -20,8 +20,16 @@
 //locality param
 #define SPLOCAL 0.05
 #define TPLOCAL 0.95
-#define WORKLOAD_LENGTH 32000000000L
+
+//workload duration and simulation maximum runtime (in microsecond)
+#define WORKLOAD_LENGTH 16000000000L
 #define RUNTIME 10000000000000L
+
+//set number of operation types (used in execution time functions)
+//currently 3 (write,read,erase) 
+#define OPTYPENUM 3
+
+
 //lifetime params
 #define _MINRC 35
 #define MAXPE 1000
@@ -49,10 +57,10 @@
 #define UUNIFAST
 //#define GC_ON_WRITEBLOCK          //redirects GC on write block & removes rsv block
 //#define MAXINVALID_RANK_FIXED     //assign write pages strictly aligned with invalidation order
-//#define MAXINVALID_RANK_STAT      //assign write pages w.r.t offline profile (use K-means)
+//#define MAXINVALID_RANK_STAT      //assign write pages w.r.t offline profile (use K-means in offline)
 #define MAXINVALID_RANK_DYN         //assign write pages w.r.t dynamically changing criteria.
 #define UTILSORT_BEST               //make find_gc_utilsort function to pick a block with shortest exec time
-
+#define EXECSTEP                    //make execution time to increase in step function
 //deprecated params
 //#define DOGCCONTROL
 //#define GCBASE
@@ -200,5 +208,10 @@ typedef struct _meta{
     int lifespan_record_num;
     int* rank_write_count;
     long data_lifespan[LIFESPAN_WINDOW];
-    
 }meta;
+
+typedef struct _prof_exec{
+    int* pe_steps;
+    int** pe_values;
+    int** pe_thres;
+}prof_exec;
