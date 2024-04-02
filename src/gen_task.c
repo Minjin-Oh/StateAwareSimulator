@@ -93,15 +93,17 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
 }
 
 rttask* generate_taskset_hardcode(int tasknum, int addr, float* result_util){
-    //hardcoded to a case of 3 taskset
+    //gets already generated taskparam.csv to "reuse" read/write task params.
+    //reconfigures gcp, lb and ub according to current overprovisioning rate
     rttask* tasks;
     int wn, wp, rn, rp, gcp, lb, ub;
     FILE* taskfp = fopen("taskparam.csv","r");
     tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
     for(int i=0;i<tasknum;i++){
         fscanf(taskfp,"%d,%d,%d,%d,%d,%d,%d\n",&wn,&wp,&rn,&rp,&gcp,&lb,&ub);
-        //recalculate gcp,lb and ub
+        //recalculate gcp using MINRC from emul_main.c
         gcp = __calc_gcmult(wp,wn,MINRC);
+        //recalculate bounds of logical address using addr param
         init_task(&(tasks[i]),i,wp,wn,rp,rn,gcp,addr/tasknum*(i),addr/tasknum*(i+1)-1);
     }
     float checker = 0.0;
@@ -118,8 +120,8 @@ rttask* generate_taskset_hardcode(int tasknum, int addr, float* result_util){
 }
 
 rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle){
-    /*assign 90% of utilization to certain amount of tasks*/
-    /*let certain task to have utilization over threshold*/
+    /*assign 90% of utilization to skewnum out of n tasks*/
+    /*let skewnum out of n tasks to have utilization over threshold*/
 
     float utils[tasknum];
     float util_task[2];
