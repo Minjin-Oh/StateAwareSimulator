@@ -550,7 +550,7 @@ int main(int argc, char* argv[]){
         //flash state checker
         if(cur_cp % 1000000L == 0){
             total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-            printf("cur_u:%f\n",total_u);
+            //printf("cur_u:%f\n",total_u);
             //utilization overflow(exit code)
             if(total_u >= 1.0){                
                 printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);

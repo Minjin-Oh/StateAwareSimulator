@@ -339,29 +339,19 @@ void  _get_write_reqs(FILE** w_workloads, int tasknum, int taskidx, rttask* task
 }
 
 void _get_write_updateorder(int* jobnum, int** lpas_to_arrange, int tasknum, rttask* task, meta* metadata, long** updateorder_per_task){
-    long *temp;
     for(int i=0;i<tasknum;i++){
-        temp = (long*)malloc(sizeof(long)*task[i].wn*jobnum[i]);
         for(int j=0;j<jobnum[i]*task[i].wn;j++){
             int lpa_cur = lpas_to_arrange[i][j];
-            //check if current lpa is repetitively accessed in current window.
-            char lpa_freq = 0;
-            for(int k=0;k<j-1;k++){
-                if(temp[k]==lpa_cur){
-                    lpa_freq++;
-                }
-            }
             //normally lpa freq will be 0 (lpa X accessed more than twice in single window)
             int lpa_cyc = metadata->write_cnt_per_cycle[lpa_cur];
-            if(lpa_cyc+lpa_freq <= update_cnt[lpa_cur]-1){
-                updateorder_per_task[i][j] = lpa_update_timing[lpa_cur][lpa_cyc+1+lpa_freq];
+            if(lpa_cyc <= update_cnt[lpa_cur]-1){
+                updateorder_per_task[i][j] = lpa_update_timing[lpa_cur][lpa_cyc+1];
             } else {
                 updateorder_per_task[i][j] = WORKLOAD_LENGTH+cur_cp;
             }
             //write the update order in timings_for_write array in metadata.
             metadata->cur_rank_info.timings_for_write[i][j] = updateorder_per_task[i][j];
         }
-        free(temp);
     }
 }
 
@@ -1422,9 +1412,9 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     int target = -1;
     int longlive = -1;
     int cur_fpnum;
-    int* jobnum;
-    int** req_per_task;
-    long** updateorders;
+    int* jobnum = NULL;
+    int** req_per_task = NULL;
+    long** updateorders = NULL;
 #ifdef MAXINVALID_RANK_DYN
     //active rank calculation-based method
     if(metadata->cur_rank_info.cur_left_write[taskidx] == 0){
@@ -1434,15 +1424,19 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         req_per_task = (int**)malloc(sizeof(int*)*(unsigned long)tasknum);
         updateorders = (long**)malloc(sizeof(long*)*(unsigned long)tasknum);
         for(int i=0;i<tasknum;i++){
+            req_per_task[i] = NULL;
+            updateorders[i] = NULL;
+        }
+        for(int i=0;i<tasknum;i++){
             jobnum[i] = 0;
         }
 
-        _get_jobnum_interval(cur_cp,9000000,task,tasknum,jobnum);
+        _get_jobnum_interval(cur_cp,90000000,task,tasknum,jobnum);
         for(int i=0;i<tasknum;i++){
             req_per_task[i] = (int*)malloc(sizeof(int)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
             updateorders[i] = (long*)malloc(sizeof(long)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
         }
-        _get_write_reqs(w_workloads,tasknum,taskidx,task,w_lpas,9000000,jobnum,req_per_task);
+        _get_write_reqs(w_workloads,tasknum,taskidx,task,w_lpas,90000000,jobnum,req_per_task);
         _get_write_updateorder(jobnum,req_per_task,tasknum,task,metadata,updateorders);
     
         //1-1. put update timing values in single array
@@ -1464,7 +1458,6 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         int cluster_cur = 0;
         int member_num = 0;
         int req_per_rank = reqnum / (metadata->ranknum+1);
-        printf("reqnum : %d, req_per_rank : %d, ranknum : %d\n",reqnum,req_per_rank,metadata->ranknum);
         qsort(invorders_sort,reqnum,sizeof(long),compare);
         for(int i=0;i<reqnum;i++){
             member_num++;
@@ -1506,14 +1499,18 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         }
         //4. free malloc spaces
         free(jobnum);
-        for(int i=1;i<tasknum;i++){
-            free(req_per_task[i]);
-            free(updateorders[i]);
-        }
+        free(req_per_task[0]);
+        free(updateorders[0]);
+        free(req_per_task[1]);
+        free(updateorders[1]);
+        free(req_per_task[2]);
+        free(updateorders[2]);
+        free(req_per_task[3]);
+        free(updateorders[3]);
         free(req_per_task);
         free(updateorders);
         free(invorders_sort);
-        free(bounds);
+        free(bounds);    
     }
 
     //get rank info from metadata & update left write

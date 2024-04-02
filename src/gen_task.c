@@ -100,6 +100,8 @@ rttask* generate_taskset_hardcode(int tasknum, int addr, float* result_util){
     tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
     for(int i=0;i<tasknum;i++){
         fscanf(taskfp,"%d,%d,%d,%d,%d,%d,%d\n",&wn,&wp,&rn,&rp,&gcp,&lb,&ub);
+        //recalculate gcp,lb and ub
+        gcp = __calc_gcmult(wp,wn,MINRC);
         init_task(&(tasks[i]),i,wp,wn,rp,rn,gcp,addr/tasknum*(i),addr/tasknum*(i+1)-1);
     }
     float checker = 0.0;

@@ -5,7 +5,6 @@ extern long cur_cp;
 
 void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     int lpa, ppa, old_ppa, old_block;
-    
     lpa = cur_IO->lpa;
     ppa = cur_IO->ppa;
     old_ppa = metadata->pagemap[lpa];
