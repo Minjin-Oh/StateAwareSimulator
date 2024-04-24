@@ -15,6 +15,8 @@ void set_scheme_flags(char* argv[],
         *gcflag = 5;
     } else if (strcmp(argv[1],"UTILGC")==0){
         *gcflag = 6;
+    } else if (strcmp(argv[1],"TESTGC")==0){
+        *gcflag = 7;
     } else {
         *gcflag = 0;
     }
@@ -152,6 +154,6 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
         *cyc = 0;
     }
     //!!!overprovisioning rate and minimum reclaimable page is hardcoded in set_exec_flags!!!
-    *OP = 0.07;
-    *MINRC = 7;
+    *OP = 0.32;
+    *MINRC = 35;
 }

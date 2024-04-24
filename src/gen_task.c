@@ -59,9 +59,9 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
         //!!restrictions!!
         //period should be over 100ms --> considering a blocking factor
         //access number of page should be under 30pg --> considering a free page limit
-        //randomly generate a flash page under 30pg, 100pg
+        //randomly generate a flash page under 30pg, 50pg
         wnum = rand()%30 + 1;
-        rnum = rand()%100 + 1;
+        rnum = rand()%50 + 1;
         //generate a taskset parameter
         wp = (int)((float)(wnum*STARTW) / util_task[0]);
         rp = (int)((float)(rnum*STARTR) / util_task[1]);
@@ -175,7 +175,7 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
         }
 
         wnum = rand()%30 + 1;
-        rnum = rand()%100 + 1;
+        rnum = rand()%50 + 1;
         //generate a taskset parameter
         wp = (int)((float)(wnum*STARTW) / util_task[0]);
         rp = (int)((float)(rnum*STARTR) / util_task[1]);
@@ -222,7 +222,7 @@ rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* res
     //assign 90% of util for write if task is write-intensive
     for(int i=0;i<tasknum;i++){
         wnum = rand()%30 + 1;
-        rnum = rand()%100 + 1;
+        rnum = rand()%50 + 1;
         wp = (int)((float)(wnum*STARTW) / w_util[i]);
         rp = (int)((float)(rnum*STARTR) / r_util[i]);
         gcp = __calc_gcmult(wp,wnum,MINRC);
@@ -263,7 +263,7 @@ rttask* generate_taskset_fixed(int addr, float* result_util){
     tasks = (rttask*)malloc(sizeof(rttask)*3);
     for (int i=0;i<3;i++){
         wnum[i] = rand()%30 + 1;
-        rnum[i] = rand()%100 + 1;
+        rnum[i] = rand()%50 + 1;
         wp[i] = (int)((float)(wnum[i]*STARTW) / w_util[i]);
         rp[i] = (int)((float)(rnum[i]*STARTR) / r_util[i]);
         gcp[i] = __calc_gcmult(wp[i],wnum[i],MINRC);   

@@ -15,7 +15,7 @@
 #define NOB 1000
 #define PPB 128
 #define NOP NOB*PPB
-#define _OP 0.32
+#define _OP 0.32        //!!!deprecated. MINRC and oprate is defined as variable in parse.c!!!
 
 //locality param
 #define SPLOCAL 0.05
@@ -31,8 +31,8 @@
 
 
 //lifetime params
-#define _MINRC 35
-#define MAXPE 1000
+#define _MINRC 35       //!!!deprecated. MINRC and oprate is defined as variable in parse.c!!!
+#define MAXPE 2000
 #define MARGIN 3
 #define THRESHOLD 10
 #define OLD 0
@@ -74,12 +74,12 @@
 //#define FORCEDNOTHRES
 
 //profiles -- assume linear execution time change
-#define STARTW 500
-#define ENDW 350
-#define STARTR 50
-#define ENDR 200
-#define STARTE 5000
-#define ENDE 20000
+#define STARTW 713
+#define ENDW 663
+#define STARTR 280
+#define ENDR 600
+#define STARTE 3500
+#define ENDE 14000
 
 #define STAMP 1
 //structure definition

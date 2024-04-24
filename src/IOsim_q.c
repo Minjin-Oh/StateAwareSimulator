@@ -291,9 +291,11 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     print_blocklist_info(full_head,metadata);
     //if gc baseline, select most invalid block
     if (gcflag == 0){
+        /*
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
                (metadata->state[cur->idx] >= write_limit)){
+                //only change when invnum for current target is high
                 if(metadata->invnum[cur_vic_idx] >= PPB/4*3){
                     cur_vic_idx = cur->idx;
                     vic = cur;
@@ -312,6 +314,17 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
                 }
                 cur = cur->next;
             }
+        }*/
+        while(cur != NULL){
+            if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
+               (metadata->state[cur->idx] >= write_limit)){
+                cur_vic_idx = cur->idx;
+                vic = cur;
+            }
+            cur = cur->next;
+        }
+        if(vic==NULL){
+            vic = full_head->head;
         }
     }
     //if not, choose a victim block from full_block list using index
@@ -324,10 +337,26 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
                 break;
             }
             cur = cur->next;
+        }   
+    } 
+    else if (gcflag == 7){
+        while(cur != NULL){
+            if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
+               (metadata->state[cur->idx] >= write_limit)){
+                cur_vic_idx = cur->idx;
+                vic = cur;
+            } 
+            else if((metadata->invnum[cur_vic_idx] == metadata->invnum[cur->idx]) &&
+                    (metadata->state[cur->idx] < metadata->state[cur_vic_idx])){
+                cur_vic_idx = cur->idx;
+                vic = cur;        
+            }
+            cur = cur->next;
         }
-        //sleep(1);
+        if(vic==NULL){
+            vic = full_head->head;
+        }
     }
-    // %d, inv : %d\n",vic->idx,metadata->invnum[vic->idx]);
 
     if(vic==NULL){
         printf("[GC]no feasible block\n");

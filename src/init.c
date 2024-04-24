@@ -98,9 +98,9 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
     for(int i=0;i<tasknum;i++){
         metadata->cur_rank_info.cur_left_write[i] = 0;
         metadata->cur_rank_info.tot_ranked_write[i] = 0; 
-        metadata->cur_rank_info.ranks_for_write[i]=(int*)malloc(sizeof(int)*4000);
-        metadata->cur_rank_info.timings_for_write[i] = (long*)malloc(sizeof(long)*4000);
-        for(int j=0;j<2000;j++){
+        metadata->cur_rank_info.ranks_for_write[i]=(int*)malloc(sizeof(int)*20000);
+        metadata->cur_rank_info.timings_for_write[i] = (long*)malloc(sizeof(long)*20000);
+        for(int j=0;j<20000;j++){
             metadata->cur_rank_info.ranks_for_write[i][j] = 0;
             metadata->cur_rank_info.timings_for_write[i][j] = 0;
         }

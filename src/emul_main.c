@@ -200,19 +200,6 @@ int main(int argc, char* argv[]){
     //TASK GENERATOR CODE
     if(taskflag == 1){ //generate taskset and save
         float res = 1.0;
-#ifdef TASKGEN_IGNORE_UTILOVER
-        if(skewness == -1){
-            rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
-        } else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
-            rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg,&res);
-            res = 0.5;//just hardcode and pass
-        } else if(skewness >= 0){
-            rand_tasks = generate_taskset_skew2(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
-        } else if(skewness == -3){ //manually assign w/r utilization for each task. edit parameters for test.
-            rand_tasks = generate_taskset_fixed(max_valid_pg,&res);
-        }
-#endif
-#ifndef TASKGEN_IGNORE_UTILOVER
         task_gen_success = 0;
         while(task_gen_success == 0){
             if(skewness == -1){
@@ -243,7 +230,6 @@ int main(int argc, char* argv[]){
                 free(rand_tasks);
             }
         }
-#endif
         FILE* taskparams = fopen("taskparam.csv","w");
         for(int i=0;i<tasknum;i++){
             printf("saving %d,%d,%d,%d,%d,%d,%d\n",rand_tasks[i].wn,rand_tasks[i].wp,rand_tasks[i].rn,rand_tasks[i].rp,rand_tasks[i].gcp,
@@ -453,21 +439,19 @@ int main(int argc, char* argv[]){
     fplife = fopen("lifetime.csv","a");
     fpovhd = fopen("overhead.csv","a");
     updateorder_fp = fopen("updateorder.csv", "w");
-    //finish_log = fopen("log.csv","w");
     IO_open(tasknum, w_workloads,r_workloads);
     lat_open(tasknum, lat_log_w,lat_log_r,lat_log_gc);
-    
     for(int i=0;i<tasknum;i++){
         fprintf(fps[i],"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp,w_idx,w_state,fb,w");
     }
     fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
-    //fprintf(fpread,"%s\n","timestamp");
     if(gcflag == 1 && wflag == 1 && rrflag == 1){
         fprintf(fplife,"\n"); 
     }
     
     //initialize blocklist for blockmanage.
     init_metadata(newmeta,tasknum, init_cyc);
+
 #ifdef GC_ON_WRITEBLOCK
     fblist_head = init_blocklist(0,NOB-1);
     rsvlist_head = init_blocklist(0,-1);
@@ -496,7 +480,10 @@ int main(int argc, char* argv[]){
 
     //do initial writing (validate all logical address)
     printf("total fp before dummy : %d\n",newmeta->total_fp);
-    int logi = (int)(NOP*(1-OP));
+    //!!!change logi value to increase/decrease dummy writes.
+    //note that addresses which are not accessed during dummy write has no mapping info
+    //int logi = (int)(NOP*(1-OP));
+    int logi = 87040;
     cur_fb = ll_pop(fblist_head);
     for(int i=0;i<logi;i++){
         if (cur_fb->fpnum == 0){
@@ -738,8 +725,9 @@ int main(int argc, char* argv[]){
             }
 
             if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){          
-                if(newmeta->total_invalid >= expected_invalid){
+                if(newmeta->total_fp <= expected_fp){
                     //printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
+                    //printf("total_fp : %d, expected_fp : %d\n",newmeta->total_fp,expected_fp);
                     //printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
                     gettimeofday(&(algo_start_time),NULL);
                     gc_job_start_q(tasks, j, tasknum, newmeta,
