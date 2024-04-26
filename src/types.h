@@ -35,6 +35,7 @@
 #define MAXPE 2000
 #define MARGIN 3
 #define THRESHOLD 10
+#define GCGROUP_THRES 25
 #define OLD 0
 #define YOUNG -1
 #define INITCYC 0

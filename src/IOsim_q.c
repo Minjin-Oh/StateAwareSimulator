@@ -263,6 +263,8 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     block* cur = full_head->head;
     block* vic = NULL;
     block* rsv;
+    block* oldest_vic = NULL;
+    block* others_vic = NULL;
     int cur_vic_idx = cur->idx;
     int cur_vic_invalid = -1;
     int vic_offset;
@@ -272,7 +274,10 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     int old = get_blockstate_meta(metadata,OLD);
     int yng = get_blockstate_meta(metadata,YOUNG);
     float gc_exec = 0.0, gc_period = (float)tasks[taskidx].gcp;
-
+    int oldest_vic_invalid = -1;
+    int others_vic_invalid = -1;
+    int oldest_vic_idx;
+    int others_vic_idx;
     //find gc target
     if (gcflag == 1){
         gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);
@@ -341,20 +346,40 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     } 
     else if (gcflag == 7){
         while(cur != NULL){
-            if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
-               (metadata->state[cur->idx] >= write_limit)){
-                cur_vic_idx = cur->idx;
-                vic = cur;
-            } 
-            else if((metadata->invnum[cur_vic_idx] == metadata->invnum[cur->idx]) &&
-                    (metadata->state[cur->idx] < metadata->state[cur_vic_idx])){
-                cur_vic_idx = cur->idx;
-                vic = cur;        
+            //check if oldest
+            if(metadata->state[cur->idx] == old){
+            //if oldest, compare invnum among oldest
+                if(metadata->invnum[cur->idx] > oldest_vic_invalid){
+                    oldest_vic_invalid = metadata->invnum[cur->idx];
+                    oldest_vic_idx = cur->idx;
+                    oldest_vic = cur;
+                }
             }
-            cur = cur->next;
+            else{
+            //if not oldest, compare invnum among not oldest. choose the youngest+many inv
+                if(metadata->invnum[cur->idx] > others_vic_invalid){
+                    others_vic_invalid = metadata->invnum[cur->idx];
+                    others_vic_idx = cur->idx;
+                    others_vic = cur;
+                }
+            }
+            cur=cur->next;
         }
-        if(vic==NULL){
-            vic = full_head->head;
+        //compare two candidate. if invnum of b from oldest > invnum of b from not-oldest + X, choose former.
+        if(oldest_vic == NULL){ //not possible, but if...
+            vic = others_vic;
+        }
+        else if(others_vic == NULL){//if all block has same cyc
+            vic = oldest_vic;
+        }
+        else{//if two group exists, choose the block from oldest only when following eq holds.
+            printf("inv from oldest = %d, inv from others = %d, oldestP/E = %d\n",oldest_vic_invalid,others_vic_invalid,old);
+            if(oldest_vic_invalid > others_vic_invalid + (int)GCGROUP_THRES){ 
+                vic = oldest_vic;
+            }
+            else{
+                vic = others_vic;
+            }
         }
     }
 
@@ -422,7 +447,6 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     vic->fpnum = PPB;
     metadata->runutils[2][taskidx] = gc_exec / gc_period;    
 #endif
-    //printf("fbnum : %d, wbnum : %d, fpnum : %d, invnum : %d\n",fblist_head->blocknum,write_head->blocknum,metadata->total_fp,metadata->total_invalid);
 }
 
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
