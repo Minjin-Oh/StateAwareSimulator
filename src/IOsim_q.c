@@ -451,7 +451,11 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
 
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
                   IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp){
-    int vic1, vic2, v1_state, v2_state;
+    char reloc_w = 0;
+    char reloc_r = 0;
+    int vic1 = -1;
+    int vic2 = -1;
+    int v1_state, v2_state;
     int v1_offset, v2_offset, v1_cnt=0, v2_cnt=0;
     int lpa;
     long rrp;
@@ -464,20 +468,36 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         find_RR_dualpool(tasks, tasknum, metadata, full_head, hotlist, coldlist, &vic1, &vic2);
     }
     else if (rrflag == 1){
-        find_RR_target_simple(tasks, tasknum, metadata,fblist_head,full_head,&vic1,&vic2);
+        find_WR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
+        if(vic1 == -1 || vic2 == -1){
+            find_RR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
+            if(vic1 != -1 || vic2 != -1){
+                reloc_r = 1;
+            }
+        } 
+        else{
+            reloc_w = 1;
+        }
     } 
 
-    //if victim block is not found, cancel WL
+    //if victim block is not found, cancel WL and return.
     if(rrflag == 0 || rrflag == 1){
         if(vic1 == -1 || vic2 == -1){
             //printf("vic1 %d, vic2 %d, skiprr\n",vic1,vic2);
             return;
         }
     }
-    
-    //if decided to do WL, reset access window for future.
-    for(int i=0;i<NOB;i++){
-        metadata->access_window[i] = 0;
+
+    //if victim is found, reset access window (or inv window) for future.
+    if(reloc_w == 1){
+        for(int i=0;i<NOB;i++){
+            metadata->invalidation_window[i] = 0;
+        }
+    }
+    else if(reloc_r == 1){
+        for(int i=0;i<NOB;i++){
+            metadata->access_window[i] = 0;
+        }
     }
     //find vb1 and vb2
     cur = full_head->head;

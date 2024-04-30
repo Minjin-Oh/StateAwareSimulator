@@ -433,6 +433,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     int best_invalid = 0;                           //edge case handling param
     int best_idx = -1;                              //return value
     float temp;
+    
 #ifdef utilsort_writecheck
     //arrays to test write block array
     int test_arr[full_head->blocknum + write_head->blocknum];
@@ -639,6 +640,77 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     block_origin[test_cur_offset_int],test_vicnum - vic_num);
 #endif
     return best_idx;
+}
+
+int find_gc_test(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head, bhead* write_head){
+    int old = get_blockstate_meta(metadata,OLD);    //oldest block for system
+    int oldest_vic_invalid = -1;
+    int others_vic_invalid = -1;
+    int oldest_vic_idx;
+    int others_vic_idx;
+    block* oldest_vic = NULL;
+    block* others_vic = NULL;
+    block* cur = full_head->head;
+    block* vic = NULL;
+    while(cur != NULL){
+        //check gc safe
+        int cur_state = metadata->state[cur->idx];
+        int copyblock_state = metadata->state[rsvlist_head->head->idx];
+        int new_rc = metadata->invnum[cur->idx];
+        float gc_exec = (float)(PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+        float gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
+        float gc_util = gc_exec/gc_period;
+        if(_find_gc_safe(task,tasknum,metadata,old,taskidx,GC,gc_util,cur->idx,rsvlist_head->head->idx) == -1){
+            cur=cur->next;
+            continue;
+        }
+        //if gc safe passed, check block's age and direct to one of 2 group.
+        if(metadata->state[cur->idx] == old){
+        //if oldest, compare invnum among oldest
+            if(metadata->invnum[cur->idx] > oldest_vic_invalid){
+                oldest_vic_invalid = metadata->invnum[cur->idx];
+                oldest_vic_idx = cur->idx;
+                oldest_vic = cur;
+            }
+        }
+        else{
+        //if not oldest, compare invnum among not oldest. choose the youngest+many inv
+            if(metadata->invnum[cur->idx] > others_vic_invalid){
+                others_vic_invalid = metadata->invnum[cur->idx];
+                others_vic_idx = cur->idx;
+                others_vic = cur;
+            }
+        }
+        cur=cur->next;
+    }
+    //compare two candidate. if invnum of b from oldest > invnum of b from not-oldest + X, choose former.
+    if(oldest_vic == NULL && others_vic == NULL){//none of blocks meet gc_safe.
+        //fall back to baseline GC.
+        cur = full_head->head;
+        vic = cur;
+        while(cur != NULL){
+            if(metadata->invnum[vic->idx] < metadata->invnum[cur->idx]){
+                vic = cur;
+            }
+            cur = cur->next;
+        }
+    }
+    else if(oldest_vic == NULL && others_vic != NULL){ //not possible, but if...
+        vic = others_vic;
+    }
+    else if(others_vic == NULL && oldest_vic != NULL){//if all block has same cyc
+        vic = oldest_vic;
+    }
+    else{//if two group exists, choose the block from oldest only when following eq holds.
+        printf("inv from oldest = %d, inv from others = %d, oldestP/E = %d\n",oldest_vic_invalid,others_vic_invalid,old);
+        if(oldest_vic_invalid > others_vic_invalid + (int)GCGROUP_THRES){ 
+            vic = oldest_vic;
+        }
+        else{
+            vic = others_vic;
+        }
+    }
+    return vic->idx;
 }
 
 block* find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead* fblist_head, bhead* write_head){

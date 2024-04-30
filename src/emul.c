@@ -15,6 +15,7 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     if(metadata->invmap[old_ppa] == 0){
         metadata->invmap[old_ppa] = 1;
         metadata->invnum[old_block] += 1;
+        metadata->invalidation_window[old_block] += 1;
     }
     metadata->vmap_task[old_ppa] = -1;
     metadata->total_invalid++;

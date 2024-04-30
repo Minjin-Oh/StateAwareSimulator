@@ -22,7 +22,7 @@
 #define TPLOCAL 0.95
 
 //workload duration and simulation maximum runtime (in microsecond)
-#define WORKLOAD_LENGTH 16000000000L
+#define WORKLOAD_LENGTH 160000000000L
 #define RUNTIME 10000000000000L
 
 //set number of operation types (used in execution time functions)
@@ -35,7 +35,7 @@
 #define MAXPE 2000
 #define MARGIN 3
 #define THRESHOLD 10
-#define GCGROUP_THRES 25
+#define GCGROUP_THRES 40
 #define OLD 0
 #define YOUNG -1
 #define INITCYC 0
@@ -188,6 +188,7 @@ typedef struct _meta{
     int invnum[NOB];
     int state[NOB];
     int access_window[NOB];             //number of read counts per physical flash block.
+    int invalidation_window[NOB];       //number of update(invalidation) counts per physical flash block.
     int EEC[NOB];
     long GC_locktime[NOB];
     int* read_cnt_task;

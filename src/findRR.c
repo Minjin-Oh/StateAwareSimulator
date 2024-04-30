@@ -350,6 +350,55 @@ void find_RR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     return;
 }
 
+void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
+    block* cur;
+    block* a = NULL;
+    block* b = NULL;
+    int inv_avg = 0;
+
+    for(int i=0;i<NOB;i++){
+        inv_avg += metadata->invalidation_window[i];
+    }
+    inv_avg = inv_avg / NOB;
+    cur = full_head->head;
+    while (cur != NULL){
+        //find hot-old flash blocks(read count >> avg && oldest)
+        if(metadata->invalidation_window[cur->idx] > inv_avg+100){
+            if (a == NULL){
+                a = cur;
+            } 
+            else if (metadata->state[a->idx] < metadata->state[cur->idx]){
+                a = cur;
+            }
+        }
+        //find cold-yng flash blocks(read count << avg && youngest)
+        else if (metadata->invalidation_window[cur->idx] < inv_avg-100){
+            if (b == NULL){
+                b = cur;
+            }
+            else if (metadata->state[b->idx] > metadata->state[cur->idx]){
+                b = cur;
+            }
+        }
+        cur = cur->next;
+    }
+    //edge case handling
+    if(a == NULL || b == NULL){
+        *res1 = -1;
+        *res2 = -1;
+        return;
+    } 
+    else if(metadata->state[a->idx] - metadata->state[b->idx] < THRESHOLD){
+        *res1 = -1;
+        *res2 = -1;
+        return;
+    }
+    //return found block
+    printf("[WR]found block. [%d]state:%d, [%d]state:%d\n",a->idx,metadata->state[a->idx],b->idx,metadata->state[b->idx]);
+    *res1 = a->idx;
+    *res2 = b->idx;
+    return;
+}
 void find_BWR_victim_updatetiming(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res){
     block* cur;
     cur = full_head->head;

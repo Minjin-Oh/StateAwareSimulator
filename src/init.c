@@ -26,6 +26,7 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
         metadata->state[i] = cycle;
         metadata->EEC[i]=0;
         metadata->access_window[i] = 0;
+        metadata->invalidation_window[i] = 0;
         metadata->GC_locktime[i] = 0L;
     }
     for (int i=0;i<LIFESPAN_WINDOW;i++){
