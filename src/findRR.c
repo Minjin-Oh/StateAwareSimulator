@@ -363,7 +363,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     cur = full_head->head;
     while (cur != NULL){
         //find hot-old flash blocks(read count >> avg && oldest)
-        if(metadata->invalidation_window[cur->idx] > inv_avg+100){
+        if(metadata->invalidation_window[cur->idx] > 300){
             if (a == NULL){
                 a = cur;
             } 
@@ -372,7 +372,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
             }
         }
         //find cold-yng flash blocks(read count << avg && youngest)
-        else if (metadata->invalidation_window[cur->idx] < inv_avg-100){
+        else if (metadata->invalidation_window[cur->idx] < 35){
             if (b == NULL){
                 b = cur;
             }
