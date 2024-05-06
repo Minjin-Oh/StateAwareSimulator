@@ -394,7 +394,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
         return;
     }
     //return found block
-    printf("[WR]found block. [%d]state:%d, [%d]state:%d\n",a->idx,metadata->state[a->idx],b->idx,metadata->state[b->idx]);
+    //printf("[WR]found block. [%d]state:%d, [%d]state:%d\n",a->idx,metadata->state[a->idx],b->idx,metadata->state[b->idx]);
     *res1 = a->idx;
     *res2 = b->idx;
     return;

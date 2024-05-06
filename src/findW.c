@@ -1432,9 +1432,9 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         }
 
         _get_jobnum_interval(cur_cp,90000000,task,tasknum,jobnum);
-        for(int i=0;i<tasknum;i++){
-            printf("reqnum : %d\n",jobnum[i]*task[i].wn);
-        }
+        //for(int i=0;i<tasknum;i++){
+        //    printf("reqnum : %d\n",jobnum[i]*task[i].wn);
+        //}
         for(int i=0;i<tasknum;i++){
             req_per_task[i] = (int*)malloc(sizeof(int)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
             updateorders[i] = (long*)malloc(sizeof(long)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
