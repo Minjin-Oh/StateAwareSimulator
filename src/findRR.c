@@ -1,6 +1,8 @@
 #include "stateaware.h"
 
-extern long* lpa_update_timing[NOP];    //global variable which determines 
+extern int THRES_COLD;
+extern int prev_erase;
+extern int prev_mincyc;
 
 void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_head, bhead* hotlist, bhead* coldlist, int* res1, int* res2){
     
@@ -355,10 +357,24 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     block* a = NULL;
     block* b = NULL;
     int inv_avg = 0;
-
+    int cur_erase = 0;
+    int cur_mincyc = 0;
     for(int i=0;i<NOB;i++){
         inv_avg += metadata->invalidation_window[i];
+        cur_erase += metadata->state[i];
     }
+    if(cur_erase / (int)WR_CYC_INTERVAL != prev_erase){
+        prev_erase = cur_erase / (int)WR_CYC_INTERVAL;
+        //redetermine THRES_COLD 
+        cur_mincyc = get_blockstate_meta(metadata,YOUNG);
+        if (cur_mincyc == prev_mincyc){
+            THRES_COLD += 5;
+        }
+        else{
+            prev_mincyc = cur_mincyc;
+        }
+    }
+
     inv_avg = inv_avg / NOB;
     cur = full_head->head;
     while (cur != NULL){
@@ -372,7 +388,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
             }
         }
         //find cold-yng flash blocks(read count << avg && youngest)
-        else if (metadata->invalidation_window[cur->idx] < 35){
+        else if (metadata->invalidation_window[cur->idx] < THRES_COLD){
             if (b == NULL){
                 b = cur;
             }

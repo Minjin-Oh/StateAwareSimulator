@@ -35,7 +35,8 @@
 #define MAXPE 2000
 #define MARGIN 3
 #define THRESHOLD 10
-#define GCGROUP_THRES 40
+#define GCGROUP_THRES 40    //a parameter for TESTGC. used to defer victimizing oldest blocks.
+#define WR_CYC_INTERVAL 5000   //an interval of re-determining write-cold threshold.
 #define OLD 0
 #define YOUNG -1
 #define INITCYC 0
