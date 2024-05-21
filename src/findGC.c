@@ -500,12 +500,14 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             continue;
         }
         //add a blocking utilization, since GC has a chance to change it.
-        
+        //tweak:: as erase execution time becomes step function, approximate blocking with 
         if(metadata->state[cur->idx] == old){
-            gc_util += e_exec(old+1) / (float)min_p;
+            //gc_util += e_exec(old+1) / (float)min_p;
+            gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p;
         }
         else{
-            gc_util += e_exec(old) / (float)min_p;
+            //gc_util += e_exec(old) / (float)min_p;
+            gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p;
         }
         //insert util & block into candidate block list.
         gc_util_arr[vic_num] = gc_util;
