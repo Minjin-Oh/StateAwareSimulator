@@ -3,7 +3,7 @@
 extern int THRES_COLD;
 extern int prev_erase;
 extern int prev_mincyc;
-
+extern int prev_cyc[NOB];
 void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_head, bhead* hotlist, bhead* coldlist, int* res1, int* res2){
     
     //get relocation target
@@ -359,10 +359,34 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     int inv_avg = 0;
     int cur_erase = 0;
     int cur_mincyc = 0;
+    int erase_diff_max = -1;
+    int erase_diff_min = MAXPE;
+    int temp_thres_cold = -1;
+    int temp_thres_hot = -1;
     for(int i=0;i<NOB;i++){
         inv_avg += metadata->invalidation_window[i];
         cur_erase += metadata->state[i];
     }
+    //systematically determine THRES_COLD and THRES_HOT
+    if(cur_erase/(int)WR_CYC_INTERVAL != prev_erase){
+        prev_erase = cur_erase / (int)WR_CYC_INTERVAL;
+        for(int i=0;i<NOB;i++){
+            if(metadata->state[i] - prev_cyc[i] <= erase_diff_min){
+                erase_diff_min = metadata->state[i] - prev_cyc[i];
+                if(temp_thres_cold == -1 || temp_thres_cold < metadata->invalidation_window[i]){
+                    temp_thres_cold = metadata->invalidation_window[i];
+                }
+            }
+            else if (metadata->state[i] - prev_cyc[i] >= erase_diff_max){
+                erase_diff_max = metadata->state[i] - prev_cyc[i];
+                if(temp_thres_hot == -1 || temp_thres_hot > metadata->invalidation_window[i]){
+                    temp_thres_hot = metadata->invalidation_window[i];
+                }
+            }
+        }
+    }
+    /*
+    //hand-picked thres_values + dynamic adjustment 
     if(cur_erase / (int)WR_CYC_INTERVAL != prev_erase){
         prev_erase = cur_erase / (int)WR_CYC_INTERVAL;
         //redetermine THRES_COLD 
@@ -374,12 +398,14 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
             prev_mincyc = cur_mincyc;
         }
     }
-
+    temp_thres_cold = THRES_COLD;
+    temp_thres_hot = 300;
+    */
     inv_avg = inv_avg / NOB;
     cur = full_head->head;
     while (cur != NULL){
         //find hot-old flash blocks(read count >> avg && oldest)
-        if(metadata->invalidation_window[cur->idx] > 300){
+        if(metadata->invalidation_window[cur->idx] > temp_thres_hot){
             if (a == NULL){
                 a = cur;
             } 
@@ -388,7 +414,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
             }
         }
         //find cold-yng flash blocks(read count << avg && youngest)
-        else if (metadata->invalidation_window[cur->idx] < THRES_COLD){
+        else if (metadata->invalidation_window[cur->idx] < temp_thres_cold){
             if (b == NULL){
                 b = cur;
             }

@@ -11,8 +11,11 @@ int rrflag = 0;
 int MINRC;              //minimum reclaimable page, assigned by set_exec_flags in parse.c
 double OP;              //overprovisioning rate, assigned by set_exec_flags in parse.c
 int THRES_COLD = 35;    //a global threshold for write-cold block determination, used in find_WR_target_simple() in findRR.c
+int THRES_HOT = 300;
 int prev_erase = 0;       //a flag for interval specification of threshold update, used in find_WR_target_simple() in findRR.c
 int prev_mincyc = 0;      //a parameter for minimum cycle block comparison, used in find_WR_target_simple() in findRR.c
+int prev_cyc[NOB] = {0, };
+
 #ifdef EXECSTEP
     prof_exec exec_steps;
 #endif

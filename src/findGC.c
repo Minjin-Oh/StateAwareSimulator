@@ -410,7 +410,7 @@ int find_gcweighted(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
 
 
 int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head, bhead* write_head){
-    
+    //!!!find_gc_ has floating point issues
     //sort the victim blocks in order of utilization
     //allocate victim block to GC task proportionally with GC period
     struct timeval a;
@@ -502,12 +502,14 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         //add a blocking utilization, since GC has a chance to change it.
         //tweak:: as erase execution time becomes step function, approximate blocking with 
         if(metadata->state[cur->idx] == old){
-            //gc_util += e_exec(old+1) / (float)min_p;
-            gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p;
+            gc_util += e_exec(old+1) / (float)min_p;
+            //printf("blocking : %f / %f = %f\n",((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE),(float)min_p,((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p);
+            //gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p;
         }
         else{
-            //gc_util += e_exec(old) / (float)min_p;
-            gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p;
+            gc_util += e_exec(old) / (float)min_p;
+            //printf("blocking : %f / %f = %f\n",((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE),(float)min_p,((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p);
+            //gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p;
         }
         //insert util & block into candidate block list.
         gc_util_arr[vic_num] = gc_util;
@@ -566,6 +568,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     //printf("[gcsafe]%d\n",b.tv_sec * 1000000 + b.tv_usec - a.tv_sec * 1000000 - a.tv_usec);
     //EDGE CASE HANDLING : if vic_num is 0, ignore find_gc_safe and add victims.
     if(vic_num == 0){
+        printf("vic_num == 0\n");
         cur = full_head->head;
         while(cur != NULL){
             if(metadata->invnum[cur->idx] < MINRC){
