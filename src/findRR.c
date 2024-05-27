@@ -369,6 +369,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
         cur_erase += metadata->state[i];
     }
     cyc_avg = cyc_avg / NOB;
+    
     //systematically determine THRES_COLD and THRES_HOT
     if(cur_erase/(int)WR_CYC_INTERVAL != prev_erase){
         prev_erase = cur_erase / (int)WR_CYC_INTERVAL;

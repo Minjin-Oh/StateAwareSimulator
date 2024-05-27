@@ -619,7 +619,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             best_idx = vic_arr[i];
         }
     }
-    printf("util:%f\n,best_idx:%d,invnum:%d\n",cur_min_util,best_idx,metadata->invnum[best_idx]);
+    //printf("util:%f\n,best_idx:%d,invnum:%d\n",cur_min_util,best_idx,metadata->invnum[best_idx]);
     gettimeofday(&b,NULL);
 #ifdef utilsort_writecheck
     //testcode:: sort test block list
