@@ -1,6 +1,7 @@
 #include "stateaware.h"
 
 extern int THRES_COLD;
+extern int THRES_HOT;
 extern int prev_erase;
 extern int prev_mincyc;
 extern int prev_cyc[NOB];
@@ -356,7 +357,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     block* cur;
     block* a = NULL;
     block* b = NULL;
-    int inv_avg = 0;
+    int cyc_avg = 0;
     int cur_erase = 0;
     int cur_mincyc = 0;
     int erase_diff_max = -1;
@@ -364,26 +365,44 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     int temp_thres_cold = -1;
     int temp_thres_hot = -1;
     for(int i=0;i<NOB;i++){
-        inv_avg += metadata->invalidation_window[i];
+        cyc_avg += metadata->state[i];
         cur_erase += metadata->state[i];
     }
+    cyc_avg = cyc_avg / NOB;
     //systematically determine THRES_COLD and THRES_HOT
     if(cur_erase/(int)WR_CYC_INTERVAL != prev_erase){
         prev_erase = cur_erase / (int)WR_CYC_INTERVAL;
         for(int i=0;i<NOB;i++){
-            if(metadata->state[i] - prev_cyc[i] <= erase_diff_min){
-                erase_diff_min = metadata->state[i] - prev_cyc[i];
-                if(temp_thres_cold == -1 || temp_thres_cold < metadata->invalidation_window[i]){
+            if(metadata->state[i]<= cyc_avg){
+                if(metadata->state[i] - prev_cyc[i] < erase_diff_min){
+                    //printf("cur state : %d, prev state : %d\n",metadata->state[i],prev_cyc[i]);
+                    //printf("thres_cold = %d\n",metadata->invalidation_window[i]);
+                    erase_diff_min = metadata->state[i] - prev_cyc[i];
                     temp_thres_cold = metadata->invalidation_window[i];
+                
+                }   
+                else if (metadata->state[i] - prev_cyc[i] == erase_diff_min){
+                    if(temp_thres_cold < metadata->invalidation_window[i]){
+                        temp_thres_cold = metadata->invalidation_window[i];
+                        //printf("state : %d==%d,temp_thres_cold : %d\n",metadata->state[i],prev_cyc[i],metadata->invalidation_window[i]);
+                    }
                 }
             }
-            else if (metadata->state[i] - prev_cyc[i] >= erase_diff_max){
-                erase_diff_max = metadata->state[i] - prev_cyc[i];
-                if(temp_thres_hot == -1 || temp_thres_hot > metadata->invalidation_window[i]){
+            if(metadata->state[i]>cyc_avg){
+                if (metadata->state[i] - prev_cyc[i] > erase_diff_max){
+                    erase_diff_max = metadata->state[i] - prev_cyc[i];
                     temp_thres_hot = metadata->invalidation_window[i];
                 }
+                else if (metadata->state[i] - prev_cyc[i] == erase_diff_max){
+                    if(temp_thres_hot > metadata->invalidation_window[i]){
+                        temp_thres_hot = metadata->invalidation_window[i];
+                    }
+                }
             }
+            prev_cyc[i] = metadata->state[i];
         }
+        //printf("erase_diff_min : %d, erase_diff_max : %d\n",erase_diff_min,erase_diff_max);
+        //printf("curthres : %d, %d\n",temp_thres_cold,temp_thres_hot);
     }
     /*
     //hand-picked thres_values + dynamic adjustment 
@@ -401,11 +420,13 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     temp_thres_cold = THRES_COLD;
     temp_thres_hot = 300;
     */
-    inv_avg = inv_avg / NOB;
+    THRES_COLD = temp_thres_cold;
+    THRES_HOT = temp_thres_hot;
+    
     cur = full_head->head;
     while (cur != NULL){
         //find hot-old flash blocks(read count >> avg && oldest)
-        if(metadata->invalidation_window[cur->idx] > temp_thres_hot){
+        if(metadata->invalidation_window[cur->idx] > THRES_HOT){
             if (a == NULL){
                 a = cur;
             } 
@@ -414,7 +435,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
             }
         }
         //find cold-yng flash blocks(read count << avg && youngest)
-        else if (metadata->invalidation_window[cur->idx] < temp_thres_cold){
+        else if (metadata->invalidation_window[cur->idx] < THRES_COLD){
             if (b == NULL){
                 b = cur;
             }

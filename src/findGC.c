@@ -433,7 +433,8 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     int best_invalid = 0;                           //edge case handling param
     int best_idx = -1;                              //return value
     float temp;
-    
+    float cur_min_util = 2.0f;                     //temp variable to store minimum util(GC+blocking)
+
 #ifdef utilsort_writecheck
     //arrays to test write block array
     int test_arr[full_head->blocknum + write_head->blocknum];
@@ -500,16 +501,16 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             continue;
         }
         //add a blocking utilization, since GC has a chance to change it.
-        //tweak:: as erase execution time becomes step function, approximate blocking with 
+        //tweak:: as erase execution time becomes step function, approximate blocking factor
         if(metadata->state[cur->idx] == old){
-            gc_util += e_exec(old+1) / (float)min_p;
+            //gc_util += e_exec(old+1) / (float)min_p;
             //printf("blocking : %f / %f = %f\n",((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE),(float)min_p,((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p);
-            //gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p;
+            gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p;
         }
         else{
-            gc_util += e_exec(old) / (float)min_p;
+            //gc_util += e_exec(old) / (float)min_p;
             //printf("blocking : %f / %f = %f\n",((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE),(float)min_p,((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p);
-            //gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p;
+            gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p;
         }
         //insert util & block into candidate block list.
         gc_util_arr[vic_num] = gc_util;
@@ -598,6 +599,8 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     gettimeofday(&a,NULL);
     
     //sort candidate block list
+    //currently, sorting is negligible to greedily minimize GC overhead
+    /*
     for(int i=vic_num-1;i>0;i--){
         for(int j=0;j<i;j++){
             if(gc_util_arr[j] > gc_util_arr[j+1]){
@@ -609,7 +612,14 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
                 vic_arr[j+1] = temp;
             }
         }
+    }*/
+    for(int i=0;i<vic_num;i++){
+        if(gc_util_arr[i] <= cur_min_util){
+            cur_min_util = gc_util_arr[i];
+            best_idx = vic_arr[i];
+        }
     }
+    printf("util:%f\n,best_idx:%d,invnum:%d\n",cur_min_util,best_idx,metadata->invnum[best_idx]);
     gettimeofday(&b,NULL);
 #ifdef utilsort_writecheck
     //testcode:: sort test block list
@@ -634,7 +644,8 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
 #ifdef UTILSORT_BEST
     cur_offset_int = 0;
 #endif
-    best_idx = vic_arr[cur_offset_int];
+    //currently, sorting is negligible to greedily minimize GC overhead
+    //best_idx = vic_arr[cur_offset_int];
 #ifdef utilsort_writecheck
     int test_cur_offset_int = (int)(cur_offset * (float)test_vicnum);
     int test_best_idx = test_arr[test_cur_offset_int];
