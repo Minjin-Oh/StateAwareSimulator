@@ -378,13 +378,15 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
         for(int i=0;i<NOB;i++){
             if(metadata->state[i]<= cyc_avg){
                 if(metadata->state[i] - prev_cyc[i] < erase_diff_min){
-                    //printf("cur state : %d, prev state : %d\n",metadata->state[i],prev_cyc[i]);
-                    //printf("thres_cold = %d\n",metadata->invalidation_window[i]);
+                    printf("cur state : %d, prev state : %d\n",metadata->state[i],prev_cyc[i]);
+                    printf("thres_cold = %d\n",metadata->invalidation_window[i]);
                     erase_diff_min = metadata->state[i] - prev_cyc[i];
                     temp_thres_cold = metadata->invalidation_window[i];
                 
                 }   
                 else if (metadata->state[i] - prev_cyc[i] == erase_diff_min){
+                    printf("cur state : %d, prev state : %d\n",metadata->state[i],prev_cyc[i]);
+                    printf("thres_cold = %d\n",metadata->invalidation_window[i]);
                     if(temp_thres_cold < metadata->invalidation_window[i]){
                         temp_thres_cold = metadata->invalidation_window[i];
                         //printf("state : %d==%d,temp_thres_cold : %d\n",metadata->state[i],prev_cyc[i],metadata->invalidation_window[i]);
@@ -450,7 +452,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
         }
         cur = cur->next;
     }
-    printf("[WR]hotnum : %d, coldnum : %d\n",hotnum,coldnum);
+    //printf("[WR]hotnum : %d, coldnum : %d\n",hotnum,coldnum);
     //edge case handling
     if(a == NULL || b == NULL){
         *res1 = -1;
