@@ -489,18 +489,14 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     }
 
     //if victim is found, reset access window (or inv window) for future.
-    if(reloc_w == 1){
-        //for(int i=0;i<NOB;i++){
-        //    metadata->invalidation_window[i] = 0;
-        //}
-        metadata->invalidation_window[vic1] = 0;
-        metadata->invalidation_window[vic2] = 0;
-    }
-    else if(reloc_r == 1){
+    if(rrflag == 1){
         for(int i=0;i<NOB;i++){
             metadata->access_window[i] = 0;
         }
+        metadata->invalidation_window[vic1] = 0;
+        metadata->invalidation_window[vic2] = 0;
     }
+    
     //find vb1 and vb2
     cur = full_head->head;
     while(cur != NULL){
