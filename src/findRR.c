@@ -364,6 +364,8 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     int erase_diff_min = MAXPE;
     int temp_thres_cold = -1;
     int temp_thres_hot = -1;
+    int hotnum = 0;
+    int coldnum = 0;
     for(int i=0;i<NOB;i++){
         cyc_avg += metadata->state[i];
         cur_erase += metadata->state[i];
@@ -402,8 +404,10 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
             }
             prev_cyc[i] = metadata->state[i];
         }
-        //printf("erase_diff_min : %d, erase_diff_max : %d\n",erase_diff_min,erase_diff_max);
-        //printf("curthres : %d, %d\n",temp_thres_cold,temp_thres_hot);
+        printf("erase_diff_min : %d, erase_diff_max : %d\n",erase_diff_min,erase_diff_max);
+        printf("curthres : %d, %d\n",temp_thres_cold,temp_thres_hot);
+	THRES_COLD = temp_thres_cold;
+	THRES_HOT = temp_thres_hot;
     }
     /*
     //hand-picked thres_values + dynamic adjustment 
@@ -421,13 +425,12 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     temp_thres_cold = THRES_COLD;
     temp_thres_hot = 300;
     */
-    THRES_COLD = temp_thres_cold;
-    THRES_HOT = temp_thres_hot;
     
     cur = full_head->head;
     while (cur != NULL){
         //find hot-old flash blocks(read count >> avg && oldest)
         if(metadata->invalidation_window[cur->idx] > THRES_HOT){
+	    hotnum++;
             if (a == NULL){
                 a = cur;
             } 
@@ -437,7 +440,8 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
         }
         //find cold-yng flash blocks(read count << avg && youngest)
         else if (metadata->invalidation_window[cur->idx] < THRES_COLD){
-            if (b == NULL){
+            coldnum++;
+	    if (b == NULL){
                 b = cur;
             }
             else if (metadata->state[b->idx] > metadata->state[cur->idx]){
@@ -446,6 +450,7 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
         }
         cur = cur->next;
     }
+    printf("[WR]hotnum : %d, coldnum : %d\n",hotnum,coldnum);
     //edge case handling
     if(a == NULL || b == NULL){
         *res1 = -1;
