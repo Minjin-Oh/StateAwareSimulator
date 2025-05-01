@@ -1,4 +1,5 @@
 #include "IOgen.h"
+#include <unistd.h>
 
 extern long* lpa_update_timing[NOP];
 extern int update_cnt[NOP];
