@@ -8,12 +8,12 @@
 //globals
 block* cur_fb = NULL;
 int rrflag = 0;
-int MINRC;              //minimum reclaimable page, assigned by set_exec_flags in parse.c
-double OP;              //overprovisioning rate, assigned by set_exec_flags in parse.c
+int MINRC;              //minimum reclaimable page, assigned by set_exec_flags in parse.c : 35
+double OP;              //overprovisioning rate, assigned by set_exec_flags in parse.c : 0.32
 int THRES_COLD = 35;    //a global threshold for write-cold block determination, used in find_WR_target_simple() in findRR.c
 int THRES_HOT = 300;
 int prev_erase = 0;       //a flag for interval specification of threshold update, used in find_WR_target_simple() in findRR.c
-int prev_mincyc = 0;      //a parameter for minimum cycle block comparison, used in find_WR_target_simple() in findRR.c
+int prev_mincyc = 0;      //a parameter for minimum cycle block comparison, used in find_WR_target_simple() in findRR.c ((이거 주석처리 되어있음. 더 이상 사용하지 않는 변수인가?)
 int prev_cyc[NOB] = {0, };
 
 #ifdef EXECSTEP
@@ -30,7 +30,7 @@ float sploc;
 float tploc;
 int offset;
 
-//FIXME:: set these as global to expose proportion array to find_write_gradient function
+//FIXME:: set these as global to expose proportion (ratio) array to find_write_gradient function in findW.c
 double* w_prop;
 double* r_prop;
 double* gc_prop;
@@ -208,10 +208,10 @@ int main(int argc, char* argv[]){
         float res = 1.0;
         task_gen_success = 0;
         while(task_gen_success == 0){
-            if(skewness == -1){
-                rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
+            if(skewness == -1){ // UUNIFAST algorithm
+                rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0); 
             }
-            else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
+            else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test. (using the taskparam.csv)
                 rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg,&res);
             }
             else if(skewness >= 0){
