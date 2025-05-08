@@ -20,11 +20,11 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
     double cur_util = (double)tot_util;
     double randfloat = (double)rand()/(double)RAND_MAX;
     for(int i=1;i<tasknum;i++){
-        double nextsum = cur_util * pow(randfloat,1.0/(double)(tasknum-i));
-        utils[i-1] = (float)(cur_util - nextsum);
+        double nextsum = cur_util * pow(randfloat,1.0/(double)(tasknum-i));  // 현재 남아있는 utilization random ratio(pow(...))에 따라서 next total utilization 결정
+		utils[i - 1] = (float)(cur_util - nextsum);  // 현재 남아있는 utilization에서 next total utilization을 빼서 i-1번째 task의 utilization 결정
         cur_util = nextsum;
     }
-    utils[tasknum-1] = cur_util;
+    utils[tasknum-1] = cur_util;  // 마지막 task utilization은 다른 task에 utilization을 할당하고 남은 utilization으로 결정
     //check code
     float test_util_tot=0.0;
     printf("::UUNIFAST GEN::\n");
@@ -71,10 +71,10 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
             wp,wnum,rp,rnum,gcp,util_task[0],util_task[1],__calc_gcu(&(tasks[i]),MINRC,0,0,0));
         
     }
-    float utilsum = 0.0;
-    float WRsum = 0.0;
-    float utilsum_noblock = 0.0;
-    float utilsum_nogc = 0.0;
+	float utilsum = 0.0;  // total utilization (blocking factor + write/read utilization + gc utilization)
+    float WRsum = 0.0;  // write, read utilization
+    float utilsum_noblock = 0.0; // write, read, gc utilization
+    float utilsum_nogc = 0.0;  // blocking factor
     for(int i=0;i<tasknum;i++){
         WRsum += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
         WRsum += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
