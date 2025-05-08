@@ -1,7 +1,7 @@
-#define WR 1
-#define RD 2
-#define GC 3
-#define RR 4
+#define WR 1    // write
+#define RD 2    // read
+#define GC 3    // GC
+#define RR 4    // Read Relocation
 #define GCER 5
 #define RRRE 6
 #define RRWR 7
@@ -62,7 +62,7 @@
 //#define MAXINVALID_RANK_STAT      //assign write pages w.r.t offline profile (use K-means in offline)
 #define MAXINVALID_RANK_DYN         //assign write pages w.r.t dynamically changing criteria.
 #define UTILSORT_BEST               //make find_gc_utilsort function to pick a block with shortest exec time
-//#define EXECSTEP                    //make execution time to increase in step function
+#define EXECSTEP                    //make execution time to increase in step function
 //deprecated params
 //#define DOGCCONTROL
 //#define GCBASE
@@ -76,7 +76,7 @@
 //#define FORCEDNOTHRES
 
 //profiles -- assume linear execution time change
-#define STARTW 713
+#define STARTW 713 // ???
 #define ENDW 663
 #define STARTR 280
 #define ENDR 600
@@ -86,16 +86,16 @@
 #define STAMP 1
 //structure definition
 typedef struct _rttask{
-    int idx;
-    int rp;
-    int rn;
-    int wp;
-    int wn;
-    int gcp;
-    int addr_lb;
-    int addr_ub;
-    float sploc;
-    float tploc;
+    int idx;        // index
+    int rp;         // read period
+	int rn;         // read number
+	int wp;         // write period
+	int wn;     	// write number
+    int gcp;        // GC period
+	int addr_lb;    // logical address lower bound (start point)
+	int addr_ub;    // logical address upper bound (end point)
+    float sploc;    // sptial locality
+	float tploc;    // temporal locality
 }rttask;
 
 
