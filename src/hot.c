@@ -109,7 +109,7 @@ int get_blkidx_byage(meta* metadata, bhead* list,
     return -1;
 }
 
-int get_blockstate_meta(meta* metadata, int param){
+int get_blockstate_meta(meta* metadata, int param){ // from line 541-542 in emul_main.c -> metadata : newmeta, param : YOUNG(-1)/OLD(0)
     // a function to find youngest/oldset block inside whole system
     int ret_state = metadata->state[0];
     if(param == OLD){
