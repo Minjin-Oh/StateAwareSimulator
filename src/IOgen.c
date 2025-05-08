@@ -81,6 +81,7 @@ void IOgen_task(rttask* task, long runtime, int offset, float _splocal, float _t
     fclose(r_fp);
 }
 
+// given the extra information that is write_area and read_area
 void IOgen_task_new(rttask* task, long runtime, int w_area, int r_area, int offset, float _splocal, float _tplocal){
     char name[30];
     char name2[30];
