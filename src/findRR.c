@@ -8,7 +8,7 @@ extern int prev_cyc[NOB];
 void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_head, bhead* hotlist, bhead* coldlist, int* res1, int* res2){
     
     //get relocation target
-    int hot_old = get_blkidx_byage(metadata,hotlist,full_head,0,0);
+    int hot_old = get_blkidx_byage(metadata,hotlist,full_head,0,0);         // read hot? write hot?, old : high P/E cycle
     int hot_young = get_blkidx_byage(metadata,hotlist,full_head,1,0);
     int cold_young = get_blkidx_byage(metadata,coldlist,full_head,1,0);
     int cold_max_eec, hot_min_eec, cold_evict_idx;
@@ -69,6 +69,7 @@ void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_hea
     *res2 = cold_young;
     return;
 }
+
 void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
     int access_avg = 0;
     int cycle_avg = 0;
@@ -170,7 +171,6 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     *res1 = high;
     *res2 = low;
 }
-
 
 void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res1, int* res2){
     int access_avg = 0;
@@ -367,39 +367,39 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     int hotnum = 0;
     int coldnum = 0;
     for(int i=0;i<NOB;i++){
-        cyc_avg += metadata->state[i];
-        cur_erase += metadata->state[i];
+		cyc_avg += metadata->state[i];      // state = P/E cycle ?
+        cur_erase += metadata->state[i];    // total P/E cycle = erase count ?
     }
     cyc_avg = cyc_avg / NOB;
     
-    //systematically determine THRES_COLD and THRES_HOT
-    if(cur_erase/(int)WR_CYC_INTERVAL != prev_erase){
-        prev_erase = cur_erase / (int)WR_CYC_INTERVAL;
+    // systematically determine THRES_COLD and THRES_HOT
+    if (cur_erase / (int)WR_CYC_INTERVAL != prev_erase) {      // (total P/E cycle) / (an interval of re-determining write-cold threshold) 
+        prev_erase = cur_erase / (int)WR_CYC_INTERVAL;         // ??
         for(int i=0;i<NOB;i++){
-            if(metadata->state[i]<= cyc_avg){
-                if(metadata->state[i] - prev_cyc[i] < erase_diff_min){
+			if (metadata->state[i] <= cyc_avg) {   // young block
+                if(metadata->state[i] - prev_cyc[i] < erase_diff_min){     // B_coldest set
                     printf("cur state : %d, prev state : %d\n",metadata->state[i],prev_cyc[i]);
                     printf("thres_cold = %d\n",metadata->invalidation_window[i]);
                     erase_diff_min = metadata->state[i] - prev_cyc[i];
                     temp_thres_cold = metadata->invalidation_window[i];
                 
                 }   
-                else if (metadata->state[i] - prev_cyc[i] == erase_diff_min){
+                else if (metadata->state[i] - prev_cyc[i] == erase_diff_min){   // B_coldest set
                     printf("cur state : %d, prev state : %d\n",metadata->state[i],prev_cyc[i]);
                     printf("thres_cold = %d\n",metadata->invalidation_window[i]);
-                    if(temp_thres_cold < metadata->invalidation_window[i]){
+                    if(temp_thres_cold < metadata->invalidation_window[i]){     // THRES_COLD is maximum invalidation count of set B_coldest
                         temp_thres_cold = metadata->invalidation_window[i];
                         //printf("state : %d==%d,temp_thres_cold : %d\n",metadata->state[i],prev_cyc[i],metadata->invalidation_window[i]);
                     }
                 }
             }
-            if(metadata->state[i]>cyc_avg){
-                if (metadata->state[i] - prev_cyc[i] > erase_diff_max){
+			if (metadata->state[i] > cyc_avg) {     // old block
+				if (metadata->state[i] - prev_cyc[i] > erase_diff_max) {     // B_hotest set
                     erase_diff_max = metadata->state[i] - prev_cyc[i];
                     temp_thres_hot = metadata->invalidation_window[i];
                 }
-                else if (metadata->state[i] - prev_cyc[i] == erase_diff_max){
-                    if(temp_thres_hot > metadata->invalidation_window[i]){
+				else if (metadata->state[i] - prev_cyc[i] == erase_diff_max) {      // B_hotest set
+					if (temp_thres_hot > metadata->invalidation_window[i]) {     // THRES_HOT is minimum invalidation count of set B_hotest
                         temp_thres_hot = metadata->invalidation_window[i];
                     }
                 }
@@ -428,25 +428,26 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
     temp_thres_hot = 300;
     */
     
-    cur = full_head->head;
+	// find hot-old, cold-young block (data swap target blocks)
+    cur = full_head->head;  // full_head : closed block list ?
     while (cur != NULL){
-        //find hot-old flash blocks(read count >> avg && oldest)
+        //find hot-old(write-hot + high P/E cycle) flash blocks(read count >> avg && oldest)
         if(metadata->invalidation_window[cur->idx] > THRES_HOT){
 	    hotnum++;
-            if (a == NULL){
+            if (a == NULL){   // a : previous selected hot-old block
                 a = cur;
             } 
-            else if (metadata->state[a->idx] < metadata->state[cur->idx]){
+			else if (metadata->state[a->idx] < metadata->state[cur->idx]) {     // what is the highest P/E cycle ?
                 a = cur;
             }
         }
-        //find cold-yng flash blocks(read count << avg && youngest)
+        //find cold-yng(write-cold + low P/E cycle) flash blocks(read count << avg && youngest)
         else if (metadata->invalidation_window[cur->idx] < THRES_COLD){
             coldnum++;
-	    if (b == NULL){
+	    if (b == NULL){   // b : previous selected cold-young block
                 b = cur;
             }
-            else if (metadata->state[b->idx] > metadata->state[cur->idx]){
+            else if (metadata->state[b->idx] > metadata->state[cur->idx]){     // what is the lowest P/E cycle ?
                 b = cur;
             }
         }
@@ -459,17 +460,19 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
         *res2 = -1;
         return;
     } 
+	// data swap is possible only when (hot-old block's P/E cycle - cold-young block's P/E cycle) > THRESHOLD
     else if(metadata->state[a->idx] - metadata->state[b->idx] < THRESHOLD){
         *res1 = -1;
         *res2 = -1;
         return;
     }
-    //return found block
+    //return found block (data swap target blocks)
     //printf("[WR]found block. [%d]state:%d, [%d]state:%d\n",a->idx,metadata->state[a->idx],b->idx,metadata->state[b->idx]);
     *res1 = a->idx;
     *res2 = b->idx;
     return;
 }
+
 void find_BWR_victim_updatetiming(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, int* res){
     block* cur;
     cur = full_head->head;
