@@ -62,7 +62,7 @@
 //#define MAXINVALID_RANK_STAT      //assign write pages w.r.t offline profile (use K-means in offline)
 #define MAXINVALID_RANK_DYN         //assign write pages w.r.t dynamically changing criteria.
 #define UTILSORT_BEST               //make find_gc_utilsort function to pick a block with shortest exec time
-#define EXECSTEP                    //make execution time to increase in step function
+//#define EXECSTEP                    //make execution time to increase in step function
 //deprecated params
 //#define DOGCCONTROL
 //#define GCBASE

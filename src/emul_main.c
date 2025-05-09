@@ -280,6 +280,11 @@ int main(int argc, char* argv[]){
     tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
     FILE* main_taskparam = fopen("taskparam.csv","r");
     FILE* locfile = fopen("loc.csv","r");
+    if (locfile == NULL){
+        fprintf(stderr, "Error: Failed to open file %s\n", "loc.csv");
+	perror("fopen");
+	exit(EXIT_FAILURE);
+    }
     get_task_from_file(tasks,tasknum,main_taskparam);
     get_loc_from_file(tasks,tasknum,locfile);
     fclose(main_taskparam);
@@ -546,7 +551,7 @@ int main(int argc, char* argv[]){
             //printf("cur_u:%f\n",total_u);
             //utilization overflow(exit code)
             if(total_u >= 1.0){                
-                printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
+                printf("[%ld]utilization overflow 1, util : %f\n",cur_cp, total_u);
                 gettimeofday(&tot_end_time,NULL);
                 tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
                 tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
@@ -602,7 +607,7 @@ int main(int argc, char* argv[]){
                     //utilization overflow(exit code)
                     
                     if(total_u > 1.0){
-                        printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
+                        printf("[%ld]utilization overflow 2, util : %f\n",cur_cp, total_u);
                         gettimeofday(&tot_end_time,NULL);
                         tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
                         tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;

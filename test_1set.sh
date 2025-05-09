@@ -2,8 +2,8 @@
 ### ./statesimul.out W_POLICY GC_POLICY RR_POLICY TASKNUM TASKUTIL SKEWFLAG T_LOC S_LOC SKEWNUM INITCYC
 
 ./statesimul.out NO NO NO TASKGEN 4 0.3 -1 -2.0 -2.0 0
-./statesimul.out NO NO NO WORKGEN 4 0.3 -1 -2.0 -2.0 0
-mkdir ./timing
+./statesimul.out NO NO NO WORKGEN 4 0.3 -1 -1.0 -1.0 0
+### mkdir ./timing
 cd ./timing
 find . -maxdepth 1 -name '*.csv' -delete
 cd ../
