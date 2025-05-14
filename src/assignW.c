@@ -59,27 +59,27 @@ block* assign_write_dynwl(rttask* task, int taskidx, int tasknum, meta* metadata
     //2. choose youngest block in fblist or wblist.
     if(youngest_fb_idx != -1 && youngest_wb_idx != -1){
         //both list has at least 1 component.
-        if(metadata->state[youngest_fb_idx] < metadata->state[youngest_wb_idx]){
-            ret = ll_remove(fblist_head,youngest_fb_idx);
+        if(metadata->state[youngest_fb_idx] < metadata->state[youngest_wb_idx]){ // free block의 P/E cycle이 더 적은 경우, 새로운 block 할당
+            ret = ll_remove(fblist_head,youngest_fb_idx); 
             ll_append(write_head,ret);
             return ret;
-        } else {
+        } else { // write block의 P/E cycle이 더 적은 경우, 기존 write block list에서 꺼내서 씀
             ret = ll_find(metadata,write_head,YOUNG);
             return ret;
         }
     }
-    else if (youngest_fb_idx != -1 && youngest_wb_idx == -1){
+    else if (youngest_fb_idx != -1 && youngest_wb_idx == -1){ // write block list에 할당된 블록이 없음 (free block에서 할당)
         //no write block, so we must get new free block.
         ret = ll_remove(fblist_head,youngest_fb_idx);
         ll_append(write_head,ret);
         return ret;
     }
-    else if (youngest_fb_idx == -1 && youngest_wb_idx != -1){
+    else if (youngest_fb_idx == -1 && youngest_wb_idx != -1){ // free block list에 여유 블록이 없음 (write block에 있는 블록 사용)
         //no free block, so we must use current write block.
         ret = ll_find(metadata,write_head,YOUNG);
         return ret;
     }
-    else if (youngest_fb_idx == -1 && youngest_wb_idx == -1){
+    else if (youngest_fb_idx == -1 && youngest_wb_idx == -1){ // free block list, write block list 모두 사용 가능한 블록이 없음 (즉, full block)
         //full??
         printf("ssd full\n");
         abort();

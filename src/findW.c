@@ -367,6 +367,7 @@ int __calc_time_diff(struct timeval a, struct timeval b){
     int usec = (b.tv_usec - a.tv_usec);
     return sec+usec;
 }
+
 long abs_long(long x){
     if (x < 0L){
         return -x;
@@ -986,7 +987,6 @@ int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metad
     return best_idx;
 }
 
-
 int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, int flag){
     //params
     int* candidate_arr = (int*)malloc(sizeof(int)*(write_head->blocknum+fblist_head->blocknum));
@@ -1311,7 +1311,6 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     return res;
 }
 
-
 int __calc_invorder_file(int pagenum, meta* metadata, long cur_lpa_timing, long workload_reset_time, int curfp){
     int invalid_per_lpa = 0;
     int ret = 0;
@@ -1394,7 +1393,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     long cur_lpa_timing;
     int cnt = 0;
     int curfp = metadata->total_fp;
-    int old = get_blockstate_meta(metadata,OLD);
+    int old = get_blockstate_meta(metadata,OLD); // a function to find oldset block inside whole system
 #ifndef TIMING_ON_MEM    
     sprintf(name,"./timing/%d.csv",w_lpas[idx]);
     cur_lpa_timing_file = fopen(name,"r");
@@ -1604,19 +1603,23 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     cur_lpa_timing += workload_reset_time;
     fclose(cur_lpa_timing_file);
 #endif
+
     gettimeofday(&b,NULL);
     gettimeofday(&a,NULL);
+
 #ifdef TIMING_ON_MEM
     cnt = __calc_invorder_mem(max_valid_pg, metadata, cur_lpa_timing, workload_reset_time, curfp);
 #endif
 #ifndef TIMING_ON_MEM
     cnt = __calc_invorder_file(max_valid_pg,metadata,cur_lpa_timing,workload_reset_time,curfp);
 #endif
+
     if(cnt >= curfp){
         longlive = 1;
         tot_longlive_cnt++;
     }
     gettimeofday(&b,NULL);
+
 #ifdef MAXINVALID_RANK_STAT
     int rank = __get_rank(cnt,metadata);
     int ret_b_idx;
@@ -1659,6 +1662,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     printf("[MAXINV]write block alloc error!\n");
     abort();
 #endif
+
 #ifdef MAXINVALID_RANK_FIXED
     gettimeofday(&a,NULL);
     if(longlive == 1){//edgecase:: free page is not enough to handle target lpa

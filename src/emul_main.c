@@ -40,7 +40,7 @@ FILE** w_workloads;
 FILE** r_workloads;
 
 //FIXME:: set these as global to expose log file pointers and system parameters
-long cur_cp;
+long cur_cp; // ??
 int max_valid_pg;
 int tot_longlive_cnt = 0;
 FILE **fps;
@@ -151,7 +151,7 @@ int main(int argc, char* argv[]){
     char gcjob_finished[tasknum];
     char wjob_deferred[tasknum];
     long releasetime_deferred[tasknum];
-    for(int i=0;i<tasknum;i++){
+    for(int i=0;i<tasknum;i++){ // 1(yes), 0(no)
         wq[i] = ll_init_IO();
         rq[i] = ll_init_IO();
         gcq[i]= ll_init_IO();
@@ -290,6 +290,7 @@ int main(int argc, char* argv[]){
     fclose(main_taskparam);
     fclose(locfile);    
 
+// save the update timing and frequency of LPA
 #ifdef TIMING_ON_MEM
     int prof_targ_lpa;
     int wn_count = 0;
@@ -335,7 +336,6 @@ int main(int argc, char* argv[]){
     }
     IO_close(tasknum,w_workloads,r_workloads);
 #endif
-
 
     //LPA PROFILE GENERATOR CODE
     //profile LPA invalidation pattern(per each address)
@@ -463,13 +463,13 @@ int main(int argc, char* argv[]){
     //initialize blocklist for blockmanage.
     init_metadata(newmeta,tasknum, init_cyc);
 
-#ifdef GC_ON_WRITEBLOCK
+#ifdef GC_ON_WRITEBLOCK  // write 시점에 GC trigger (GC에 사용할 reserved block이 없음)
     fblist_head = init_blocklist(0,NOB-1);
     rsvlist_head = init_blocklist(0,-1);
 #endif
-#ifndef GC_ON_WRITEBLOCK
-    fblist_head = init_blocklist(0, NOB-tasknum-1);
-    rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);
+#ifndef GC_ON_WRITEBLOCK  // classic GC scheduling 기반
+    fblist_head = init_blocklist(0, NOB-tasknum-1);     // free block list
+    rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);   // reserved block list : for using GC copy
 #endif
     
     full_head = init_blocklist(0,-1);//generate 0 component ll.
@@ -665,7 +665,7 @@ int main(int argc, char* argv[]){
                             next_gc_release[cur_IO->taskidx] = cur_cp;
                         }
                         for(int a=0;a<tasknum;a++){
-                            if(wjob_deferred[a] == 1){
+                            if(wjob_deferred[a] == 1){ // 지연된 write job이 있는지 확인
                                 wjob_deferred[a] = 0;
                                 //if current write is delayed, check if write release is possible
                                 if(cur_cp >= cur_IO->deadline){
@@ -701,21 +701,21 @@ int main(int argc, char* argv[]){
         //job release logic
         //release I/O task jobs
         for(int j=0;j<tasknum;j++){
-            if(newmeta->total_fp < newmeta->reserved_write + tasks[j].wn){
-                printf("%d task write deferred\n",j);
+            if(newmeta->total_fp < newmeta->reserved_write + tasks[j].wn){  // free page < write request page
+                printf("%d task write deferred\n",j);  // delay the write request due to the GC for reclaiming the free page
                 wjob_deferred[j] = 1;
             }
-            if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){
+            if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){ // previous write job finish, no delayed write job
                 gettimeofday(&(algo_start_time),NULL);
                 cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
                                               fblist_head, full_head, write_head,
-                                              w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
+                                              w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp); // return last access block
                 write_release_num++;
                 gettimeofday(&(algo_end_time),NULL);
                 //printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                 write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-                next_w_release[j] = cur_cp + (long)tasks[j].wp;
-                wjob_finished[j] = 0;
+                next_w_release[j] = cur_cp + (long)tasks[j].wp; // next write request는 write period 후에 release
+                wjob_finished[j] = 0; // 수행 중인 write request가 있음을 나타내는 flag
             } 
             else if (cur_cp == next_w_release[j] && wjob_finished[j] == 0){
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
@@ -724,7 +724,7 @@ int main(int argc, char* argv[]){
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
             }
 
-            if(cur_cp == next_r_release[j] && rjob_finished[j] == 1){
+            if(cur_cp == next_r_release[j] && rjob_finished[j] == 1){ // previous read job finish and new read request release
                 //printf("next r : %ld, cur cp : %ld, rjob : %d\n",next_r_release[j],cur_cp,rjob_finished[j]);
                 read_job_start_q(tasks,j,newmeta,
                                  r_workloads[j],rq[j], cur_cp);

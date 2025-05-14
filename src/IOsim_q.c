@@ -93,7 +93,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     float exec_sum = 0.0, period = (float)tasks[taskidx].wp;
     
     for(int i=0;i<tasks[taskidx].wn;i++){
-        lpas[i] = IOget(fp_w);
+        lpas[i] = IOget(fp_w); // fp_w : wr_t%d.csv
         if(lpas[i] == EOF){
             //if returned value is EOF
             //1. reset file & read first data.
@@ -117,13 +117,13 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                 //do nothing
             }
         }
-        if(wflag == 0){
+        if(wflag == 0){ // argv[2] == NO
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        } else if(wflag == 11){
+        } else if(wflag == 11){ // argv[2] == MOTIVALLY
             cur = assign_write_dynwl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        } else if(wflag == 12 || wflag == 13){
+        } else if(wflag == 12 || wflag == 13){ // argv[2] == GRADW or GRADW_MOD
             cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
-        } else if(wflag == 14){
+        } else if(wflag == 14){ // argv[2] == INVW
             cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,cur_cp);
         }
         block* checktemp = fblist_head->head; 
@@ -176,7 +176,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
 #ifdef IOTIMING
         IO_timing_update(metadata,lpa,metadata->write_cnt_per_cycle[lpa],cur_cp);
 #endif
-        if(i != tasks[taskidx].wn-1){
+        if(i != tasks[taskidx].wn-1){ // last request flag check
             req->islastreq = 0;    
         } else {
             req->islastreq = 1;
