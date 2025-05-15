@@ -549,7 +549,7 @@ int main(int argc, char* argv[]){
         if(cur_cp % 1000000L == 0){
             total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
             //printf("cur_u:%f\n",total_u);
-            //utilization overflow(exit code)
+            //utilization overflow 1(exit code)
             if(total_u >= 1.0){                
                 printf("[%ld]utilization overflow 1, util : %f\n",cur_cp, total_u);
                 gettimeofday(&tot_end_time,NULL);
@@ -578,10 +578,11 @@ int main(int argc, char* argv[]){
                 return 1;
             }
         }
+        // max P/E cycle overflow (exit code)
         for(int idx=0;idx<NOB;idx++){
             if(newmeta->state[idx] >= MAXPE){
                 total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-                printf("[%ld]a block reach maximum P/E, util : %d\n",total_u);
+                printf("[%ld]a block reach maximum P/E, util : %d\n", cur_cp, total_u);
                 fprintf(fplife,"%ld,",cur_cp);
                 sleep(1);
                 return 1;
@@ -604,8 +605,7 @@ int main(int argc, char* argv[]){
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
                                     newmeta->total_fp,cur_IO->gc_valid_count);
-                    //utilization overflow(exit code)
-                    
+                    //utilization overflow 2(exit code)
                     if(total_u > 1.0){
                         printf("[%ld]utilization overflow 2, util : %f\n",cur_cp, total_u);
                         gettimeofday(&tot_end_time,NULL);
@@ -640,6 +640,7 @@ int main(int argc, char* argv[]){
                 if(cur_IO->last == 1){
                     //check I/O latency
                     check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
+                    // deadline miss overflow (exit code)
                     if(check_dl_violation(tasks,cur_IO,cur_cp)==1){
                         fprintf(fplife,"%ld,",cur_cp);
                         fflush(fplife);

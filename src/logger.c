@@ -45,7 +45,7 @@ FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
     FILE** fps;
     fps = (FILE**)malloc(sizeof(FILE*)*(tasknum+tasknum+2));
     char name[100];
-    if(wflag == 0 && gcflag == 0 && rrflag == -1){
+    if(wflag == 0 && gcflag == 0 && rrflag == -1){ // noWL
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_no_t%d.csv",i);
             fps[i] = fopen(name,"w");
@@ -382,7 +382,7 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     state_var = sqrt(state_var);
     total_u_noblock = total_u;
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
-    //print all infos
+    //print all infos (prof_{no, WLcomb, ours}_t%d.csv)
     fprintf(fp,"%ld,%d, %f,%f,%f,%f,%f,%f, %d,%d, %d,%d,%d,%d, %d,%d, %d,%d, %f,%f,%f, %f, %lf\n",
     cur_cp,taskidx,
     worst_util,total_u, total_u_noblock,
@@ -724,7 +724,7 @@ float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* 
     float total_u_noblock = 0.0;
     //find worst case util w.r.t system-wise worst block
     
-    for(int j=0;j<tasknum;j++){//0 = write, 2 = GC
+    for(int j=0;j<tasknum;j++){//0 = write, 1 = read, 2 = GC
         total_u += metadata->runutils[0][j];
         total_w += metadata->runutils[0][j];
         total_u += metadata->runutils[1][j];
@@ -744,7 +744,7 @@ float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* 
     }
     state_var = state_var / NOB;
     state_var = sqrt(state_var);
-    //print all infos
+    //print all infos (rrchecker.csv)
     fprintf(fp,"%ld,%f,%d,%d,%lf,%lf\n",
     cur_cp,total_u,old,yng,state_avg,state_var); 
     return total_u;

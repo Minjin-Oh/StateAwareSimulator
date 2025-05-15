@@ -3,6 +3,7 @@
         "stateaware.h": "c",
         "types.h": "c",
         "findw.h": "c",
-        "init.h": "c"
+        "init.h": "c",
+        "iogen.h": "c"
     }
 }
