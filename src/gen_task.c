@@ -48,6 +48,10 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
 #endif
     //assign wn, wp, rn, rp according to utilization & make taskset
     tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
+    if(tasks==NULL){
+        fprintf(stderr, "Error: Failed to allocate memory for tasks\n");
+        exit(EXIT_FAILURE);
+    }
     for(int i=0;i<tasknum;i++){
         //portion inside taskset
         wratio = rand()%9 + 1;
@@ -209,7 +213,7 @@ rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* res
     
     //generate util for each task
     for(int i=0;i<tasknum;i++){
-        float rand_u = (float)(rand()%(int)(rand_portion*1000)) / 1000.0;
+        float rand_u = (float)(rand()%(int)(rand_portion*1000)) / 1000.0; // 0.000~0.004
         if(i<skewnum){
             w_util[i] = rand_u + offset;
             r_util[i] = per_task_portion - w_util[i];

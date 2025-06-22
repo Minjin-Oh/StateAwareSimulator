@@ -43,151 +43,155 @@ FILE* open_file_bycase(int gcflag, int wflag, int rrflag){
 FILE* open_file_pertask(int gcflag, int wflag, int rrflag, int tasknum){
     //file per each task + 1 file for hot data distribution profiling
     FILE** fps;
-    fps = (FILE**)malloc(sizeof(FILE*)*(tasknum+tasknum+2));
+    fps = (FILE**)malloc(sizeof(FILE*)*(tasknum+1));
     char name[100];
     if(wflag == 0 && gcflag == 0 && rrflag == -1){ // noWL
         for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_no_t%d.csv",i);
+            sprintf(name,"no_prof_t%d.csv",i);
             fps[i] = fopen(name,"w");
+            if (fps[i] == NULL){
+                perror("fopen failed");
+                exit(1);
+            }
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_no_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_no_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_no_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_no_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_no_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_no_invdist.csv","w");
     } 
     else if(wflag == 11 && gcflag == 0 && rrflag == -1){//dynWL
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_dynWL_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_dynWL_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_dynWL_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_dynWL_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_dynWL_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_dynWL_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_dynWL_invdist.csv","w");
     }
     else if(wflag == 0  && gcflag == 0 && rrflag ==  0){//staticWL
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_statWL_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_statWL_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_statWL_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_statWL_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_statWL_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_statWL_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_statWL_invdist.csv","w");
     }
     else if(wflag == 11 && gcflag == 0 && rrflag ==  0){//WLcomb
         for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_WLcomb_t%d.csv",i);
+            sprintf(name,"WLcomb_prof_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_WLcomb_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_WLcomb_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_WLcomb_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_WLcomb_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_WLcomb_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_WLcomb_invdist.csv","w");
     }
     else if(wflag == 14 && gcflag == 6 && rrflag ==  1){//ours
         for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_ours_t%d.csv",i);
+            sprintf(name,"ours_prof_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_ours_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_ours_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_ours_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_ours_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_ours_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_ours_invdist.csv","w");
     }
     else if(wflag == 14 && gcflag == 0 && rrflag == -1){//Wonly
         for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_wonly_t%d.csv",i);
+            sprintf(name,"wonly_prof_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_wonly_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_wonly_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_wonly_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_wonly_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_wonly_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_wonly_invdist.csv","w");
     }
     else if(wflag == 0  && gcflag == 6 && rrflag == -1){//GConly
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_gconly_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_gconly_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_gconly_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_gconly_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_gconly_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_gconly_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_gconly_invdist.csv","w");
     }
     else if(wflag == 0  && gcflag == 0 && rrflag ==  1){//RRonly
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_rronly_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_rronly_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_rronly_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_rronly_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_rronly_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_rronly_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_rronly_invdist.csv","w");
     }
     else if(wflag == 14 && gcflag == 6 && rrflag == -1){//W+GC
         for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_wgc_t%d.csv",i);
+            sprintf(name,"wgc_prof_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_wgc_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_wgc_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_wgc_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_wgc_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_wgc_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_wgc_invdist.csv","w");
     }
     else if (rrflag == 1 && gcflag == 6 && wflag == 0){//GC+RR
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_gcrr_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_gcrr_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_gcrr_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_gcrr_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_gcrr_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_gcrr_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_gcrr_invdist.csv","w");
     } 
     else if (gcflag == 0 && wflag == 14 && rrflag == 1){//W+RR
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_wrr_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_wrr_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_wrr_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_wrr_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_wrr_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_wrr_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_wrr_invdist.csv","w");
     }   
     else {
         for(int i=0;i<tasknum;i++){
             sprintf(name,"prof_new_t%d.csv",i);
             fps[i] = fopen(name,"w");
         }
-        for(int i=0;i<tasknum;i++){
-            sprintf(name,"prof_new_wlog%d.csv",i);
-            fps[tasknum+i] = fopen(name,"w");
-        }
-        fps[tasknum+tasknum] = fopen("prof_new_fbdist.csv","w");
-        fps[tasknum+tasknum+1] = fopen("prof_new_invdist.csv","w");
+        // for(int i=0;i<tasknum;i++){
+        //     sprintf(name,"prof_new_wlog%d.csv",i);
+        //     fps[tasknum+i] = fopen(name,"w");
+        // }
+        // fps[tasknum+tasknum] = fopen("prof_new_fbdist.csv","w");
+        // fps[tasknum+tasknum+1] = fopen("prof_new_invdist.csv","w");
     }
     return fps;
 }
@@ -363,13 +367,13 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     //find current util w.r.t actual blocks
     
     for(int j=0;j<tasknum;j++){//0 = write, 2 = GC
-        total_u += metadata->runutils[0][j];
+        total_u += metadata->runutils[0][j]; // total write utilization
         total_w += metadata->runutils[0][j];
-        total_u += metadata->runutils[1][j];
+        total_u += metadata->runutils[1][j]; // total read utilization
         total_r += metadata->runutils[1][j];
-        total_u += metadata->runutils[2][j];
+        total_u += metadata->runutils[2][j]; // total GC utilization
         total_gc += metadata->runutils[2][j];
-        //printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
+        // printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
     }
     for(int i=0;i<NOB;i++){
         state_tot += metadata->state[i];
@@ -381,14 +385,14 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     state_var = state_var / NOB;
     state_var = sqrt(state_var);
     total_u_noblock = total_u;
-    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum); // extra blocking factor
     //print all infos (prof_{no, WLcomb, ours}_t%d.csv)
     fprintf(fp,"%ld,%d, %f,%f,%f,%f,%f,%f, %d,%d, %d,%d,%d,%d, %d,%d, %d,%d, %f,%f,%f, %f, %lf\n",
     cur_cp,taskidx,
     worst_util,total_u, total_u_noblock,
-    metadata->runutils[0][taskidx],
-    metadata->runutils[1][taskidx],
-    metadata->runutils[2][taskidx],
+    metadata->runutils[0][taskidx], // taskidx의 write utilization
+    metadata->runutils[1][taskidx], // read utilization
+    metadata->runutils[2][taskidx], // GC utilization
     old,yng,
     cur_gc_idx,cur_gc_state,getfp,gcvalidcount,
     cur_wb->idx,metadata->state[cur_wb->idx],

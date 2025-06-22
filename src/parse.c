@@ -154,6 +154,6 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
         *cyc = 0;
     }
     //!!!overprovisioning rate and minimum reclaimable page is hardcoded in set_exec_flags!!!
-    *OP = 0.32;
+    *OP = 0.25;
     *MINRC = 35;
 }

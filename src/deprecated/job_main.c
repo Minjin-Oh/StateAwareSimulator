@@ -146,10 +146,10 @@ int main(int argc, char* argv[]){
     //init csv files
     w_workload = fopen("workload_w.csv","r");
     r_workload = fopen("workload_r.csv","r");
-    rr_profile = fopen("rr_prof.csv","w");
+    // rr_profile = fopen("rr_prof.csv","w");
     IO_open(tasknum, w_workloads,r_workloads);
     fprintf(fp,"%s\n","timestamp,taskidx,WU,new_WU,w_util,r_util,g_util,old,yng,bidx,state,vp");
-    fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
+    // fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
     fprintf(fpread,"%s\n","timestamp");
     
     //initialize blocklist for blockmanage.

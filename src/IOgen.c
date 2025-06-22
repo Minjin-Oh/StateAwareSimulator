@@ -421,21 +421,91 @@ void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
     //printf("%d next_update_time : %ld, offset : %ld\n",lpa,metadata->next_update[lpa],offset);
 }
 
-void lat_open(int tasknum, FILE** wlpp, FILE** rlpp, FILE** gclpp){
-    for(int i=0;i<tasknum;i++){
-        char name[20];
-        sprintf(name,"lat_w%d.csv",i);
-        wlpp[i] = fopen(name,"w");
+void lat_open(int gcflag, int wflag, int rrflag, int tasknum, FILE** wlpp, FILE** rlpp, FILE** gclpp){
+    if(wflag == 0 && gcflag == 0 && rrflag == -1){ // noWL
+        for(int i=0;i<tasknum;i++){
+            char name[20];
+            sprintf(name,"no_lat_w%d.csv",i);
+            wlpp[i] = fopen(name,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name2[20];
+            sprintf(name2,"no_lat_r%d.csv",i);
+            rlpp[i] = fopen(name2,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name3[20];
+            sprintf(name3,"no_lat_gc%d.csv",i);
+            gclpp[i] = fopen(name3,"w");
+        }
     }
-    for(int i=0;i<tasknum;i++){
-        char name2[20];
-        sprintf(name2,"lat_r%d.csv",i);
-        rlpp[i] = fopen(name2,"w");
+    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){//WLcomb
+        for(int i=0;i<tasknum;i++){
+            char name[20];
+            sprintf(name,"WLcomb_lat_w%d.csv",i);
+            wlpp[i] = fopen(name,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name2[20];
+            sprintf(name2,"WLcomb_lat_r%d.csv",i);
+            rlpp[i] = fopen(name2,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name3[20];
+            sprintf(name3,"WLcomb_lat_gc%d.csv",i);
+            gclpp[i] = fopen(name3,"w");
+        }
     }
-    for(int i=0;i<tasknum;i++){
-        char name3[20];
-        sprintf(name3,"lat_gc%d.csv",i);
-        gclpp[i] = fopen(name3,"w");
+    else if(wflag == 14 && gcflag == 0 && rrflag == -1){//Wonly
+        for(int i=0;i<tasknum;i++){
+            char name[20];
+            sprintf(name,"wonly_lat_w%d.csv",i);
+            wlpp[i] = fopen(name,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name2[20];
+            sprintf(name2,"wonly_lat_r%d.csv",i);
+            rlpp[i] = fopen(name2,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name3[20];
+            sprintf(name3,"wonly_lat_gc%d.csv",i);
+            gclpp[i] = fopen(name3,"w");
+        }
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag == -1){//W+GC
+        for(int i=0;i<tasknum;i++){
+            char name[20];
+            sprintf(name,"wgc_lat_w%d.csv",i);
+            wlpp[i] = fopen(name,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name2[20];
+            sprintf(name2,"wgc_lat_r%d.csv",i);
+            rlpp[i] = fopen(name2,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name3[20];
+            sprintf(name3,"wgc_lat_gc%d.csv",i);
+            gclpp[i] = fopen(name3,"w");
+        }
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){//ours
+        for(int i=0;i<tasknum;i++){
+            char name[20];
+            sprintf(name,"ours_lat_w%d.csv",i);
+            wlpp[i] = fopen(name,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name2[20];
+            sprintf(name2,"ours_lat_r%d.csv",i);
+            rlpp[i] = fopen(name2,"w");
+        }
+        for(int i=0;i<tasknum;i++){
+            char name3[20];
+            sprintf(name3,"ours_lat_gc%d.csv",i);
+            gclpp[i] = fopen(name3,"w");
+        }
     }
 }
 

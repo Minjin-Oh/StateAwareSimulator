@@ -84,9 +84,9 @@ int main(int argc, char* argv[]){
     //open csv files for profiling and workload
     w_workload = fopen("workload_w.csv","r");
     r_workload = fopen("workload_r.csv","r");
-    rr_profile = fopen("rr_prof.csv","w");
+    // rr_profile = fopen("rr_prof.csv","w");
     fprintf(fp,"%s\n","timestamp,taskidx,WU,actual_WU,w_util,w_wc,r_util,r_wc,g_util,g_wc,old,yng,std,gc_limit");
-    fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
+    // fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
     
     //initialize blocklist for blockmanage.
     init_metadata(newmeta,tasknum);

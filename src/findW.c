@@ -1376,7 +1376,7 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
         }
         ret += invalid_per_lpa;
     }
-    fprintf(updateorder_fp,"%d,\n",ret);
+    // fprintf(updateorder_fp,"%d,\n",ret);
     return ret;
 }
 

@@ -377,20 +377,21 @@ void find_WR_target_simple(rttask* tasks, int tasknum, meta* metadata, bhead* fb
         prev_erase = cur_erase / (int)WR_CYC_INTERVAL;         // ??
         for(int i=0;i<NOB;i++){
 			if (metadata->state[i] <= cyc_avg) {   // young block
-                if(metadata->state[i] - prev_cyc[i] < erase_diff_min){     // B_coldest set
+                if(metadata->state[i] - prev_cyc[i] < erase_diff_min){     // young block 중에서 가장 낮은 P/E cycle 증가율을 보이는 블록을 선택
                     printf("cur state : %d, prev state : %d\n",metadata->state[i],prev_cyc[i]);
                     printf("thres_cold = %d\n",metadata->invalidation_window[i]);
                     erase_diff_min = metadata->state[i] - prev_cyc[i];
-                    temp_thres_cold = metadata->invalidation_window[i];
+                    temp_thres_cold = metadata->invalidation_window[i]; // invalidation count
                 
                 }   
-                else if (metadata->state[i] - prev_cyc[i] == erase_diff_min){   // B_coldest set
+                else if (metadata->state[i] - prev_cyc[i] == erase_diff_min){   // P/E cycle 증가율이 현재 최소 증가율과 같은 경우, invalidation count가 가장 낮은 블록을 선택
                     printf("cur state : %d, prev state : %d\n",metadata->state[i],prev_cyc[i]);
-                    printf("thres_cold = %d\n",metadata->invalidation_window[i]);
                     if(temp_thres_cold < metadata->invalidation_window[i]){     // THRES_COLD is maximum invalidation count of set B_coldest
+                        printf("thres_cold = %d\n",metadata->invalidation_window[i]);
                         temp_thres_cold = metadata->invalidation_window[i];
                         //printf("state : %d==%d,temp_thres_cold : %d\n",metadata->state[i],prev_cyc[i],metadata->invalidation_window[i]);
                     }
+                    printf("thres_cold = %d\n",temp_thres_cold);
                 }
             }
 			if (metadata->state[i] > cyc_avg) {     // old block

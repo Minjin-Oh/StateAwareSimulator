@@ -181,7 +181,7 @@ int main(int argc, char* argv[]){
     double write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg;
     
     //TEMPCODE::open file for invfull block check.
-    longliveratio_fp = fopen("longliveratio.csv","w");
+    // longliveratio_fp = fopen("longliveratio.csv","w");
 
     //enable following two lines in a case to check util per cycle.
     //randtask_statechecker(tasknum,8000);
@@ -237,6 +237,10 @@ int main(int argc, char* argv[]){
             }
         }
         FILE* taskparams = fopen("taskparam.csv","w");
+        // if (taskparams == NULL) {
+        //     perror("fopen taskparam.csv");
+        //     exit(EXIT_FAILURE);
+        // }
         for(int i=0;i<tasknum;i++){
             printf("saving %d,%d,%d,%d,%d,%d,%d\n",rand_tasks[i].wn,rand_tasks[i].wp,rand_tasks[i].rn,rand_tasks[i].rp,rand_tasks[i].gcp,
                 rand_tasks[i].addr_lb,rand_tasks[i].addr_ub);
@@ -446,16 +450,38 @@ int main(int argc, char* argv[]){
 
     //init csv files
     fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
-    rr_profile = fopen("rr_prof.csv","w");
-    fplife = fopen("lifetime.csv","a");
-    fpovhd = fopen("overhead.csv","a");
-    updateorder_fp = fopen("updateorder.csv", "w");
+    // rr_profile = fopen("rr_prof.csv","w");
+
+    if(wflag == 0 && gcflag == 0 && rrflag == -1){ // noWL
+        fplife = fopen("no_lifetime.csv","a");
+        fpovhd = fopen("no_overhead.csv","a");
+    }
+    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){//WLcomb
+        fplife = fopen("WLcomb_lifetime.csv","a");
+        fpovhd = fopen("WLcomb_overhead.csv","a");
+    }
+    else if(wflag == 14 && gcflag == 0 && rrflag == -1){//Wonly
+        fplife = fopen("wonly_lifetime.csv","a");
+        fpovhd = fopen("wonly_overhead.csv","a");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag == -1){//W+GC
+        fplife = fopen("wgc_lifetime.csv","a");
+        fpovhd = fopen("wgc_overhead.csv","a");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){//ours
+        fplife = fopen("ours_lifetime.csv","a");
+        fpovhd = fopen("ours_overhead.csv","a");
+    }
+
+    // updateorder_fp = fopen("updateorder.csv", "w");
     IO_open(tasknum, w_workloads,r_workloads);
-    lat_open(tasknum, lat_log_w,lat_log_r,lat_log_gc);
+
+    // lat_{no, WLcomb, ours}_{w, r, gc}%d.csv
+    lat_open(gcflag, wflag, rrflag, tasknum, lat_log_w,lat_log_r,lat_log_gc);
     for(int i=0;i<tasknum;i++){
         fprintf(fps[i],"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp,w_idx,w_state,fb,w");
     }
-    fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
+    // fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
     if(gcflag == 1 && wflag == 1 && rrflag == 1){
         fprintf(fplife,"\n"); 
     }
@@ -531,7 +557,24 @@ int main(int argc, char* argv[]){
     printf("\n");
     sleep(5);
     //run simulation
-    FILE* u_check = fopen("rrchecker.csv","w");
+
+    // rrchecker.csv
+    FILE* u_check = NULL;
+    if(wflag == 0 && gcflag == 0 && rrflag == -1){ // noWL
+        u_check = fopen("no_rrchecker.csv","w");
+    }
+    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){//WLcomb
+        u_check = fopen("WLcomb_rrchecker.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 0 && rrflag == -1){//Wonly
+        u_check = fopen("wonly_rrchecker.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag == -1){//W+GC
+        u_check = fopen("wgc_rrchecker.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){//ours
+        u_check = fopen("ours_rrchecker.csv","w");
+    }
 #ifdef utilsort_writecheck
     for(int i=0;i<4;i++){
         char testgcwriteblockname[20];
@@ -539,7 +582,23 @@ int main(int argc, char* argv[]){
         test_gc_writeblock[i] = fopen(testgcwriteblockname,"w");
     }
 #endif
-    updaterate_fp = fopen("updaterate.csv","w");
+
+    // updaterate.csv
+    if(wflag == 0 && gcflag == 0 && rrflag == -1){ // noWL
+        updaterate_fp = fopen("no_updaterate.csv","w");
+    }
+    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){//WLcomb
+        updaterate_fp = fopen("WLcomb_updaterate.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 0 && rrflag == -1){//Wonly
+        updaterate_fp = fopen("wonly_updaterate.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag == -1){//W+GC
+        updaterate_fp = fopen("wgc_updaterate.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){//ours
+        updaterate_fp = fopen("ours_updaterate.csv","w");
+    }
     gettimeofday(&(tot_start_time),NULL);
     //start of simulation
     while(cur_cp <= RUNTIME){
