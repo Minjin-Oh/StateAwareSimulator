@@ -117,13 +117,14 @@ void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
     vicidx = cur_IO->vic_idx;
     rsvidx = cur_IO->rsv_idx;
 
-    //reset metadata for pages
+    // 1. reset metadata for pages
     for(int i=0;i<PPB;i++){
         metadata->rmap[(vicidx)*PPB+i]=-1;
         metadata->invmap[(vicidx)*PPB+i]=0;
         metadata->vmap_task[(vicidx)*PPB+i]=-1;
     }
-    //reset metadata for block
+
+    // 2. reset metadata for block
     metadata->invnum[vicidx] = 0;
     metadata->access_window[vicidx] = 0;
     metadata->state[vicidx]++;

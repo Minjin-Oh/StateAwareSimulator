@@ -49,6 +49,7 @@ FILE *updaterate_fp;
 FILE *longliveratio_fp;
 FILE *updateorder_fp;
 FILE *getupdateorder_fp;
+// FILE *PEC_profile;
 
 //FIXME:: set these as global to expose global write block to assign_write_invalid function
 bhead* glob_yb;
@@ -61,6 +62,8 @@ int cur_length[NOP];
 int init_length = 10;
 
 int main(int argc, char* argv[]){
+    int exit_code = 0;
+
     //init params
     srand(time(NULL)); 
     bhead* fblist_head = NULL;                             //heads for block list
@@ -211,11 +214,11 @@ int main(int argc, char* argv[]){
             if(skewness == -1){ // UUNIFAST algorithm
                 rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0); 
             }
-            else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test. (using the taskparam.csv)
-                rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg,&res);
-            }
+            // else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test. (using the taskparam.csv)
+            //     rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg,&res);
+            // }
             else if(skewness >= 0){
-                rand_tasks = generate_taskset_skew2(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
+                rand_tasks = generate_taskset_skew(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
             }
             else if(skewness == -3){ //manually assign w/r utilization for each task. edit parameters for test.
                 rand_tasks = generate_taskset_fixed(max_valid_pg,&res);
@@ -257,7 +260,8 @@ int main(int argc, char* argv[]){
             fflush(init_cycs);
             fclose(init_cycs);
         }
-        return 0;
+        exit_code = 0;
+        goto CLEANUP;
     }
     
     //WORKLOAD GENERATOR CODE  
@@ -273,7 +277,8 @@ int main(int argc, char* argv[]){
         IOgen(tasknum,rand_tasks,WORKLOAD_LENGTH,offset,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
-        return 0;
+        exit_code = 0;
+        goto CLEANUP;
     }
 
     //init task 
@@ -361,7 +366,8 @@ int main(int argc, char* argv[]){
                 }
             }
         }
-        return 0;
+        exit_code = 0;
+        goto CLEANUP;
     }
     //LPA PROFILE GENERATOR CODE 2
     //profile LPA invalidation pattern in one file for plotting + profile GC pattern for plotting
@@ -438,7 +444,8 @@ int main(int argc, char* argv[]){
         }
         fclose(IO_scatter_file);
         fclose(GC_scatter_file);
-        return 0;
+        exit_code = 0;
+        goto CLEANUP;
     }
 
     //(deprecated)run gradient tests for write in offline, and assign offset value for WGRAD policy.
@@ -446,12 +453,63 @@ int main(int argc, char* argv[]){
 
     //init csv files
     fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
-    rr_profile = fopen("rr_prof.csv","w");
+    // rr_profile = fopen("rr_prof.csv","w");
     fplife = fopen("lifetime.csv","a");
     fpovhd = fopen("overhead.csv","a");
-    updateorder_fp = fopen("updateorder.csv", "w");
+    // updateorder_fp = fopen("updateorder.csv", "w");
+    if(wflag == 0 && gcflag == 0 && rrflag == -1){ // noWL
+        rr_profile = fopen("no_rr_prof.csv","w");
+        updateorder_fp = fopen("no_updateorder.csv", "w");
+
+        // PEC_profile = fopen("no_PEC.csv","w");
+        // fprintf(PEC_profile, "ts");
+        // for (int i = 0; i < NOB; i++) fprintf(PEC_profile, ",pe[%d]", i);
+        // fprintf(PEC_profile, "\n");
+        // fflush(PEC_profile);
+    }
+    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){//WLcomb
+        rr_profile = fopen("WLcomb_rr_prof.csv","w");
+        updateorder_fp = fopen("WLcomb_updateorder.csv", "w");
+        
+        // PEC_profile = fopen("WLcomb_PEC.csv","w");
+        // fprintf(PEC_profile, "ts");
+        // for (int i = 0; i < NOB; i++) fprintf(PEC_profile, ",pe[%d]", i);
+        // fprintf(PEC_profile, "\n");
+        // fflush(PEC_profile);
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag == -1){//W+GC
+        rr_profile = fopen("wgc_rr_prof.csv","w");
+        updateorder_fp = fopen("wgc_updateorder.csv", "w");
+
+        // PEC_profile = fopen("wgc_PEC.csv","w");
+        // fprintf(PEC_profile, "ts");
+        // for (int i = 0; i < NOB; i++) fprintf(PEC_profile, ",pe[%d]", i);
+        // fprintf(PEC_profile, "\n");
+        // fflush(PEC_profile);
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){//ours
+        rr_profile = fopen("ours_rr_prof.csv","w");
+        updateorder_fp = fopen("ours_updateorder.csv", "w");
+
+        // PEC_profile = fopen("ours_PEC.csv","w");
+        // fprintf(PEC_profile, "ts");
+        // for (int i = 0; i < NOB; i++) fprintf(PEC_profile, ",pe[%d]", i);
+        // fprintf(PEC_profile, "\n");
+        // fflush(PEC_profile);
+    }
+    else{
+        rr_profile = fopen("dyn_rr_prof.csv", "w");
+        updateorder_fp = fopen("dyn_updateorder.csv", "w");
+
+        // PEC_profile = fopen("dyn_PEC.csv","w");
+        // fprintf(PEC_profile, "ts");
+        // for (int i = 0; i < NOB; i++) fprintf(PEC_profile, ",pe[%d]", i);
+        // fprintf(PEC_profile, "\n");
+        // fflush(PEC_profile);
+    }
+
     IO_open(tasknum, w_workloads,r_workloads);
-    lat_open(tasknum, lat_log_w,lat_log_r,lat_log_gc);
+    lat_open(gcflag,wflag,rrflag,tasknum, lat_log_w,lat_log_r,lat_log_gc);
     for(int i=0;i<tasknum;i++){
         fprintf(fps[i],"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp,w_idx,w_state,fb,w");
     }
@@ -531,7 +589,32 @@ int main(int argc, char* argv[]){
     printf("\n");
     sleep(5);
     //run simulation
-    FILE* u_check = fopen("rrchecker.csv","w");
+    // rrchecker.csv
+    FILE* u_check = NULL;
+    if(wflag == 0 && gcflag == 0 && rrflag == -1){ // noWL
+        u_check = fopen("no_rrchecker.csv","w");
+        updaterate_fp = fopen("no_updaterate.csv","w");
+    }
+    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){//WLcomb
+        u_check = fopen("WLcomb_rrchecker.csv","w");
+        updaterate_fp = fopen("WLcomb_updaterate.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 0 && rrflag == -1){//Wonly
+        u_check = fopen("wonly_rrchecker.csv","w");
+        updaterate_fp = fopen("wonly_updaterate.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag == -1){//W+GC
+        u_check = fopen("wgc_rrchecker.csv","w");
+        updaterate_fp = fopen("wgc_updaterate.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){//ours
+        u_check = fopen("ours_rrchecker.csv","w");
+        updaterate_fp = fopen("ours_updaterate.csv","w");
+    }
+    else{
+        u_check = fopen("dyn_rrcheckers.csv", "w");
+        updaterate_fp = fopen("dyn_updaterate.csv","w");
+    }
 #ifdef utilsort_writecheck
     for(int i=0;i<4;i++){
         char testgcwriteblockname[20];
@@ -541,58 +624,68 @@ int main(int argc, char* argv[]){
 #endif
     updaterate_fp = fopen("updaterate.csv","w");
     gettimeofday(&(tot_start_time),NULL);
-    //start of simulation
+
+    // !!! start of simulation !!!
     while(cur_cp <= RUNTIME){
+
+        // 1. 한 바퀴 돌 때마다 전체 블록의 PEC를 profiling하고, lowest, highest PEC를 check
         yngest = get_blockstate_meta(newmeta,YOUNG);
         oldest = get_blockstate_meta(newmeta,OLD);
-        //flash state checker
+
+        // 2. flash state checker
+        // 2-(1). 1000000us마다 profile 정보 저장
         if(cur_cp % 1000000L == 0){
             total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
             //printf("cur_u:%f\n",total_u);
             //utilization overflow 1(exit code)
-            if(total_u >= 1.0){                
-                printf("[%ld]utilization overflow 1, util : %f\n",cur_cp, total_u);
-                gettimeofday(&tot_end_time,NULL);
-                tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
-                tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
-                if(write_release_num != 0){
-                    write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
-                } else {
-                    write_ovhd_avg = 0;
-                }
-                if(gc_release_num != 0){
-                    gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
-                } else {
-                    gc_ovhd_avg = 0;
-                }
-                if(rr_release_num != 0){
-                    rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
-                } else {
-                    rr_ovhd_avg = 0;
-                }
-                fprintf(fplife,"%ld,",cur_cp);
-                fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-                fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
-                print_profile_updaterate(newmeta,updaterate_fp);
-                sleep(1);
-                return 1;
-            }
+            // if(total_u >= 1.0){                
+            //     printf("[%ld]utilization overflow 1, util : %f\n",cur_cp, total_u);
+            //     gettimeofday(&tot_end_time,NULL);
+            //     tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
+            //     tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
+            //     if(write_release_num != 0){
+            //         write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
+            //     } else {
+            //         write_ovhd_avg = 0;
+            //     }
+            //     if(gc_release_num != 0){
+            //         gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
+            //     } else {
+            //         gc_ovhd_avg = 0;
+            //     }
+            //     if(rr_release_num != 0){
+            //         rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
+            //     } else {
+            //         rr_ovhd_avg = 0;
+            //     }
+            //     fprintf(fplife,"%ld,",cur_cp);
+            //     fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
+            //     fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
+            //     print_profile_updaterate(newmeta,updaterate_fp);
+            //     if (PEC_profile) { fclose(PEC_profile); PEC_profile = NULL; }
+            //     sleep(1);
+            //     exit_code = 1;
+            //         goto CLEANUP;
+            // }
         }
-        // max P/E cycle overflow (exit code)
+
+        // 2-(2). max P/E cycle overflow (exit code)
         for(int idx=0;idx<NOB;idx++){
             if(newmeta->state[idx] >= MAXPE){
                 total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
                 printf("[%ld]a block reach maximum P/E, util : %d\n", cur_cp, total_u);
                 fprintf(fplife,"%ld,",cur_cp);
+                // if (PEC_profile) { fclose(PEC_profile); PEC_profile = NULL; }
                 sleep(1);
-                return 1;
+                exit_code = 1;
+                goto CLEANUP;
             } else {
                 /*do nothing*/
             }
         }
         //execution order must be (req completion --> job release --> req pick)
         
-        //req completion logic
+        // 3. req completion logic
         if(cur_IO_end == cur_cp){
             if(cur_IO != NULL){
                 //a logic to handle I/O to finish
@@ -605,35 +698,37 @@ int main(int argc, char* argv[]){
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
                                     newmeta->total_fp,cur_IO->gc_valid_count);
-                    //utilization overflow 2(exit code)
-                    if(total_u > 1.0){
-                        printf("[%ld]utilization overflow 2, util : %f\n",cur_cp, total_u);
-                        gettimeofday(&tot_end_time,NULL);
-                        tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
-                        tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
-                        if(write_release_num != 0){
-                            write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
-                        } else {
-                            write_ovhd_avg = 0;
-                        }
-                        if(gc_release_num != 0){
-                            gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
-                        } else {
-                            gc_ovhd_avg = 0;
-                        }
-                        if(rr_release_num != 0){
-                            rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
-                        } else {
-                            rr_ovhd_avg = 0;
-                        }
-                        fprintf(fplife,"%ld,",cur_cp);
-                        fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-                        fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
-                        print_profile_updaterate(newmeta,updaterate_fp);
-                        sleep(1);
-                        return 1;
+                    // utilization overflow 2(exit code)
+                    // if(total_u > 1.0){
+                    //     printf("[%ld]utilization overflow 2, util : %f\n",cur_cp, total_u);
+                    //     gettimeofday(&tot_end_time,NULL);
+                    //     tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
+                    //     tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
+                    //     if(write_release_num != 0){
+                    //         write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
+                    //     } else {
+                    //         write_ovhd_avg = 0;
+                    //     }
+                    //     if(gc_release_num != 0){
+                    //         gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
+                    //     } else {
+                    //         gc_ovhd_avg = 0;
+                    //     }
+                    //     if(rr_release_num != 0){
+                    //         rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
+                    //     } else {
+                    //         rr_ovhd_avg = 0;
+                    //     }
+                    //     fprintf(fplife,"%ld,",cur_cp);
+                    //     fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
+                    //     fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
+                    //     print_profile_updaterate(newmeta,updaterate_fp);
+                    //     if (PEC_profile) { fclose(PEC_profile); PEC_profile = NULL; }
+                    //     sleep(1);
+                    //     exit_code = 1;
+                    //     goto CLEANUP;
                         
-                    }
+                    // }
                 }
                 
                 //if last req is finished, do the following
@@ -645,11 +740,13 @@ int main(int argc, char* argv[]){
                         fprintf(fplife,"%ld,",cur_cp);
                         fflush(fplife);
                         printf("dl miss detected,");
+                        // if (PEC_profile) { fclose(PEC_profile); PEC_profile = NULL; }
                         sleep(1);
-                        return 1;
+                        exit_code = 1;
+                        goto CLEANUP;
                     }
-                    //set finish flags for scheduler, 
-                    //and if current job is delayed, check if next release is possible.
+                    // set finish flags for scheduler, 
+                    // and if current job is delayed, check if next release is possible.
                     if(cur_IO->type == WR){
                         wjob_finished[cur_IO->taskidx] = 1;
                         if(cur_cp > cur_IO->deadline){
@@ -699,82 +796,107 @@ int main(int argc, char* argv[]){
             }
         }
 
-        //job release logic
-        //release I/O task jobs
+        // 4. job release logic
+        // 4-(1). release I/O task jobs (실제 실행하는 것 X, release job을 request queue에 저장하는 과정)
         for(int j=0;j<tasknum;j++){
+
+            // 4-(1)-1. write job을 실행하기에 충분한 free page가 있는지 먼저 확인
+            //   (free page < write request page) 이면 write job을 release하는 걸 delay
             if(newmeta->total_fp < newmeta->reserved_write + tasks[j].wn){  // free page < write request page
                 printf("%d task write deferred\n",j);  // delay the write request due to the GC for reclaiming the free page
                 wjob_deferred[j] = 1;
             }
-            if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){ // previous write job finish, no delayed write job
-                gettimeofday(&(algo_start_time),NULL);
-                cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
-                                              fblist_head, full_head, write_head,
-                                              w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp); // return last access block
-                write_release_num++;
-                gettimeofday(&(algo_end_time),NULL);
-                //printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
-                write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-                next_w_release[j] = cur_cp + (long)tasks[j].wp; // next write request는 write period 후에 release
-                wjob_finished[j] = 0; // 수행 중인 write request가 있음을 나타내는 flag
-            } 
-            else if (cur_cp == next_w_release[j] && wjob_finished[j] == 0){
-                next_w_release[j] = cur_cp + (long)tasks[j].wp;
-            } 
-            else if (cur_cp == next_w_release[j] && wjob_deferred[j] == 1){
-                next_w_release[j] = cur_cp + (long)tasks[j].wp;
-            }
 
-            if(cur_cp == next_r_release[j] && rjob_finished[j] == 1){ // previous read job finish and new read request release
-                //printf("next r : %ld, cur cp : %ld, rjob : %d\n",next_r_release[j],cur_cp,rjob_finished[j]);
-                read_job_start_q(tasks,j,newmeta,
-                                 r_workloads[j],rq[j], cur_cp);
-                next_r_release[j] = cur_cp + (long)tasks[j].rp;
-                rjob_finished[j] = 0;
-            } 
-            else if (cur_cp == next_r_release[j] && rjob_finished[j] == 0){
-                next_r_release[j] = cur_cp + (long)tasks[j].rp;
-            }
-
-            if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){          
-                if(newmeta->total_fp <= expected_fp){
-                    //printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
-                    //printf("total_fp : %d, expected_fp : %d\n",newmeta->total_fp,expected_fp);
-                    //printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
+            // 4-(1)-2. write job release (cur_cp == next_w_release[idx])
+            if(cur_cp == next_w_release[j]){
+                // 1-(1). previous write job finish, no delayed write job
+                if (wjob_finished[j] == 1 && wjob_deferred[j] == 0){
                     gettimeofday(&(algo_start_time),NULL);
-                    gc_job_start_q(tasks, j, tasknum, newmeta,
-                               fblist_head, full_head, rsvlist_head, write_head, 0,
-                               gcq[j], &(cur_GC[j]), gcflag, cur_cp);
-                    gc_release_num++;
+                    cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
+                                                fblist_head, full_head, write_head,
+                                                w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp); // return last access block
+                    write_release_num++;
                     gettimeofday(&(algo_end_time),NULL);
-                    //printf("gcovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
-                    gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-                    gcjob_finished[j] = 0;
-                    next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
-                } 
-                else {
-                    next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
-                    gcjob_finished[j] = 1;
+                    //printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+                    write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+                    next_w_release[j] = cur_cp + (long)tasks[j].wp; // next write request는 write period 후에 release
+                    wjob_finished[j] = 0; // 수행 중인 write request가 있음을 나타내는 flag
+                }
+                // 2-(2). previous write job is not finished (wjob_finished[idx] == 0)
+                // 2-(3). delayed write job remains (wjob_deferred[idx] == 1)
+                else if (wjob_finished[j] == 0 || wjob_deferred[j] == 1){
+                    next_w_release[j] = cur_cp + (long)tasks[j].wp;
                 }
             } 
-            else if (cur_cp == next_gc_release[j] && gcjob_finished[j] == 0){
-                next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
+            
+            // 4-(1)-3. read job release (cur_cp == next_r_release[idx])
+            if(cur_cp == next_r_release[j]){
+                // 3-(1). previous read job finish and new read request release
+                if (rjob_finished[j] == 1){ 
+                //printf("next r : %ld, cur cp : %ld, rjob : %d\n",next_r_release[j],cur_cp,rjob_finished[j]);
+                    read_job_start_q(tasks,j,newmeta,
+                                    r_workloads[j],rq[j], cur_cp);
+                    next_r_release[j] = cur_cp + (long)tasks[j].rp;
+                    rjob_finished[j] = 0;
+                } 
+                // 3-(2). previous read job is not finished
+                else if (rjob_finished[j] == 0){
+                    next_r_release[j] = cur_cp + (long)tasks[j].rp;
+                }
             }
+
+            // 4-(1)-4. gc job release (cur_cp == next_gc_release[idx])
+            if(cur_cp == next_gc_release[j]){
+                // 4-(1). previous gc job finish
+                if(gcjob_finished[j] == 1){          
+                    if(newmeta->total_fp <= expected_fp){
+                        //printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
+                        //printf("total_fp : %d, expected_fp : %d\n",newmeta->total_fp,expected_fp);
+                        //printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
+                        
+                        // GC release 시점의 시간 check
+                        gettimeofday(&(algo_start_time),NULL);
+                        // gc_job_start_q(tasks, j, tasknum, newmeta,
+                        //         fblist_head, full_head, rsvlist_head, write_head, 0,
+                        //         gcq[j], &(cur_GC[j]), gcflag, cur_cp, PEC_profile);
+                        gc_job_start_q(tasks, j, tasknum, newmeta,
+                                    fblist_head, full_head, rsvlist_head, write_head, 0,
+                                    gcq[j], &(cur_GC[j]), gcflag, cur_cp);
+                        gc_release_num++;
+                        gettimeofday(&(algo_end_time),NULL);
+                        //printf("gcovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+                        gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+                        next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
+                        gcjob_finished[j] = 0;
+                    }
+                    else {
+                        next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
+                        gcjob_finished[j] = 1;
+                    }
+                }
+                // 4-(2). previous gc job is not finished
+                else if (gcjob_finished[j] == 0){
+                    next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
+                }
+            }  
         }
-        //release WL jobs
+
+        // 4-(2).release WL jobs
+        // 4-(2)-1. relocation start 조건 확인 (PEC variation이 큰가?)
         if(oldest-yngest >= THRESHOLD){//wl start signal
             wl_init = 1;
         }
+        // 4-(2)-2. relocation request 생성
         if((do_rr == 1) && (rr_finished == 1) && (rr->head == NULL) && (rrflag != -1) && (wl_init == 1)){
             if(hot_cold_list == 0){
                 build_hot_cold(newmeta,hotlist,coldlist);
                 hot_cold_list = 1;
             }
-            //rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
-            rrutil = -1.0; //override util so that WL always run in background mode.
+            rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
+            // rrutil = -1.0; //override util so that WL always run in background mode.
             gettimeofday(&(algo_start_time),NULL);
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
-                            rr,&(cur_rr),(double)rrutil,cur_cp);
+                            rr,&(cur_rr),(double)rrutil,cur_cp, skewnum);
             rr_release_num++;
             gettimeofday(&(algo_end_time),NULL);
             //printf("rrovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
@@ -787,40 +909,15 @@ int main(int argc, char* argv[]){
             }
             do_rr = 0;
         }
-        /*
-        //release BWR jobs if possible
-        //check if every queue is empty
-        qempty_bwr_flag = 1;
-        for(int k=0;k<tasknum;k++){
-            if(wq[k]->reqnum != 0 || rq[k]->reqnum != 0 || gcq[k]->reqnum != 0){
-                qempty_bwr_flag = 0;
-                break;
-            }
-        }
-        if(rr->reqnum != 0){
-            qempty_bwr_flag = 0;
-        }
         
-        if(qempty_bwr_flag == 1 && IO_end_bwr_flag == 1 && wr_end_bwr_flag == 1){
-            printf("[bwr]queuestat : %c, IO_end_bwr_flag : %c, wr_end_bwr_flag : %c\n",qempty_bwr_flag, IO_end_bwr_flag, wr_end_bwr_flag);
-            printf("[bwr]cur_cp : %ld\n",cur_cp);
-            //release BWR job
-
-            BWR_job_start_q(tasks,tasknum,newmeta,fblist_head,full_head,write_head,bwr,cur_cp);
-            //reset qempty flag and IO end flag
-            qempty_bwr_flag = 1;
-            IO_end_bwr_flag = 0;
-            wr_end_bwr_flag = 0;
-        }
-        */
-        //req pick logic
+        // 5. req pick logic
         if(cur_IO == NULL){
-            //init params
+            // 5-1. init params
             long cur_dl = __LONG_MAX__;
             int target_task = -1;
             int target_type = -1;
 
-            //iterate through per-task queues and pick the I/O with earliest deadline.
+            // 5-2. iterate through per-task queues and pick the I/O with earliest deadline.
             //operation priority is RR < GC < W < R.
             //note that deadline is updated when dl is "less than " cur_dl
             if(rr->head != NULL){
@@ -861,8 +958,8 @@ int main(int argc, char* argv[]){
                         cur_dl = rq[k]->head->deadline;
                     }
                 }
-            }
-            //pop IO from target task's queue
+        }
+            // 5-3. pop IO from target task's queue
             if(target_type == RD){
                 cur_IO = ll_pop_IO(rq[target_task]);  
             }
@@ -880,7 +977,7 @@ int main(int argc, char* argv[]){
                 printf("[BWR]pop BWR, %ld\n",cur_cp);
             }
 
-            //if something's popped out, update cur_IO_end
+            // 5-4. if something's popped out, update cur_IO_end
             if(cur_IO != NULL){
                 cur_IO_end = cur_cp + cur_IO->exec;
             }
@@ -889,7 +986,9 @@ int main(int argc, char* argv[]){
             }
         }
         
-        //go to the next checkpoint
+        // 6. go to the next checkpoint
+        // cur_cp는 앞에서 EDF scheduling에 따라 실행된 job이 끝난 지점으로 jump되어 있음
+        // jump한 시점보다 더 앞에 release되어야 할 job이 있다면, 해당 시점으로 cur_cp를 jump
         cur_cp = find_next_time(tasks,tasknum,cur_IO_end,rr_check,cur_cp,
                                 next_w_release,next_r_release,next_gc_release);
         //printf("[fnt res]next_time : %ld\n",cur_cp);
@@ -897,6 +996,57 @@ int main(int argc, char* argv[]){
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
     fprintf(fplife,"%ld,",cur_cp);
     fflush(fplife);
+    // if (PEC_profile) { fclose(PEC_profile); PEC_profile = NULL; }
     sleep(1);
-    return 0;
+    
+    CLEANUP:
+    // 1) 진행 중 I/O 있으면 정리
+    // cur_IO는 finish_req에서 free하지만, 혹시 남아있으면 방어적으로 free
+    if (cur_IO) { free(cur_IO); cur_IO = NULL; }
+
+    // 2) 각종 로그 파일 닫기 (열었던 것만)
+    // 예: if (u_check) fclose(u_check);
+    //     if (fplife) fclose(fplife);
+    //     if (fpovhd) fclose(fpovhd);
+    //     for (int i = 0; i < tasknum; i++) if (fps && fps[i]) fclose(fps[i]);
+    //     lat_close(...) 유틸이 있다면 호출
+
+    // 3) I/O 큐들 free: per-task heads + 단일 head
+    if (wq) {
+        for (int i = 0; i < tasknum; i++) if (wq[i]) ll_free_IO(wq[i]);
+        free(wq);
+        wq = NULL;
+    }
+    if (rq) {
+        for (int i = 0; i < tasknum; i++) if (rq[i]) ll_free_IO(rq[i]);
+        free(rq);
+        rq = NULL;
+    }
+    if (gcq) {
+        for (int i = 0; i < tasknum; i++) if (gcq[i]) ll_free_IO(gcq[i]);
+        free(gcq);
+        gcq = NULL;
+    }
+    // 단일 큐 head
+    if (rr)  { ll_free_IO(rr);  rr  = NULL; }
+    if (bwr) { ll_free_IO(bwr); bwr = NULL; }
+
+    // 4) 비율 배열 free
+    if (w_prop) { free(w_prop); w_prop = NULL; }
+    if (r_prop) { free(r_prop); r_prop = NULL; }
+    if (gc_prop){ free(gc_prop); gc_prop = NULL; }
+
+    // 5) task 메모리 free
+    if (rand_tasks) { free(rand_tasks); rand_tasks = NULL; }
+    if (tasks)      { free(tasks);      tasks = NULL; }
+
+    // 6) workload 파일 배열 free (IO_open/IO_close가 파일을 닫는다면, 여기서는 배열만 free)
+    if (w_workloads) { free(w_workloads); w_workloads = NULL; }
+    if (r_workloads) { free(r_workloads); r_workloads = NULL; }
+
+    // 7) metadata free (destroy 함수가 있으면 그걸 호출)
+    // if (newmeta) destroy_metadata(newmeta);
+    if (newmeta) { free(newmeta); newmeta = NULL; }
+
+    return exit_code;
 }

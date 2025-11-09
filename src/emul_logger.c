@@ -41,3 +41,11 @@ int check_dl_violation(rttask* tasks, IO* cur_IO, long cur_cp){
         return 0;
     }
 }
+
+void pec_dump_snapshot(FILE *fp, const meta *m, long ts) {
+    if (!fp || !m) return;
+    fprintf(fp, "%ld", ts);
+    for (int i = 0; i < NOB; i++) fprintf(fp, ",%d", m->state[i]);
+    fputc('\n', fp);
+    fflush(fp);
+}
