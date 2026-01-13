@@ -3,8 +3,7 @@
 extern int MINRC;
 
 rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_util, int cycle){
-    //params
-    //what about address??
+    // params
     float utils[tasknum];
     float util_task[2];
     int util_ratio[tasknum];
@@ -15,7 +14,7 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
     char pass = 0;
     rttask* tasks;
 
-    //generate a portion for each task
+    // generate a portion for each task
 #ifdef UUNIFAST
     double cur_util = (double)tot_util;
     double randfloat = (double)rand()/(double)RAND_MAX;
@@ -25,7 +24,7 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
         cur_util = nextsum;
     }
     utils[tasknum-1] = cur_util;  // 마지막 task utilization은 다른 task에 utilization을 할당하고 남은 utilization으로 결정
-    //check code
+    // check code
     float test_util_tot=0.0;
     printf("::UUNIFAST GEN::\n");
     for(int i=0;i<tasknum;i++){
@@ -46,48 +45,133 @@ rttask* generate_taskset(int tasknum, float tot_util, int addr, float* result_ut
         utils[i] = ((float)util_ratio[i]/(float)util_ratio_sum) * tot_util;
     }
 #endif
-    //assign wn, wp, rn, rp according to utilization & make taskset
+
+    // assign wn, wp, rn, rp according to utilization & make taskset
     tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
+
     for(int i=0;i<tasknum;i++){
-        //portion inside taskset
+        // portion inside taskset
         wratio = rand()%9 + 1;
         rratio = 10 - wratio;
-        //generate a taskset
+        // generate a taskset
         util_task[0] = utils[i] * (float)wratio / 10.0;
         util_task[1] = utils[i] * (float)rratio / 10.0;
         
-        //!!restrictions!!
-        //period should be over 100ms --> considering a blocking factor
-        //access number of page should be under 30pg --> considering a free page limit
-        //randomly generate a flash page under 30pg, 50pg
+        // !!restrictions!!
+        // period should be over 100ms --> considering a blocking factor
+        // access number of page should be under 30pg --> considering a free page limit
+        // randomly generate a flash page under 30pg, 50pg
         wnum = rand()%30 + 1;
         rnum = rand()%50 + 1;
-        //generate a taskset parameter
+
+        // generate a taskset parameter
         wp = (int)((float)(wnum*STARTW) / util_task[0]);
         rp = (int)((float)(rnum*STARTR) / util_task[1]);
         gcp = __calc_gcmult(wp,wnum,MINRC);
         init_task(&(tasks[i]),i,wp,wnum,rp,rnum,gcp,addr/tasknum*(i),addr/tasknum*(i+1)-1);
         printf("wp: %d, wn : %d, rp : %d, rn : %d, gcp : %d wu: %f, ru: %f, gcu : %f\n",
             wp,wnum,rp,rnum,gcp,util_task[0],util_task[1],__calc_gcu(&(tasks[i]),MINRC,0,0,0));
-        
     }
-	float utilsum = 0.0;  // total utilization (blocking factor + write/read utilization + gc utilization)
-    float WRsum = 0.0;  // write, read utilization
-    float utilsum_noblock = 0.0; // write, read, gc utilization
-    float utilsum_nogc = 0.0;  // blocking factor
+
+	float utilsum = 0.0;            // total utilization (blocking factor + write/read utilization + gc utilization)
+    float WRsum = 0.0;              // write, read utilization
+    float utilsum_noblock = 0.0;    // write, read, gc utilization
+    float utilsum_nogc = 0.0;       // blocking factor
+
     for(int i=0;i<tasknum;i++){
         WRsum += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
         WRsum += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
     }
+
     for(int i=0;i<tasknum;i++){
         utilsum += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
         utilsum += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
         utilsum += __calc_gcu(&(tasks[i]),MINRC,0,0,0);
     }
+
     utilsum_noblock = utilsum;
     utilsum += (float)STARTE/(float)_find_min_period(tasks,tasknum);
     utilsum_nogc += (float)STARTE/(float)_find_min_period(tasks,tasknum);
     printf("WRsum : %f, utilsum(noblock): %f, utilsum(nogc): %f totutil : %f\n",WRsum,utilsum_noblock,utilsum_nogc,utilsum);
+    *result_util = utilsum;
+    return tasks;
+}
+
+rttask* generate_taskset_hardcode_motiv(int tasknum, float tot_util, int addr, float* result_util, int cycle){
+
+    // 1) 하드코딩된 파라미터들 (필요하면 아래 배열만 바꿔서 실험하면 됨)
+    const int MAX_FIXED = 4;
+    const int wp_tbl[4] = {30000, 30000, 30000, 30000};
+    const int rp_tbl[4] = {30000, 30000, 30000, 30000};
+    const int wn_tbl[4] = {7,7,7,7};
+    const int rn_tbl[4] = {7,7,7,7};
+
+    // tasknum이 MAX_FIXED 개수보다 크면 그냥 에러
+    if (tasknum > MAX_FIXED) {
+        fprintf(stderr, "generate_taskset_hardcode_motiv: tasknum(%d) > fixed table size(%d)\n",
+                tasknum, MAX_FIXED);
+        *result_util = -1.0f;
+        return NULL;
+    }
+
+    // 2) task array 할당
+    rttask* tasks = (rttask*)malloc(sizeof(rttask) * tasknum);
+    if (!tasks) {
+        fprintf(stderr, "generate_taskset2: malloc failed\n");
+        *result_util = -1.0f;
+        return NULL;
+    }
+
+    float WRsum            = 0.0f;  // write + read
+    float utilsum          = 0.0f;  // write + read + gc + erase
+    float utilsum_noblock  = 0.0f;  // write + read + gc
+    float utilsum_nogc     = 0.0f;  // write + read + erase
+
+    // 3) 각 task 초기화 + 개별 utilization 계산
+    for (int i = 0; i < tasknum; i++) {
+        int wp  = wp_tbl[i];
+        int rp  = rp_tbl[i];
+        int wn  = wn_tbl[i];
+        int rn  = rn_tbl[i];
+
+        // generate_taskset2에서도 이렇게 했으니까 그대로
+        int gcp = __calc_gcmult(wp, wn, MINRC);
+
+        // 주소 범위 균등 분할
+        int lba = (addr / tasknum) * i;
+        int uba = (addr / tasknum) * (i + 1) - 1;
+
+        // 원래 함수가 하던 것처럼 task를 일단 구성
+        init_task(&(tasks[i]),
+                  i,
+                  wp, wn,
+                  rp, rn,
+                  gcp,
+                  lba, uba);
+
+        // ----- utilization 계산 -----
+        float wu  = (float)wn * STARTW / (float)wp;
+        float ru  = (float)rn * STARTR / (float)rp;
+        float gcu = __calc_gcu(&(tasks[i]), MINRC, 0, 0, 0);
+
+        WRsum           += (wu + ru);
+        utilsum_noblock += (wu + ru + gcu);
+        utilsum         += (wu + ru + gcu);
+
+        printf("task %d: wp=%d, wn=%d, rp=%d, rn=%d, gcp=%d | wu=%.6f ru=%.6f gcu=%.6f\n",
+               i, wp, wn, rp, rn, gcp, wu, ru, gcu);
+    }
+
+    // 4) erase blocking term 추가 (기존 generate_taskset2 패턴 유지)
+    int minP = _find_min_period(tasks, tasknum);
+    float erase_u = (float)STARTE / (float)minP;
+
+    utilsum      += erase_u;
+    utilsum_nogc  = WRsum + erase_u;
+
+    printf("WRsum : %f, utilsum(noblock): %f, utilsum(nogc): %f totutil : %f\n",
+           WRsum, utilsum_noblock, utilsum_nogc, utilsum);
+
     *result_util = utilsum;
     return tasks;
 }
@@ -176,7 +260,7 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
 
         wnum = rand()%30 + 1;
         rnum = rand()%50 + 1;
-        //generate a taskset parameter
+        // generate a taskset parameter
         wp = (int)((float)(wnum*STARTW) / util_task[0]);
         rp = (int)((float)(rnum*STARTR) / util_task[1]);
            

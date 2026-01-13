@@ -1,11 +1,13 @@
 #include "rrsim_q.h"
 
-//make read request
+// make read request
 long gen_read_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhead* rrq){
     long tot_exec = 0;
     int v1_offset = PPB*vic1;
     int v2_offset = PPB*vic2;
     int lpa, v1_cnt = 0, v2_cnt = 0;
+
+    // target 1의 valid data 읽는 request
     for(int i=0;i<PPB;i++){
         if(metadata->invmap[v1_offset+i]==0){
             IO* req = (IO*)malloc(sizeof(IO));
@@ -18,6 +20,7 @@ long gen_read_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhe
             tot_exec += req->exec;
         }
     }
+    // target 2의 valid data 읽는 request
     for(int i=0;i<PPB;i++){
         if(metadata->invmap[v2_offset+i]==0){
             IO* req2 = (IO*)malloc(sizeof(IO));
@@ -30,11 +33,12 @@ long gen_read_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhe
             tot_exec += req2->exec;
         }
     }
-    //printf("[RR_r]%ld\n",tot_exec);
+    
+    // printf("[RR_r]%ld\n",tot_exec);
     return tot_exec;
 }
 
-//make write request
+// make write request
 long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhead* rrq){
     long tot_exec = 0L;
     int v1_offset = PPB*vic1;
@@ -42,6 +46,8 @@ long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
     int lastgen1=0, lastgen2=0;
     int lpa, v1_cnt = 0, v2_cnt = 0;
     IO* cur;
+
+    // target 1의 valid data를 target 2에 쓰는 request
     for(int i=0;i<PPB;i++){
         if(metadata->invmap[v1_offset+i]==0){
             IO* req = (IO*)malloc(sizeof(IO));
@@ -71,7 +77,9 @@ long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
         cur = cur->next;
     }
     cur->islastreq = 1;
-    //printf("lastreq specified for block%d,reqcount:%d\n",cur->tar_idx,v1_cnt);
+    // printf("lastreq specified for block%d,reqcount:%d\n",cur->tar_idx,v1_cnt);
+
+    // target 2의 valid data를 target 1에 쓰는 request
     for(int i=0;i<PPB;i++){
         if(metadata->invmap[v2_offset+i]==0){
             IO* req2 = (IO*)malloc(sizeof(IO));
@@ -92,8 +100,8 @@ long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
             v2_cnt++;
             req2->order = v2_cnt;
             tot_exec += req2->exec;
-            //printf("[RRWR-unit]v2cnt:%d, expected:%d, lpa : %d, mov %d to %d\n",
-            //       v2_cnt,req2->rr_valid_count,req2->rr_old_lpa,req2->rr_vic_ppa,req2->rr_tar_ppa);
+            // printf("[RRWR-unit]v2cnt:%d, expected:%d, lpa : %d, mov %d to %d\n",
+            //        v2_cnt,req2->rr_valid_count,req2->rr_old_lpa,req2->rr_vic_ppa,req2->rr_tar_ppa);
         }
     }
     cur = rrq->head;
@@ -102,21 +110,26 @@ long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
     }
     cur->islastreq = 1;
     cur->isrrfinish = 1;
-    //printf("lastreq specified for block%d,reqcount:%d\n",cur->tar_idx,v2_cnt);
-    //printf("[RRWR-summ]%d with %d\n",vic1,vic2);
-    //printf("[RRWR-summ]%d, %d vs %d, %d\n",v1_cnt,v2_cnt,PPB-metadata->invnum[vic1],PPB-metadata->invnum[vic2]);
-    //printf("[RRWR-summ]invnum : %d, %d\n",metadata->invnum[vic1],metadata->invnum[vic2]);
-    //printf("[RRWR-summ]lastreqflag :%d, %d\n",lastgen1,lastgen2);
+    // printf("lastreq specified for block%d,reqcount:%d\n",cur->tar_idx,v2_cnt);
+
+    // printf("[RRWR-summ]%d with %d\n",vic1,vic2);
+    // printf("[RRWR-summ]%d, %d vs %d, %d\n",v1_cnt,v2_cnt,PPB-metadata->invnum[vic1],PPB-metadata->invnum[vic2]);
+    // printf("[RRWR-summ]invnum : %d, %d\n",metadata->invnum[vic1],metadata->invnum[vic2]);
+    // printf("[RRWR-summ]lastreqflag :%d, %d\n",lastgen1,lastgen2);
+
     if((v1_cnt != PPB-metadata->invnum[vic1]) || (v2_cnt != PPB-metadata->invnum[vic2])){
-        //abort();
+        // abort();
     }
-    //printf("[RR_w]%ld\n",tot_exec);
+    // printf("[RR_w]%ld\n",tot_exec);
+
     return tot_exec;
 }
 
+// make erase request
 long gen_erase_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhead* rrq){
     long tot_exec = 0;
 
+    // target 1 erase
     IO* er = (IO*)malloc(sizeof(IO));
     er->type = RRER;
     er->vic_idx = vic1;
@@ -125,6 +138,7 @@ long gen_erase_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
     tot_exec += er->exec;
     ll_append_IO(rrq,er);
     
+    // target 2 erase
     IO* er2 = (IO*)malloc(sizeof(IO));
     er2->type = RRER;
     er2->vic_idx = vic2;
@@ -136,6 +150,7 @@ long gen_erase_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
     return tot_exec;
 }
 
+// ??
 long gen_bwr_rr(int vic1, int tar, long cur_cp, long rrp, meta* metadata, IOhead* bwrq){
     long tot_exec = 0L;
     IO* bwr = (IO*)malloc(sizeof(IO));

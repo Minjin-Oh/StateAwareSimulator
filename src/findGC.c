@@ -408,40 +408,39 @@ int find_gcweighted(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
     return best_idx;
 }
 
-
 int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head, bhead* write_head){
-    //!!!find_gc_ has floating point issues
-    //sort the victim blocks in order of utilization
-    //allocate victim block to GC task proportionally with GC period
+    // !!!find_gc_ has floating point issues
+    // sort the victim blocks in order of utilization
+    // allocate victim block to GC task proportionally with GC period
     struct timeval a;
     struct timeval b;
 
-    int gc_period_sort[tasknum];                    //array to store period of GC
-    int task_order[tasknum];                        //array to store order of task
-    int vic_arr[full_head->blocknum];               //array to store GC candidate indexes.
-    float gc_util_arr[full_head->blocknum];         //array to store gc-related utilization (gcutil+blocking)
-    int vic_num = 0;                                //number of victim
-    int proportion_sum = 0;                         //allocated proportion for task
-    int proportion_tot = 0;                         //sum of gc period
-    int old = get_blockstate_meta(metadata,OLD);    //oldest block for system
-    int min_p =  _find_min_period(task,tasknum);    //minimum I/O period of taskset (necessary to calc blocking)
-    int cur_state, copyblock_state, new_rc;         //gc util calc params
-    float gc_exec, gc_period, gc_util;              //gc util calc params
-    int cur_priority;                               //param for sorting & param for proportion check
-    float cur_offset;                               //proportion of current task
-    int cur_offset_int;                             //proportion of current task in victim block list
-    int best_invalid = 0;                           //edge case handling param
-    int best_idx = -1;                              //return value
+    int gc_period_sort[tasknum];                    // array to store period of GC
+    int task_order[tasknum];                        // array to store order of task
+    int vic_arr[full_head->blocknum];               // array to store GC candidate indexes.
+    float gc_util_arr[full_head->blocknum];         // array to store gc-related utilization (gcutil+blocking)
+    int vic_num = 0;                                // number of victim
+    int proportion_sum = 0;                         // allocated proportion for task
+    int proportion_tot = 0;                         // sum of gc period
+    int old = get_blockstate_meta(metadata,OLD);    // oldest block for system
+    int min_p =  _find_min_period(task,tasknum);    // minimum I/O period of taskset (necessary to calc blocking)
+    int cur_state, copyblock_state, new_rc;         // gc util calc params
+    float gc_exec, gc_period, gc_util;              // gc util calc params
+    int cur_priority;                               // param for sorting & param for proportion check
+    float cur_offset;                               // proportion of current task
+    int cur_offset_int;                             // proportion of current task in victim block list
+    int best_invalid = 0;                           // edge case handling param
+    int best_idx = -1;                              // return value
     float temp;
-    float cur_min_util = 2.0f;                     //temp variable to store minimum util(GC+blocking)
+    float cur_min_util = 2.0f;                      // temp variable to store minimum util(GC+blocking)
 
 #ifdef utilsort_writecheck
-    //arrays to test write block array
+    // arrays to test write block array
     int test_arr[full_head->blocknum + write_head->blocknum];
     float test_gcutil_arr[full_head->blocknum + write_head->blocknum];
     char block_origin[full_head->blocknum + write_head->blocknum];
 #endif
-    //init arrays
+    // 1. init arrays
     for(int i=0;i<full_head->blocknum;i++){
         vic_arr[i] = -1;
     }
@@ -451,7 +450,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         proportion_tot += gc_period_sort[i];
     }
 
-    //sort gc period
+    // 2. sort gc period
     for(int i=tasknum-1;i>0;i--){
         for(int j=0;j<i;j++){
             if(gc_period_sort[j] > gc_period_sort[j+1]){
@@ -465,23 +464,25 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
 
-    //find priority of cur gc
+    // 3. find priority of cur gc
     for(int i=0;i<tasknum;i++){
         if(task_order[i] == taskidx){
             cur_priority = i;
         }
     }
-    //find start offset of cur gc
+    
+    // 4. find start offset of cur gc
     for(int i=0;i<cur_priority-1;i++){
         proportion_sum += gc_period_sort[i];
     }
     
     cur_offset = (float)proportion_sum / (float)proportion_tot;
     
-    //build up candidate block list
+    // 5. build up candidate block list
     block* cur = NULL;
     cur = full_head->head;
     gettimeofday(&a,NULL);
+
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
         copyblock_state = metadata->state[rsvlist_head->head->idx];
@@ -489,34 +490,38 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         gc_exec = (float)(PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
         gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
         gc_util = gc_exec/gc_period;
-        //printf("gc_util, gc_exec : %f, %f\n",gc_util,gc_exec);
-        //restriction 1. util
+        // printf("gc_util, gc_exec : %f, %f\n",gc_util,gc_exec);
+
+        // restriction 1. util
         if(_find_gc_safe(task,tasknum,metadata,old,taskidx,GC,gc_util,cur->idx,rsvlist_head->head->idx) == -1){
             cur = cur->next;
             continue;
         }
-        //restriction 2. MINRC
+        // restriction 2. MINRC
         if(metadata->invnum[cur->idx] < MINRC){
             cur = cur->next;
             continue;
         }
-        //add a blocking utilization, since GC has a chance to change it.
-        //tweak:: as erase execution time becomes step function, approximate blocking factor
+
+        // add a blocking utilization, since GC has a chance to change it.
+        // tweak:: as erase execution time becomes step function, approximate blocking factor
         if(metadata->state[cur->idx] == old){
-            //gc_util += e_exec(old+1) / (float)min_p;
-            //printf("blocking : %f / %f = %f\n",((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE),(float)min_p,((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p);
+            // gc_util += e_exec(old+1) / (float)min_p;
+            // printf("blocking : %f / %f = %f\n",((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE),(float)min_p,((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p);
             gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE) / (float)min_p;
         }
         else{
-            //gc_util += e_exec(old) / (float)min_p;
-            //printf("blocking : %f / %f = %f\n",((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE),(float)min_p,((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p);
+            // gc_util += e_exec(old) / (float)min_p;
+            // printf("blocking : %f / %f = %f\n",((float)(ENDE-STARTE)/(float)MAXPE*(float)(old+1) + (float)STARTE),(float)min_p,((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p);
             gc_util += ((float)(ENDE-STARTE)/(float)MAXPE*(float)(old) + (float)STARTE) / (float)min_p;
         }
-        //insert util & block into candidate block list.
+
+        // insert util & block into candidate block list.
         gc_util_arr[vic_num] = gc_util;
         vic_arr[vic_num] = cur->idx;
+
 #ifdef utilsort_writecheck
-        //testcode:: insert util & block into test block list.
+        // testcode:: insert util & block into test block list.
         test_gcutil_arr[vic_num] = gc_util;
         test_arr[vic_num] = cur->idx;
         block_origin[vic_num] = 0;
@@ -524,8 +529,9 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         vic_num++;
         cur = cur->next;
     }
+
 #ifdef utilsort_writecheck
-    //testcode:: search the write block list
+    // testcode:: search the write block list
     cur = write_head->head;
     int test_vicnum = vic_num;
     gettimeofday(&a,NULL);
@@ -536,19 +542,20 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         gc_exec = (float)(PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
         gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
         gc_util = gc_exec/gc_period;
-        //printf("gc_util, gc_exec : %f, %f\n",gc_util,gc_exec);
-        //restriction 1. util
+        // printf("gc_util, gc_exec : %f, %f\n",gc_util,gc_exec);
+
+        // restriction 1. util
         if(_find_gc_safe(task,tasknum,metadata,old,taskidx,GC,gc_util,cur->idx,rsvlist_head->head->idx) == -1){
-        //if(0){
+        // if(0){
             cur = cur->next;
             continue;
         }
-        //restriction 2. MINRC
+        // restriction 2. MINRC
         if(metadata->invnum[cur->idx] < MINRC){
             cur = cur->next;
             continue;
         }
-        //add a blocking utilization, since GC has a chance to change it.
+        // add a blocking utilization, since GC has a chance to change it.
         
         if(metadata->state[cur->idx] == old){
             gc_util += e_exec(old+1) / (float)min_p;
@@ -556,21 +563,24 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         else{
             gc_util += e_exec(old) / (float)min_p;
         }
-        //testcode:: insert util & block into test block list.
+        // testcode:: insert util & block into test block list.
         test_gcutil_arr[test_vicnum] = gc_util;
         test_arr[test_vicnum] = cur->idx;
         block_origin[test_vicnum] = 1;
         test_vicnum++;
-        //printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
+        // printf("[UGC]add block %d(%d,%d,%f),vicnum : %d\n",cur->idx,cur_state,new_rc,gc_util,vic_num);
         cur = cur->next;
     }
 #endif
     gettimeofday(&b,NULL);
-    //printf("[gcsafe]%d\n",b.tv_sec * 1000000 + b.tv_usec - a.tv_sec * 1000000 - a.tv_usec);
-    //EDGE CASE HANDLING : if vic_num is 0, ignore find_gc_safe and add victims.
+    // printf("[gcsafe]%d\n",b.tv_sec * 1000000 + b.tv_usec - a.tv_sec * 1000000 - a.tv_usec);
+    
+    // 5-1. EDGE CASE HANDLING : if vic_num is 0, ignore find_gc_safe and add victims.
+    // 즉, schedulability를 만족하는 victim block이 없는 경우, schedulability는 무시하고 victim 선택
     if(vic_num == 0){
         printf("vic_num == 0\n");
         cur = full_head->head;
+
         while(cur != NULL){
             if(metadata->invnum[cur->idx] < MINRC){
                 cur = cur->next;
@@ -582,7 +592,8 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             gc_exec = (float)(PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
             gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
             gc_util = gc_exec/gc_period;
-            //add a blocking utilization, since GC has a chance to change it.
+
+            // add a blocking utilization, since GC has a chance to change it.
             if(metadata->state[cur->idx] == old){
             gc_util += e_exec(old+1) / (float)min_p;
             }
@@ -595,11 +606,12 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             cur = cur->next;
         }
     }
-    //!EDGE CASE HANDLING
+    
+    // !EDGE CASE HANDLING
     gettimeofday(&a,NULL);
     
-    //sort candidate block list
-    //currently, sorting is negligible to greedily minimize GC overhead
+    // sort candidate block list
+    // currently, sorting is negligible to greedily minimize GC overhead
     /*
     for(int i=vic_num-1;i>0;i--){
         for(int j=0;j<i;j++){
@@ -619,10 +631,10 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             best_idx = vic_arr[i];
         }
     }
-    //printf("util:%f\n,best_idx:%d,invnum:%d\n",cur_min_util,best_idx,metadata->invnum[best_idx]);
+    // printf("util:%f\n,best_idx:%d,invnum:%d\n",cur_min_util,best_idx,metadata->invnum[best_idx]);
     gettimeofday(&b,NULL);
 #ifdef utilsort_writecheck
-    //testcode:: sort test block list
+    // testcode:: sort test block list
     for(int i=test_vicnum-1;i>0;i--){
         for(int j=0;j<i;j++){
             if(test_gcutil_arr[j] > test_gcutil_arr[j+1]){
@@ -639,13 +651,13 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
 #endif
-    //using offset factor, choose best block
+    // using offset factor, choose best block
     cur_offset_int = (int)(cur_offset * (float)vic_num);
 #ifdef UTILSORT_BEST
     cur_offset_int = 0;
 #endif
-    //currently, sorting is negligible to greedily minimize GC overhead
-    //best_idx = vic_arr[cur_offset_int];
+    // currently, sorting is negligible to greedily minimize GC overhead
+    // best_idx = vic_arr[cur_offset_int];
 #ifdef utilsort_writecheck
     int test_cur_offset_int = (int)(cur_offset * (float)test_vicnum);
     int test_best_idx = test_arr[test_cur_offset_int];
@@ -669,7 +681,7 @@ int find_gc_test(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* 
     block* cur = full_head->head;
     block* vic = NULL;
     while(cur != NULL){
-        //check gc safe
+        // check gc safe
         int cur_state = metadata->state[cur->idx];
         int copyblock_state = metadata->state[rsvlist_head->head->idx];
         int new_rc = metadata->invnum[cur->idx];
@@ -680,9 +692,9 @@ int find_gc_test(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* 
             cur=cur->next;
             continue;
         }
-        //if gc safe passed, check block's age and direct to one of 2 group.
+        // if gc safe passed, check block's age and direct to one of 2 group.
         if(metadata->state[cur->idx] == old){
-        //if oldest, compare invnum among oldest
+            // if oldest, compare invnum among oldest
             if(metadata->invnum[cur->idx] > oldest_vic_invalid){
                 oldest_vic_invalid = metadata->invnum[cur->idx];
                 oldest_vic_idx = cur->idx;
@@ -690,7 +702,7 @@ int find_gc_test(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* 
             }
         }
         else{
-        //if not oldest, compare invnum among not oldest. choose the youngest+many inv
+            // if not oldest, compare invnum among not oldest. choose the youngest+many inv
             if(metadata->invnum[cur->idx] > others_vic_invalid){
                 others_vic_invalid = metadata->invnum[cur->idx];
                 others_vic_idx = cur->idx;
@@ -699,9 +711,9 @@ int find_gc_test(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* 
         }
         cur=cur->next;
     }
-    //compare two candidate. if invnum of b from oldest > invnum of b from not-oldest + X, choose former.
+    // compare two candidate. if invnum of b from oldest > invnum of b from not-oldest + X, choose former.
     if(oldest_vic == NULL && others_vic == NULL){//none of blocks meet gc_safe.
-        //fall back to baseline GC.
+        // fall back to baseline GC.
         cur = full_head->head;
         vic = cur;
         while(cur != NULL){
@@ -711,13 +723,13 @@ int find_gc_test(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* 
             cur = cur->next;
         }
     }
-    else if(oldest_vic == NULL && others_vic != NULL){ //not possible, but if...
+    else if(oldest_vic == NULL && others_vic != NULL){      // not possible, but if...
         vic = others_vic;
     }
-    else if(others_vic == NULL && oldest_vic != NULL){//if all block has same cyc
+    else if(others_vic == NULL && oldest_vic != NULL){      // if all block has same cyc
         vic = oldest_vic;
     }
-    else{//if two group exists, choose the block from oldest only when following eq holds.
+    else{                                                   // if two group exists, choose the block from oldest only when following eq holds.
         printf("inv from oldest = %d, inv from others = %d, oldestP/E = %d\n",oldest_vic_invalid,others_vic_invalid,old);
         if(oldest_vic_invalid > others_vic_invalid + (int)GCGROUP_THRES){ 
             vic = oldest_vic;
@@ -730,8 +742,8 @@ int find_gc_test(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* 
 }
 
 block* find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bhead* fblist_head, bhead* write_head){
-    //find a destination of current page, similar to find_maxinvalid function.
-    //FIXME:: this prototype function is hardcoded for TIMING_ON_MEM
+    // find a destination of current page, similar to find_maxinvalid function.
+    // FIXME:: this prototype function is hardcoded for TIMING_ON_MEM
     long cur_lpa_timing;
     int cnt;
     int cur_lpa_nextupdatenum;
@@ -739,7 +751,7 @@ block* find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bh
     int yield_pg;
     block *wb_new, *cur;
 
-    //find relocated page's update timing & calculate its order.
+    // find relocated page's update timing & calculate its order.
     cur_lpa_nextupdatenum = metadata->write_cnt_per_cycle[lpa] + 1;
     if(cur_lpa_nextupdatenum >= update_cnt[lpa]){
         cur_lpa_timing = workload_reset_time + WORKLOAD_LENGTH;
@@ -749,15 +761,15 @@ block* find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bh
     }
     cnt = __calc_invorder_mem(max_valid_pg, metadata, cur_lpa_timing, workload_reset_time, metadata->total_fp);
     
-    //edgecase 1:: free page is not enough to handle target lpa
+    // Edgecase 1:: free page is not enough to handle target lpa
     if(cnt >= metadata->total_fp){
         while(fblist_head->blocknum != 0){
-            //search through free block list, finding a youngest block,
+            // search through free block list, finding a youngest block,
             target = find_block_in_list(metadata,fblist_head,YOUNG);
             wb_new = ll_remove(fblist_head,target);
             ll_append(write_head,wb_new);
         }
-        //give last write block.
+        // give last write block.
         cur = write_head->head;
         while(cur != NULL){
             if (cur->next == NULL){
@@ -767,23 +779,23 @@ block* find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bh
         }
     }
 
-    //normal case. find order within write block list.
+    // normal case. find order within write block list.
     yield_pg = 0;
     cur = write_head->head;
     while(cur != NULL){
         yield_pg += cur->fpnum;
         if(yield_pg > cnt){
-            //if current block has enough page to satisfy update order, break from loop
+            // if current block has enough page to satisfy update order, break from loop
             break;
         } else {
-            //search next if not
+            // search next if not
             cur = cur->next;
         }
     }
-    //edgecase 2:: write block list X have corresponding block.
+    // Edgecase 2:: write block list X have corresponding block.
     if(cur==NULL){
         while(fblist_head->blocknum != 0){
-            //search through free block list, finding a youngest block, 
+            // search through free block list, finding a youngest block, 
             target = find_block_in_list(metadata,fblist_head,YOUNG);
             wb_new = ll_remove(fblist_head,target);
             ll_append(write_head,wb_new);
@@ -792,24 +804,24 @@ block* find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bh
                 cur = wb_new;
                 break;
             } else {
-                //do nothing. 
-                //repeat while loop until free block runs out.
+                // do nothing. 
+                // repeat while loop until free block runs out.
             }
-            //printf("[FB]yieldpg : %d\n",yield_pg);
+            // printf("[FB]yieldpg : %d\n",yield_pg);
         }
         if(cur != NULL){
             return cur;
         }
     }
-    //edgecase 3::somehow no corresponding block.
+    // Edgecase 3::somehow no corresponding block.
     if(cur==NULL){
         while(fblist_head->blocknum != 0){
-            //search through free block list, finding a youngest block, 
+            // search through free block list, finding a youngest block, 
             target = find_block_in_list(metadata,fblist_head,YOUNG);
             wb_new = ll_remove(fblist_head,target);
             ll_append(write_head,wb_new);
         }
-        //give last write block.
+        // give last write block.
         cur = write_head->head;
         while(cur != NULL){
             if (cur->next == NULL){

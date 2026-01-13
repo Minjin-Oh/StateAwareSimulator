@@ -32,21 +32,21 @@ extern int MINRC;
 #endif
 #ifndef EXECSTEP
     float w_exec(int cycle){
-        //!!!write exec tends to decrease, so be aware of that!!!
+        // !!!write exec tends to decrease, so be aware of that!!!
         float wgrad = (float)(ENDW-STARTW)/(float)MAXPE;
         float wconst = STARTW;
         return wgrad*cycle + wconst;
     }
 
     float r_exec(int cycle){
-        //!!!read exec tends to increase, so be aware of that!!!
+        // !!!read exec tends to increase, so be aware of that!!!
         float rgrad = (float)(ENDR-STARTR)/(float)MAXPE;
         float rconst = STARTR;
         return rgrad*cycle + rconst;
     }
 
     float e_exec(int cycle){
-        //!!!read exec tends to increase, so be aware of that!!!
+        // !!!read exec tends to increase, so be aware of that!!!
         float egrad = (float)(ENDE-STARTE)/(float)MAXPE;
         float econst = STARTE;
         return egrad*cycle + econst;
@@ -81,8 +81,8 @@ int _gc_period(rttask* task,int _minrc){
     abort();
 }
 
-//in init stage, task structure does not have correct data
-//use integers instead of structure to calc gc multiplication.
+// in init stage, task structure does not have correct data
+// use integers instead of structure to calc gc multiplication.
 int __calc_gcmult(int wp, int wn, int _minrc){
     int mult;
     int min_reclaim;
@@ -144,10 +144,10 @@ int _find_min_period(rttask* task,int tasknum){
     int min_each_task = -1;
     for(int i=0;i<tasknum;i++){
         int temp = _gc_period(&(task[i]),(int)(MINRC));
-        //min btw r,w,gc
-        //printf("[internal]comp btw%d %d %d\n",task[i].wp,task[i].rp,temp);
+        // min btw r,w,gc
+        // printf("[internal]comp btw%d %d %d\n",task[i].wp,task[i].rp,temp);
         min_each_task = __get_min(task[i].wp,task[i].rp,temp);
-        //printf("%d\n",min_each_task);
+        // printf("%d\n",min_each_task);
         if(i==0){
             ret = min_each_task;
         }
@@ -181,22 +181,22 @@ float calc_std(meta* metadata){
 }
 
 float find_worst_util(rttask* task, int tasknum, meta* metadata){
-    //calculate worst-case utilization regarding to current block state
-    //as a worst case bound, simply assume that each task independantly chooses the block.
-    //find oldest, freshest block
-    int freshest, oldest, sum;
+    // calculate worst-case utilization regarding to current block state
+    // as a worst case bound, simply assume that each task independantly chooses the block.
+    // find oldest, freshest (-> youngest로 변경) block
+    int youngest, oldest, sum;
     float avg, var;
     sum = 0;
     var = 0.0;
     for(int i=0;i<NOB;i++){
         sum += (float)metadata->state[i];
         if(i==0){
-            freshest = metadata->state[i];
+            youngest = metadata->state[i];
             oldest = metadata->state[i];
         }
         else{
-            if (freshest >= metadata->state[i]){
-                freshest = metadata->state[i];
+            if (youngest >= metadata->state[i]){
+                youngest = metadata->state[i];
             }
             if (oldest <= metadata->state[i]){
                 oldest = metadata->state[i];
@@ -208,25 +208,25 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
         float a = (float)metadata->state[i] - avg;
         float b = a*a;
         var += b;
-        //printf("dev : %f,dev^2 : %f, cur_var : %f\n",a,b,var);
+        // printf("dev : %f,dev^2 : %f, cur_var : %f\n",a,b,var);
     }
-    //printf("oldest : %d, freshest : %d, std : %f\n",oldest,freshest,sqrt(var/(float)NOB));
-    //with the oldest/freshest, calculate total utilization
+    // printf("oldest : %d, youngest : %d, std : %f\n",oldest,youngest,sqrt(var/(float)NOB));
+    // with the oldest/youngest, calculate total utilization
     float total_u = 0.0;
     int min_period;
     for(int i=0;i<tasknum;i++){
-        //write util
-        total_u += __calc_wu(&(task[i]),freshest);
-        //read util
+        // write util
+        total_u += __calc_wu(&(task[i]),youngest);
+        // read util
         total_u += __calc_ru(&(task[i]),oldest);
-        //GC util
-        total_u += __calc_gcu(&(task[i]),MINRC,freshest,oldest,oldest);
-        //printf("[WC]cur_util:%f\n",total_u);
+        // GC util
+        total_u += __calc_gcu(&(task[i]),MINRC,youngest,oldest,oldest);
+        // printf("[WC]cur_util:%f\n",total_u);
     }
-    //add blocking factor
+    // add blocking factor
     total_u += (float)e_exec(oldest) / (float)_find_min_period(task,tasknum);
-    //printf("[WC]exec : %f, min_p :%d\n",e_exec(oldest),_find_min_period(task,tasknum,OP));
-    //rintf("[WC]worst case util is %f\n",total_u);
+    // printf("[WC]exec : %f, min_p :%d\n",e_exec(oldest),_find_min_period(task,tasknum,OP));
+    // printf("[WC]worst case util is %f\n",total_u);
     return total_u;
 }
 
@@ -236,14 +236,14 @@ float find_cur_util(rttask* tasks, int tasknum, meta* metadata, int old){
         total_u += metadata->runutils[0][j];
         total_u += metadata->runutils[1][j];
         total_u += metadata->runutils[2][j];
-        //printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
+        // printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
     }
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
     return total_u;
 }
 
 int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util){
-    //check if current I/O job does not violate util test along with recently released other jobs.
+    // check if current I/O job does not violate util test along with recently released other jobs.
     
     float total_u = 0.0;
     
@@ -255,9 +255,9 @@ int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int task
     } else if (type == GC){
         total_u -= metadata->runutils[2][taskidx];
     }
-    //printf("tot_u without cur task : %f ",total_u);
+    // printf("tot_u without cur task : %f ",total_u);
     total_u += util;
-    //printf("tot_u : %f\n",total_u);
+    // printf("tot_u : %f\n",total_u);
     if (total_u <= 1.0){
         return 0;
     } else if (total_u > 1.0){
@@ -269,7 +269,7 @@ int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int task
 }
 
 int util_check_main(){
-    //exec function test
+    // exec function test
     printf("[exec time scaling]\n");
     printf("20 cycle %f %f %f\n",w_exec(20),r_exec(20),e_exec(20));
     printf("10 cycle %f %f %f\n",w_exec(10),r_exec(10),e_exec(10));
@@ -285,7 +285,7 @@ int util_check_main(){
 }
 
 long get_gc_locktime(meta* metadata, int blockidx){
-    //set locktime as a time until 75% of block is invalidated
+    // set locktime as a time until 75% of block is invalidated
     int lpa;
     long ret = 0L;
     long temp[PPB];
@@ -324,13 +324,13 @@ void print_blocklist_info(bhead* head, meta* metadata){
         cur = cur->next;
     }
     if(head->blocknum != 0){
-        //printf("[listinfo]yng:%d,old:%d,invmax:%d,invmin:%d, invavg:%d\n",cyc_yng,cyc_old,invnum_max,invnum_min,invnum_avg/head->blocknum);
+        // printf("[listinfo]yng:%d,old:%d,invmax:%d,invmin:%d, invavg:%d\n",cyc_yng,cyc_old,invnum_max,invnum_min,invnum_avg/head->blocknum);
     }
 }
 
 void print_fullblock_info(meta* metadata, bhead* full_head, long cur_cp, FILE* fp){
-    //a function which  prints a full block whenever invnum reaches PPB.
-    //called only when finish_WR makes completely full invalid block.
+    // a function which  prints a full block whenever invnum reaches PPB.
+    // called only when finish_WR makes completely full invalid block.
     block* cur = full_head->head;
     
     fprintf(fp, "%ld, ",cur_cp);
@@ -351,11 +351,11 @@ void print_maxinvalidation_block(meta* metadata, int blockidx){
     for(int i=0;i<PPB;i++){
         lpa = metadata->rmap[startidx+i];
         if(lpa != -1){
-            //update longest next update
+            // update longest next update
             if(longest_next_update < metadata->next_update[lpa]){
                 longest_next_update = metadata->next_update[lpa];    
             }
-            //printf("[%d]%ld\n",lpa,metadata->next_update[lpa]);
+            // printf("[%d]%ld\n",lpa,metadata->next_update[lpa]);
         }
         
     }
@@ -363,9 +363,9 @@ void print_maxinvalidation_block(meta* metadata, int blockidx){
 }
 
 int find_block_in_list(meta* metadata, bhead* head, int cond){
-    //a function wihch finds a block in given blocklist, considering its state.
-    //cond == YOUNG ; find youngest block in blocklist
-    //cond == OLD ; find oldest block in blocklist
+    // a function wihch finds a block in given blocklist, considering its state.
+    // cond == YOUNG ; find youngest block in blocklist
+    // cond == OLD ; find oldest block in blocklist
     int ret = -1;
     block* b;
     int compare;

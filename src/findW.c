@@ -616,9 +616,9 @@ int find_writeweighted(rttask* task, int taskidx, int tasknum, meta* metadata, b
         if(cur_best_util >= ru+gcu){
             cur_best_util = ru+gcu;
             best_idx = cur->idx;
-            printf("block %d is updated, wr : %f, ru : %f, wgc : %f, wgcu : %f, util : %f\n",weighted_r, ru, weighted_gc, gcu, cur->idx,ru+gcu);
+            // printf("block %d is updated, wr : %f, ru : %f, wgc : %f, wgcu : %f, util : %f\n",weighted_r, ru, weighted_gc, gcu, cur->idx,ru+gcu);
         } else {
-            printf("block %d is passed, wr : %f, ru : %f, wgc : %f, wgcu : %f, util : %f\n",weighted_r, ru, weighted_gc, gcu, cur->idx,ru+gcu);
+            // printf("block %d is passed, wr : %f, ru : %f, wgc : %f, wgcu : %f, util : %f\n",weighted_r, ru, weighted_gc, gcu, cur->idx,ru+gcu);
         }
         cur = cur->next;
     }//!fblist search end
@@ -1380,14 +1380,14 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
     return ret;
 }
 
+// function for write block selection
 int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, long workload_reset_time){
-    //function for write block selection
-    //3 variants
-    //MAXINVALID_RANK_DYN :: window-based request clustering. dynamically change range for cluster
-    //MAXINVALID_RANK_STAT :: window-based request clutsering, based on pre-assigned threshold
-    //MAXINVALID_RANK_FIXED :: request clustering, strictly following absolute request order
+    // 3 variants
+    // MAXINVALID_RANK_DYN :: window-based request clustering. dynamically change range for cluster
+    // MAXINVALID_RANK_STAT :: window-based request clutsering, based on pre-assigned threshold
+    // MAXINVALID_RANK_FIXED :: request clustering, strictly following absolute request order
 
-    //params to find lpa rank
+    // params to find lpa rank
     char name[30];
     FILE* cur_lpa_timing_file;
     long cur_lpa_timing;
@@ -1398,7 +1398,8 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     sprintf(name,"./timing/%d.csv",w_lpas[idx]);
     cur_lpa_timing_file = fopen(name,"r");
 #endif
-    //params to find block
+
+    // params to find block
     block* cur;
     block* ret_targ;
     block* wb_new;
@@ -1414,11 +1415,12 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     int* jobnum = NULL;
     int** req_per_task = NULL;
     long** updateorders = NULL;
+
 #ifdef MAXINVALID_RANK_DYN
-    //active rank calculation-based method
+    // active rank calculation-based method
     if(metadata->cur_rank_info.cur_left_write[taskidx] == 0){
-        //if pre-assigned write is finished, re-assign ranks for future N writes.
-        //1. find jobs and their corresponding update timing within given interval (cur interval = 500ms)
+        // if pre-assigned write is finished, re-assign ranks for future N writes.
+        // 1. find jobs and their corresponding update timing within given interval (cur interval = 500ms)
         jobnum = (int*)malloc(sizeof(int)*tasknum);
         req_per_task = (int**)malloc(sizeof(int*)*(unsigned long)tasknum);
         updateorders = (long**)malloc(sizeof(long*)*(unsigned long)tasknum);
@@ -1431,9 +1433,9 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         }
 
         _get_jobnum_interval(cur_cp,90000000,task,tasknum,jobnum);
-        //for(int i=0;i<tasknum;i++){
-        //    printf("reqnum : %d\n",jobnum[i]*task[i].wn);
-        //}
+        // for(int i=0;i<tasknum;i++){
+        //     printf("reqnum : %d\n",jobnum[i]*task[i].wn);
+        // }
         for(int i=0;i<tasknum;i++){
             req_per_task[i] = (int*)malloc(sizeof(int)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
             updateorders[i] = (long*)malloc(sizeof(long)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
@@ -1441,7 +1443,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         _get_write_reqs(w_workloads,tasknum,taskidx,task,w_lpas,90000000,jobnum,req_per_task);
         _get_write_updateorder(jobnum,req_per_task,tasknum,task,metadata,updateorders);
     
-        //1-1. put update timing values in single array
+        // 1-(1). put update timing values in single array
         int reqnum = 0;
         for(int i=0;i<tasknum;i++){
             reqnum += jobnum[i] * task[i].wn;
@@ -1455,7 +1457,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             }
         }
         
-        //2. sort update timing array and find bounds for each rank
+        // 1-(2). sort update timing array and find bounds for each rank
         long* bounds = (long*)malloc(sizeof(long)*(metadata->ranknum));
         int cluster_cur = 0;
         int member_num = 0;
@@ -1472,19 +1474,19 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
                 break;
             }
         }
-        //2-1. save current bound info on metadata(note that metadata->rank_bound[0] = 0)
+        // 1-(2)-1. save current bound info on metadata(note that metadata->rank_bound[0] = 0)
         metadata->rank_bounds[0] = 0;
         for(int i=0;i<metadata->ranknum;i++){
             metadata->rank_bounds[i+1] = bounds[i];
         }
         
-        //3. update cur_rank_info structure in metadata
+        // 1-(3). update cur_rank_info structure in metadata
         for(int i=0;i<tasknum;i++){
             int record_idx = 0;
             if(metadata->cur_rank_info.cur_left_write[i] != 0){
-                //if a task has a leftover rank records, move them to front of rank array.
+                // if a task has a leftover rank records, move them to front of rank array.
                 for(int j=0;j<metadata->cur_rank_info.cur_left_write[i];j++){
-                    //printf("[leftover]cur rec idx : %d\n",record_idx);
+                    // printf("[leftover]cur rec idx : %d\n",record_idx);
                     int offset = metadata->cur_rank_info.tot_ranked_write[i] - metadata->cur_rank_info.cur_left_write[i] + j;
                     metadata->cur_rank_info.ranks_for_write[record_idx] = metadata->cur_rank_info.ranks_for_write[offset];
                     record_idx++;
@@ -1493,13 +1495,13 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             metadata->cur_rank_info.cur_left_write[i] += jobnum[i] * task[i].wn;
             metadata->cur_rank_info.tot_ranked_write[i] = metadata->cur_rank_info.cur_left_write[i];
             for(int j=0;j<jobnum[i]*task[i].wn;j++){
-                //find rank of each reqs & make a rank record.
-                //printf("cur rec idx : %d\n",record_idx);
+                // find rank of each reqs & make a rank record.
+                // printf("cur rec idx : %d\n",record_idx);
                 metadata->cur_rank_info.ranks_for_write[i][record_idx] = __get_rank_long_dyn(updateorders[i][j],bounds,metadata->ranknum);
                 record_idx++;
             }
         }
-        //4. free malloc spaces
+        // 1-(4). free malloc spaces
         free(jobnum);
         free(req_per_task[0]);
         free(updateorders[0]);
@@ -1515,12 +1517,13 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         free(bounds);    
     }
 
-    //get rank info from metadata & update left write
+    // get rank info from metadata & update left write
     int offset = metadata->cur_rank_info.tot_ranked_write[taskidx] - metadata->cur_rank_info.cur_left_write[taskidx];
     int cur_rank = metadata->cur_rank_info.ranks_for_write[taskidx][offset];
     metadata->cur_rank_info.cur_left_write[taskidx] -= 1;
-    //printf("[%ld]cur_rank : %d\n",cur_cp,cur_rank);
-    //[2]find corresponding block
+    // printf("[%ld]cur_rank : %d\n",cur_cp,cur_rank);
+
+    // 2. find corresponding block
     cur = write_head->head;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
@@ -1532,9 +1535,10 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             return cur->idx;
         }
         cur = cur->next;
-    }
-    //[3]. if block not in wblist, try getting a new block
-    //[3]-1. search through free block list
+    } 
+
+    // 3. if block not in wblist, try getting a new block
+    // 3-(1). search through free block list
     int ret_b_idx = -1;
     int ret_b_state = __INT_MAX__;
     cur = fblist_head->head;
@@ -1551,19 +1555,20 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         }
 	cur = cur->next;
     }
-    //[3]-1-1. if free block found, append to write block and return index.
+    // 3-(1)-1. if free block found, append to write block and return index.
     if(ret_b_idx != -1){
         block* wb_new = ll_remove(fblist_head,ret_b_idx);
         wb_new->wb_rank = cur_rank;
         ll_append(write_head,wb_new);
         return wb_new->idx;
     }
-    //[3]-1-2. if free block not found, find closest cluster in write block list.
+    // 3-(1)-2. if free block not found, find closest cluster in write block list.
     else{
         cur = write_head->head;
-        int offset = abs_int(cur->wb_rank - cur_rank);
-        ret_b_idx = cur->idx;
         while(cur != NULL){
+            int offset = abs_int(cur->wb_rank - cur_rank);
+            ret_b_idx = cur->idx;
+            
             cur_state = metadata->state[cur->idx];
             if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
                 cur = cur->next;
@@ -1575,16 +1580,64 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             }
             cur = cur->next;
         }
-        //printf("[e]rank : %d alloc to other block...\n",rank);
+
+        // 4. 적절한 블록을 찾지 못한 경우, write_head와 fblist_head 중에서 가장 lowest PEC 블록에 writing
+        if (ret_b_idx == -1){
+            // printf("[e] no schedulability block found: alloc to lowest block...\n");
+            int final_idx   = -1;
+            int final_state = __INT_MAX__;
+
+            // 4-(1). write_head 전체 스캔
+            cur = write_head->head;
+            while (cur != NULL) {
+                cur_state = metadata->state[cur->idx];
+                if (cur_state < final_state) {
+                    final_state = cur_state;
+                    final_idx   = cur->idx;
+                }
+                cur = cur->next;
+            }
+
+            // 4-(2). free block 리스트도 같이 스캔
+            cur = fblist_head->head;
+            while (cur != NULL) {
+                cur_state = metadata->state[cur->idx];
+                if (cur_state < final_state) {
+                    final_state = cur_state;
+                    final_idx   = cur->idx;
+                }
+                cur = cur->next;
+            }
+
+            // 여기까지 오면 final_idx에 "PEC가 가장 낮은 블록의 idx"가 들어있어야 함
+            if (final_idx == -1) {
+                // 4-(3). 진짜로 아무것도 못 찾은 극단 케이스
+                fprintf(stderr,
+                        "\n[Critical Error] No block found even in fallback.");
+                fflush(stderr);
+                exit(EXIT_FAILURE);
+            }
+            // 4-(4). 이 final_idx가 free list에 있으면 빼서 write_head로 옮긴다
+            else {
+                block* wb_new = ll_remove(fblist_head,final_idx);
+                wb_new->wb_rank = cur_rank;
+                ll_append(write_head,wb_new);
+                return wb_new->idx;
+            }
+
+            // 4-(5) free list에 없었다는 건 이미 write_head에 있었던 블록이라는 뜻
+            return final_idx;
+        }
+        // printf("[e]rank : %d alloc to other block %d...\n", cur_rank, cur->wb_rank);
         return ret_b_idx;
     }
-    //!end of active rank calculation-based method
+    // !end of active rank calculation-based method
 #endif
 
-    //overhead measurement values
+    // overhead measurement values
     struct timeval a;
     struct timeval b;
-    //find out current lpa's update order 
+    // find out current lpa's update order 
     gettimeofday(&a,NULL);
 #ifdef TIMING_ON_MEM   
     int cur_lpa_nextupdatenum = metadata->write_cnt_per_cycle[w_lpas[idx]]+1;
@@ -1624,18 +1677,18 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     int rank = __get_rank(cnt,metadata);
     int ret_b_idx;
     cur = write_head->head;
-    //find a corresponding rank block in wblist 
+    // find a corresponding rank block in wblist 
     while(cur != NULL){ 
         if(cur->wb_rank == rank){
-            //printf("[1]rank : %d, wbrank : %d\n",rank,cur->wb_rank);
+            // printf("[1]rank : %d, wbrank : %d\n",rank,cur->wb_rank);
             return cur->idx;
         }
         cur = cur->next;
     }
-    //if block not in wblist, try getting a new block
+    // if block not in wblist, try getting a new block
     if(cur == NULL){
         int temp = find_block_in_list(metadata,fblist_head,YOUNG);
-        //if block found in fblist, append to write block & return idx
+        // if block found in fblist, append to write block & return idx
         if (temp != -1){
             block* wb_new = ll_remove(fblist_head,temp);
             wb_new->wb_rank = rank;
@@ -1643,7 +1696,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             //printf("[2]rank : %d, wbrank : %d\n",rank,wb_new->wb_rank);
             return wb_new->idx;
         }
-        //if block not in fblist, do edge case handling
+        // if block not in fblist, do edge case handling
         else{
             cur = write_head->head;
             int offset = abs_int(cur->wb_rank - rank);
@@ -1655,7 +1708,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
                 }
                 cur = cur->next;
             }
-            //printf("[e]rank : %d alloc to other block...\n",rank);
+            // printf("[e]rank : %d alloc to other block...\n",rank);
             return ret_b_idx;
         }
     }
@@ -1665,11 +1718,11 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
 
 #ifdef MAXINVALID_RANK_FIXED
     gettimeofday(&a,NULL);
-    if(longlive == 1){//edgecase:: free page is not enough to handle target lpa
+    if(longlive == 1){                      // Edgecase:: free page is not enough to handle target lpa
         while(fblist_head->blocknum != 0){
             youngest = MAXPE;
             target = -1;
-            //search through free block list, finding a youngest block, 
+            // search through free block list, finding a youngest block, 
             fb_ptr = fblist_head->head;
             while(fb_ptr != NULL){
                 if(youngest > metadata->state[fb_ptr->idx]){
@@ -1679,16 +1732,16 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
                 }
                 fb_ptr = fb_ptr->next;
             }
-            //append it, and see if freepage is enough to handle current write.
+            // append it, and see if freepage is enough to handle current write.
             wb_new = ll_remove(fblist_head,target);
             ll_append(write_head,wb_new);
         }
-        //give last write block.
+        // give last write block.
         cur = write_head->head;
         while(cur != NULL){
             if (cur->next == NULL){
                 gettimeofday(&b,NULL);
-                //printf("[3]%d\n",__calc_time_diff(a,b));
+                // printf("[3]%d\n",__calc_time_diff(a,b));
                 return cur->idx;    
             }
             cur = cur->next;
@@ -1696,25 +1749,25 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         longlive = 0;
     }
     
-    //write block list is arranged in descending order. write the page w.r.t its update order.
+    // write block list is arranged in descending order. write the page w.r.t its update order.
     yield_pg = 0;
     cur = write_head->head;
     while(cur != NULL){
         yield_pg += cur->fpnum;
         if(yield_pg > cnt){
-            //if current block has enough page to satisfy update order,
+            // if current block has enough page to satisfy update order,
             break;
         } else {
-            //search next if not.
+            // search next if not.
             cur = cur->next;
         }
-        //printf("[W]yieldpg : %d\n",yield_pg);
+        // printf("[W]yieldpg : %d\n",yield_pg);
     }
-    if(cur == NULL){//no feasible block in writeblock list.
+    if(cur == NULL){                        // no feasible block in writeblock list.
         while(fblist_head->blocknum != 0){
             youngest = MAXPE;
             target = -1;
-            //search through free block list, finding a youngest block, 
+            // search through free block list, finding a youngest block, 
             fb_ptr = fblist_head->head;
             while(fb_ptr != NULL){
                 if(youngest > metadata->state[fb_ptr->idx]){
@@ -1723,7 +1776,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
                 }
                 fb_ptr = fb_ptr->next;
             }
-            //append it, and see if freepage is enough to handle current write.
+            // append it, and see if freepage is enough to handle current write.
             wb_new = ll_remove(fblist_head,target);
             ll_append(write_head,wb_new);
             yield_pg += wb_new->fpnum;
@@ -1731,15 +1784,15 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
                 cur = wb_new;
                 break;
             } else {
-                //do nothing. 
-                //repeat while loop until free block runs out.
+                // do nothing. 
+                // repeat while loop until free block runs out.
             }
-            //printf("[FB]yieldpg : %d\n",yield_pg);
+            // printf("[FB]yieldpg : %d\n",yield_pg);
         }
     }
-    if(cur == NULL){//edgecase:: not found corresponding block
+    if(cur == NULL){                                    // Edgecase:: not found corresponding block
         while(fblist_head->blocknum != 0){
-            //search through free block list, finding a youngest block,
+            // search through free block list, finding a youngest block,
             youngest = MAXPE;
             target = -1;
             fb_ptr = fblist_head->head;
@@ -1750,16 +1803,16 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
                 }
                 fb_ptr = fb_ptr->next;
             }
-            //append it, and see if freepage is enough to handle current write.
+            // append it, and see if freepage is enough to handle current write.
             wb_new = ll_remove(fblist_head,target);
             ll_append(write_head,wb_new);
         }
-        //give last write block.
+        // give last write block.
         cur = write_head->head;
         while(cur != NULL){
             if (cur->next == NULL){
                 gettimeofday(&b,NULL);
-                //printf("[3]%d\n",__calc_time_diff(a,b));
+                // printf("[3]%d\n",__calc_time_diff(a,b));
                 return cur->idx;    
             }
             cur = cur->next;
@@ -1767,20 +1820,20 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         longlive = 0;
     }
 
-    //initiate findwritesafe() on current block, and see if allocation leads to utilization overflow.
+    // initiate findwritesafe() on current block, and see if allocation leads to utilization overflow.
     if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[cur->idx]),cur->idx,w_lpas) == 0){
         gettimeofday(&b,NULL);
-        //printf("[3]%d\n",__calc_time_diff(a,b));
+        // printf("[3]%d\n",__calc_time_diff(a,b));
         return cur->idx;
     } else {
-        //traverse left and right to find suitable block
+        // traverse left and right to find suitable block
         left_ptr = cur->prev;
         right_ptr = cur->next;
         while((left_ptr != NULL) || (right_ptr != NULL)){
             if(left_ptr != NULL){
                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[left_ptr->idx]),cur->idx,w_lpas) == 0){
                     gettimeofday(&b,NULL);
-                    //printf("[3]%d\n",__calc_time_diff(a,b));
+                    // printf("[3]%d\n",__calc_time_diff(a,b));
                     return left_ptr->idx;
                 } else{
                     left_ptr = left_ptr->prev;
@@ -1789,7 +1842,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             if(right_ptr != NULL){
                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[right_ptr->idx]),cur->idx,w_lpas) == 0){
                     gettimeofday(&b,NULL);
-                    //printf("[3]%d\n",__calc_time_diff(a,b));
+                    // printf("[3]%d\n",__calc_time_diff(a,b));
                     return right_ptr->idx;
                 } else{
                     right_ptr = right_ptr->next;
@@ -1797,9 +1850,9 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             }
         }
     }
-    //if findwritesafe() fails on all block, just return cur.
+    // if findwritesafe() fails on all block, just return cur.
     gettimeofday(&b,NULL);
-    //printf("[3]%d\n",__calc_time_diff(a,b));
+    // printf("[3]%d\n",__calc_time_diff(a,b));
     return cur->idx;
 #endif
 }
@@ -1828,11 +1881,11 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
                 break;
             }
         }
-        //printf("[cur_bounds]\n");
-        //for(int i=0;i<metadata->ranknum+1;i++){
-        //    printf("%ld, %d\n",metadata->rank_bounds[i],metadata->rank_write_count[i]);
-        //}
-        //0-3. reset data_lifespan_window and window_cnt
+        // printf("[cur_bounds]\n");
+        // for(int i=0;i<metadata->ranknum+1;i++){
+        //     printf("%ld, %d\n",metadata->rank_bounds[i],metadata->rank_write_count[i]);
+        // }
+        // 0-3. reset data_lifespan_window and window_cnt
         for(int i=0;i<LIFESPAN_WINDOW;i++){
             metadata->data_lifespan[i] = 0L;
         }
@@ -1841,19 +1894,19 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         }
         metadata->left_rankwrite_num = LIFESPAN_WINDOW;
         metadata->lifespan_record_num = 0;
-        //0-4. change current block's rank.
+        // 0-4. change current block's rank.
         cur = write_head->head;
         while(cur != NULL){
             b_changed = 0;
-            //verify if each block is promotable
+            // verify if each block is promotable
             for(int i=0;i<metadata->ranknum;i++){
-                //promote range = (0 ~ ranknum) becomes (0 ~ ranknum - 1) 
+                // promote range = (0 ~ ranknum) becomes (0 ~ ranknum - 1) 
                 if(cur->wb_rank != metadata->ranknum){
-                    //check blocks which are NOT lowest ranked block
+                    // check blocks which are NOT lowest ranked block
                     if(cur->ub < metadata->rank_bounds[i+1]+cur_cp){
-                        //if abs upper bound < current abs upper bound of i-th rank
-                        //printf("ub:%ld,rankbound:%ld+%ld\n",cur->ub,metadata->rank_bounds[i+1],cur_cp);
-                        //printf("wb %d, %d->%d\n",cur->idx,cur->wb_rank,i);
+                        // if abs upper bound < current abs upper bound of i-th rank
+                        // printf("ub:%ld,rankbound:%ld+%ld\n",cur->ub,metadata->rank_bounds[i+1],cur_cp);
+                        // printf("wb %d, %d->%d\n",cur->idx,cur->wb_rank,i);
                         cur->lb = cur_cp+metadata->rank_bounds[i];
                         cur->ub = cur_cp+metadata->rank_bounds[i+1];
                         
@@ -1861,7 +1914,7 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
                         b_changed = 1;
                     }
                 }
-                //do not check lower ranks if rank is changed
+                // do not check lower ranks if rank is changed
                 if(b_changed == 1){
                     break;
                 }
@@ -1869,7 +1922,7 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
             cur = cur->next;
         }
     }
-    //1. calculate current data's lifespan
+    // 1. calculate current data's lifespan
     long real_lifespan;
     long cur_lifespan = cur_cp - metadata->recent_update[w_lpas[idx]];
     long avg_lifespan = metadata->avg_update[w_lpas[idx]] * (long)metadata->write_cnt[w_lpas[idx]] + cur_lifespan;
@@ -1881,10 +1934,12 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         real_lifespan = WORKLOAD_LENGTH; 
     }
     long expected_lifespan = cur_lifespan;
-    //if(w_lpas[idx] == 66191){
-    //    printf("lifespan record: cur:%ld, avg:%ld, real:%ld\n",cur_lifespan,avg_lifespan,real_lifespan);
-    //    printf("cur cp : %ld, recent : %ld, next : %ld\n",cur_cp, metadata->recent_update[w_lpas[idx]],lpa_update_timing[w_lpas[idx]][metadata->write_cnt_per_cycle[w_lpas[idx]]+1]);
-    //}//2. get rank of current write
+    // if(w_lpas[idx] == 66191){
+    //     printf("lifespan record: cur:%ld, avg:%ld, real:%ld\n",cur_lifespan,avg_lifespan,real_lifespan);
+    //     printf("cur cp : %ld, recent : %ld, next : %ld\n",cur_cp, metadata->recent_update[w_lpas[idx]],lpa_update_timing[w_lpas[idx]][metadata->write_cnt_per_cycle[w_lpas[idx]]+1]);
+    // }
+    
+    // 2. get rank of current write
     int cur_rank = 0;
     for(int i=0;i<metadata->ranknum;i++){
         if(expected_lifespan < metadata->rank_bounds[i+1] && expected_lifespan >= metadata->rank_bounds[i]){
@@ -1895,8 +1950,9 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         cur_rank = metadata->ranknum;
     }
     metadata->rank_write_count[cur_rank]++;
-    //printf("[%d]expected_lifespan : %ld, cur_rank : %d, cur - recent : %ld - %ld\n",w_lpas[idx],expected_lifespan, cur_rank, cur_cp, metadata->recent_update[w_lpas[idx]]);
-    //3. assign corresponding block
+    // printf("[%d]expected_lifespan : %ld, cur_rank : %d, cur - recent : %ld - %ld\n",w_lpas[idx],expected_lifespan, cur_rank, cur_cp, metadata->recent_update[w_lpas[idx]]);
+    
+    // 3. assign corresponding block
     cur = write_head->head;
     while(cur != NULL){ 
         if(cur->wb_rank == cur_rank){
@@ -1904,11 +1960,11 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
         }
         cur = cur->next;
     }
-    //if block not in wblist, try getting a new block
+    // if block not in wblist, try getting a new block
     int ret_b_idx;
     if(cur == NULL){
         int temp = find_block_in_list(metadata,fblist_head,YOUNG);
-        //if block found in fblist, append to write block & return idx
+        // if block found in fblist, append to write block & return idx
         if (temp != -1){
             block* wb_new = ll_remove(fblist_head,temp);
             wb_new->wb_rank = cur_rank;
@@ -1923,7 +1979,7 @@ int find_write_maxinv_prac(rttask* task, int taskidx, int tasknum, meta* metadat
             ll_append(write_head,wb_new);
             return wb_new->idx;
         }
-        //if block not in fblist, do edge case handling
+        // if block not in fblist, do edge case handling
         else{
             cur = write_head->head;
             int offset = abs_int(cur->wb_rank - cur_rank);

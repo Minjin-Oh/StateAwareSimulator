@@ -72,7 +72,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
                   int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp);
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
-                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp);
+                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, int skewnum);
 void BWR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* write_head,IOhead* bwrq, long cur_cp);
 
 
