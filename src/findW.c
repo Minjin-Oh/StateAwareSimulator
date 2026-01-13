@@ -616,9 +616,9 @@ int find_writeweighted(rttask* task, int taskidx, int tasknum, meta* metadata, b
         if(cur_best_util >= ru+gcu){
             cur_best_util = ru+gcu;
             best_idx = cur->idx;
-            printf("block %d is updated, wr : %f, ru : %f, wgc : %f, wgcu : %f, util : %f\n",weighted_r, ru, weighted_gc, gcu, cur->idx,ru+gcu);
+            // printf("block %d is updated, wr : %f, ru : %f, wgc : %f, wgcu : %f, util : %f\n",weighted_r, ru, weighted_gc, gcu, cur->idx,ru+gcu);
         } else {
-            printf("block %d is passed, wr : %f, ru : %f, wgc : %f, wgcu : %f, util : %f\n",weighted_r, ru, weighted_gc, gcu, cur->idx,ru+gcu);
+            // printf("block %d is passed, wr : %f, ru : %f, wgc : %f, wgcu : %f, util : %f\n",weighted_r, ru, weighted_gc, gcu, cur->idx,ru+gcu);
         }
         cur = cur->next;
     }//!fblist search end
@@ -1515,6 +1515,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         free(bounds);    
     }
 
+    //
     //get rank info from metadata & update left write
     int offset = metadata->cur_rank_info.tot_ranked_write[taskidx] - metadata->cur_rank_info.cur_left_write[taskidx];
     int cur_rank = metadata->cur_rank_info.ranks_for_write[taskidx][offset];
@@ -1561,9 +1562,10 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     //[3]-1-2. if free block not found, find closest cluster in write block list.
     else{
         cur = write_head->head;
-        int offset = abs_int(cur->wb_rank - cur_rank);
-        ret_b_idx = cur->idx;
         while(cur != NULL){
+            int offset = abs_int(cur->wb_rank - cur_rank);
+            ret_b_idx = cur->idx;
+            
             cur_state = metadata->state[cur->idx];
             if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
                 cur = cur->next;
@@ -1575,7 +1577,55 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             }
             cur = cur->next;
         }
-        //printf("[e]rank : %d alloc to other block...\n",rank);
+
+        // [4] 적절한 블록을 찾지 못한 경우, write_head와 fblist_head 중에서 가장 lowest PEC 블록에 writing
+        if (ret_b_idx == -1){
+            // printf("[e] no schedulability block found: alloc to lowest block...\n");
+            int final_idx   = -1;
+            int final_state = __INT_MAX__;
+
+            // (1) write_head 전체 스캔
+            cur = write_head->head;
+            while (cur != NULL) {
+                cur_state = metadata->state[cur->idx];
+                if (cur_state < final_state) {
+                    final_state = cur_state;
+                    final_idx   = cur->idx;
+                }
+                cur = cur->next;
+            }
+
+            // (2) free block 리스트도 같이 스캔
+            cur = fblist_head->head;
+            while (cur != NULL) {
+                cur_state = metadata->state[cur->idx];
+                if (cur_state < final_state) {
+                    final_state = cur_state;
+                    final_idx   = cur->idx;
+                }
+                cur = cur->next;
+            }
+
+            // 여기까지 오면 final_idx에 "PEC가 가장 낮은 블록의 idx"가 들어있어야 함
+            if (final_idx == -1) {
+                // 진짜로 아무것도 못 찾은 극단 케이스
+                fprintf(stderr,
+                        "\n[Critical Error] No block found even in fallback.");
+                fflush(stderr);
+                exit(EXIT_FAILURE);
+            }
+            // (3) 이 final_idx가 free list에 있으면 빼서 write_head로 옮긴다
+            else {
+                block* wb_new = ll_remove(fblist_head,final_idx);
+                wb_new->wb_rank = cur_rank;
+                ll_append(write_head,wb_new);
+                return wb_new->idx;
+            }
+
+            // (4) free list에 없었다는 건 이미 write_head에 있었던 블록이라는 뜻
+            return final_idx;
+        }
+        // printf("[e]rank : %d alloc to other block %d...\n", cur_rank, cur->wb_rank);
         return ret_b_idx;
     }
     //!end of active rank calculation-based method

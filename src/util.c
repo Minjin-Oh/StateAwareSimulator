@@ -183,20 +183,20 @@ float calc_std(meta* metadata){
 float find_worst_util(rttask* task, int tasknum, meta* metadata){
     //calculate worst-case utilization regarding to current block state
     //as a worst case bound, simply assume that each task independantly chooses the block.
-    //find oldest, freshest block
-    int freshest, oldest, sum;
+    //find oldest, freshest (-> youngest로 변경) block
+    int youngest, oldest, sum;
     float avg, var;
     sum = 0;
     var = 0.0;
     for(int i=0;i<NOB;i++){
         sum += (float)metadata->state[i];
         if(i==0){
-            freshest = metadata->state[i];
+            youngest = metadata->state[i];
             oldest = metadata->state[i];
         }
         else{
-            if (freshest >= metadata->state[i]){
-                freshest = metadata->state[i];
+            if (youngest >= metadata->state[i]){
+                youngest = metadata->state[i];
             }
             if (oldest <= metadata->state[i]){
                 oldest = metadata->state[i];
@@ -210,17 +210,17 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
         var += b;
         //printf("dev : %f,dev^2 : %f, cur_var : %f\n",a,b,var);
     }
-    //printf("oldest : %d, freshest : %d, std : %f\n",oldest,freshest,sqrt(var/(float)NOB));
-    //with the oldest/freshest, calculate total utilization
+    //printf("oldest : %d, youngest : %d, std : %f\n",oldest,youngest,sqrt(var/(float)NOB));
+    //with the oldest/youngest, calculate total utilization
     float total_u = 0.0;
     int min_period;
     for(int i=0;i<tasknum;i++){
         //write util
-        total_u += __calc_wu(&(task[i]),freshest);
+        total_u += __calc_wu(&(task[i]),youngest);
         //read util
         total_u += __calc_ru(&(task[i]),oldest);
         //GC util
-        total_u += __calc_gcu(&(task[i]),MINRC,freshest,oldest,oldest);
+        total_u += __calc_gcu(&(task[i]),MINRC,youngest,oldest,oldest);
         //printf("[WC]cur_util:%f\n",total_u);
     }
     //add blocking factor

@@ -23,7 +23,7 @@
 
 //workload duration and simulation maximum runtime (in microsecond)
 #define WORKLOAD_LENGTH 160000000000L
-#define RUNTIME 10000000000000L
+#define RUNTIME 636404925094
 
 //set number of operation types (used in execution time functions)
 //currently 3 (write,read,erase) 
@@ -34,7 +34,7 @@
 #define _MINRC 35       //!!!deprecated. MINRC and oprate is defined as variable in parse.c!!!
 #define MAXPE 2000
 #define MARGIN 3
-#define THRESHOLD 10
+#define THRESHOLD 100
 #define GCGROUP_THRES 40    //a parameter for TESTGC. used to defer victimizing oldest blocks.
 #define WR_CYC_INTERVAL 5000   //an interval of re-determining write-cold threshold.
 #define OLD 0

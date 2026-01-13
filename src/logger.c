@@ -235,9 +235,9 @@ float calc_readlatency(rttask* tasks, meta* metadata, int taskidx){
         }
     }
     */
-    printf("[debug]cnt, task sum, probability sum : %d, %d ,%f\n",
-    cnt_sum,metadata->read_cnt_task[taskidx],prob_sum);
-    printf("exp_read_latency : %f\n",exp_read_latency);
+    // printf("[debug]cnt, task sum, probability sum : %d, %d ,%f\n",
+    // cnt_sum,metadata->read_cnt_task[taskidx],prob_sum);
+    // printf("exp_read_latency : %f\n",exp_read_latency);
     //edge case handling
     if(metadata->read_cnt_task[taskidx] == 0){
         exp_read_latency = (float)STARTR;
@@ -383,20 +383,19 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     total_u_noblock = total_u;
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
     //print all infos (prof_{no, WLcomb, ours}_t%d.csv)
-    fprintf(fp,"%ld,%d, %f,%f,%f,%f,%f,%f, %d,%d, %d,%d,%d,%d, %d,%d, %d,%d, %f,%f,%f, %f, %lf\n",
-    cur_cp,taskidx,
-    worst_util,total_u, total_u_noblock,
+    fprintf(fp,"%ld,%f,%f,%f,%f,%f, %d,%d, %f,%f,%f, %f, %lf\n",
+    cur_cp,
+    total_u, total_u_noblock,
     metadata->runutils[0][taskidx],
     metadata->runutils[1][taskidx],
     metadata->runutils[2][taskidx],
-    old,yng,
-    cur_gc_idx,cur_gc_state,getfp,gcvalidcount,
-    cur_wb->idx,metadata->state[cur_wb->idx],
-    fblist_head->blocknum,write_head->blocknum,
+    metadata->state[cur_wb->idx], cur_gc_state,
     total_w,total_r,total_gc,
     state_avg, state_var); 
     return total_u;
 }
+
+// timestamp, tot_util, tot_util(no block), w_util, r_util, gc_util, w_blk_pe, gc_blk_pe, tot_w_util, tot_r_util, tot_w_util, avg_pe, var_pe
 
 void print_hotdist_profile(FILE* fp, rttask* tasks, int cur_cp, meta* metadata, int taskidx, int hotness_rw){
     //if hotness & taskindex is specified, profile the distribution of the task

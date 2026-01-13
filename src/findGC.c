@@ -408,7 +408,6 @@ int find_gcweighted(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
     return best_idx;
 }
 
-
 int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head, bhead* write_head){
     //!!!find_gc_ has floating point issues
     //sort the victim blocks in order of utilization
@@ -441,7 +440,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     float test_gcutil_arr[full_head->blocknum + write_head->blocknum];
     char block_origin[full_head->blocknum + write_head->blocknum];
 #endif
-    //init arrays
+    // 1. init arrays
     for(int i=0;i<full_head->blocknum;i++){
         vic_arr[i] = -1;
     }
@@ -451,7 +450,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         proportion_tot += gc_period_sort[i];
     }
 
-    //sort gc period
+    // 2. sort gc period
     for(int i=tasknum-1;i>0;i--){
         for(int j=0;j<i;j++){
             if(gc_period_sort[j] > gc_period_sort[j+1]){
@@ -465,20 +464,21 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
 
-    //find priority of cur gc
+    // 3. find priority of cur gc
     for(int i=0;i<tasknum;i++){
         if(task_order[i] == taskidx){
             cur_priority = i;
         }
     }
-    //find start offset of cur gc
+    
+    // 4. find start offset of cur gc
     for(int i=0;i<cur_priority-1;i++){
         proportion_sum += gc_period_sort[i];
     }
     
     cur_offset = (float)proportion_sum / (float)proportion_tot;
     
-    //build up candidate block list
+    // 5. build up candidate block list
     block* cur = NULL;
     cur = full_head->head;
     gettimeofday(&a,NULL);
@@ -567,7 +567,9 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
 #endif
     gettimeofday(&b,NULL);
     //printf("[gcsafe]%d\n",b.tv_sec * 1000000 + b.tv_usec - a.tv_sec * 1000000 - a.tv_usec);
-    //EDGE CASE HANDLING : if vic_num is 0, ignore find_gc_safe and add victims.
+    
+    // 5-1. EDGE CASE HANDLING : if vic_num is 0, ignore find_gc_safe and add victims.
+    // 즉, schedulability를 만족하는 victim block이 없는 경우, schedulability는 무시하고 victim 선택
     if(vic_num == 0){
         printf("vic_num == 0\n");
         cur = full_head->head;
@@ -595,11 +597,12 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             cur = cur->next;
         }
     }
+    
     //!EDGE CASE HANDLING
     gettimeofday(&a,NULL);
     
-    //sort candidate block list
-    //currently, sorting is negligible to greedily minimize GC overhead
+    // sort candidate block list
+    // currently, sorting is negligible to greedily minimize GC overhead
     /*
     for(int i=vic_num-1;i>0;i--){
         for(int j=0;j<i;j++){
@@ -639,13 +642,13 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
 #endif
-    //using offset factor, choose best block
+    // using offset factor, choose best block
     cur_offset_int = (int)(cur_offset * (float)vic_num);
 #ifdef UTILSORT_BEST
     cur_offset_int = 0;
 #endif
-    //currently, sorting is negligible to greedily minimize GC overhead
-    //best_idx = vic_arr[cur_offset_int];
+    // currently, sorting is negligible to greedily minimize GC overhead
+    // best_idx = vic_arr[cur_offset_int];
 #ifdef utilsort_writecheck
     int test_cur_offset_int = (int)(cur_offset * (float)test_vicnum);
     int test_best_idx = test_arr[test_cur_offset_int];

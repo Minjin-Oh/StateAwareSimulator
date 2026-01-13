@@ -4,6 +4,7 @@
 #include "assignW.h"
 #include "rrsim_q.h"
 #include "IOgen.h"
+#include "emul_logger.h"
 
 extern int rrflag;
 extern bhead* glob_yb;
@@ -182,6 +183,10 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             req->islastreq = 1;
         }                           
         ll_append_IO(wq,req);
+        // printf("[DEBUG] cur_cp=%ld, target_task=%d, target_type=%d\n", cur_cp, target_task, target_type);
+        // printf("[DEBUG] write_head blocknum=%d, fblist blocknum=%d, cur->fpnum=%d\n", write_head->blocknum, fblist_head->blocknum, cur ? cur->fpnum : -1);
+        // printf("[DEBUG] total_fp=%d, expected_fp=%d\n", metadata->total_fp, expected_fp);
+
         exec_sum += w_exec(ppa_state[i]);
         if(i==0){
             req->init = 1;
@@ -259,7 +264,8 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         //sleep(3);
         //abort();
     }
-    //params
+    
+    // 0. parameter initialization
     block* cur = full_head->head;
     block* vic = NULL;
     block* rsv;
@@ -278,7 +284,8 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     int others_vic_invalid = -1;
     int oldest_vic_idx;
     int others_vic_idx;
-    //find gc target
+
+    // 1. find gc victim block index
     if (gcflag == 1){
         gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);
     } else if (gcflag == 2){
@@ -294,7 +301,9 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     }
     print_blocklist_info(write_head,metadata);
     print_blocklist_info(full_head,metadata);
-    //if gc baseline, select most invalid block
+    
+    // 2. victim block selection
+    // 2-(1). if gc baseline, select most invalid block
     if (gcflag == 0){
         /*
         while(cur != NULL){
@@ -332,7 +341,8 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             vic = full_head->head;
         }
     }
-    //if not, choose a victim block from full_block list using index
+    
+    // 2-(2). if not, choose a victim block from full_block list using index
     else if (gcflag == 1 || gcflag == 2 || gcflag == 3 || gcflag == 4 || gcflag == 5 || gcflag == 6){
         //printf("target block : %d\n",gc_limit);
         while(cur != NULL){
@@ -344,6 +354,8 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             cur = cur->next;
         }   
     } 
+     
+    // 2-(3). TESTGC
     else if (gcflag == 7){
         while(cur != NULL){
             //check if oldest
@@ -383,10 +395,13 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
     }
 
+    // Edge Case
+    // i. victim block이 없는 경우
     if(vic==NULL){
         printf("[GC]no feasible block\n");
         abort();
     }
+    // ii. victim block에 invalid page가 존재하지 않는 경우. 즉, 회수할 수 있는 free page가 0인 경우.
     if(metadata->invnum[vic->idx]==0){
         printf("no fp block\n");
         return;
@@ -396,14 +411,19 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
 #ifdef GC_ON_WRITEBLOCK
     make_req_gc(metadata,tasks,taskidx,cur_cp,vic,rsv,gcq,full_head,write_head,fblist_head,cur_GC);
 #endif
+
 #ifndef GC_ON_WRITEBLOCK
+    // 3. victim block을 full block list에서 pop, copy block을 reserved block list에서 pop.
     ll_remove(full_head,vic->idx);
     rsv = ll_pop(rsvlist_head);
+    
+    // 3-(1). victim block과 copy block을 찾을 수 없는 경우, Error!
     if(rsv == NULL || vic == NULL){
         printf("[%ld]gc fucked up\n");
         abort();
     }
-    //make copyback requests
+
+    // 4. valid page copy 과정을 gcq에 enqueue
     vic_offset = PPB*(vic->idx);
     rsv_offset = PPB*(rsv->idx);
     vp_count = 0;
@@ -426,7 +446,8 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             gc_exec += req->exec;
         }
     }
-    //append erase operation at the end
+
+    // 5. victim block을 erase하는 작업을 gcq에 enqueue
     IO* er = (IO*)malloc(sizeof(IO));
     er->type = GCER;
     er->last = 1;
@@ -445,12 +466,14 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     cur_GC->cur_vic = vic;
     rsv->fpnum = PPB - vp_count;
     vic->fpnum = PPB;
-    metadata->runutils[2][taskidx] = gc_exec / gc_period;    
+    metadata->runutils[2][taskidx] = gc_exec / gc_period;
+    // pec_dump_snapshot(PEC_profile, metadata, cur_cp);
 #endif
+
 }
 
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
-                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp){
+                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, int skewnum){
     char reloc_w = 0;
     char reloc_r = 0;
     int vic1 = -1;
@@ -463,24 +486,43 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     block *vb1 = NULL, *vb2 = NULL, *cur;
     meta temp;
     
-    //find relocation victim blocks
+    // 1. find relocation victim blocks
+    // 1-(1). Static WL
     if(rrflag == 0){
         find_RR_dualpool(tasks, tasknum, metadata, full_head, hotlist, coldlist, &vic1, &vic2);
     }
-    else if (rrflag == 1){
-        find_WR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
-        if(vic1 == -1 || vic2 == -1){
+    // 1-(2). RTWL
+    else if (rrflag == 1){ 
+        if (skewnum >= 2){ // write-intensive
+            // write-based relocation 
+            find_WR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
+            if(vic1 == -1 || vic2 == -1){
+                // read-based relocation
+                find_RR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
+                if(vic1 != -1 || vic2 != -1){
+                    reloc_r = 1;
+                }
+            } 
+            else{
+                reloc_w = 1;
+            }
+        }
+        else{ // read-intensive
             find_RR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
-            if(vic1 != -1 || vic2 != -1){
+            if(vic1 == -1 || vic2 == -1){
+                // read-based relocation
+                find_WR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
+                if(vic1 != -1 || vic2 != -1){
+                    reloc_w = 1;
+                }
+            } 
+            else{
                 reloc_r = 1;
             }
-        } 
-        else{
-            reloc_w = 1;
-        }
+        }       
     } 
 
-    //if victim block is not found, cancel WL and return.
+    // 2. if victim block is not found, cancel WL and return.
     if(rrflag == 0 || rrflag == 1){
         if(vic1 == -1 || vic2 == -1){
             //printf("vic1 %d, vic2 %d, skiprr\n",vic1,vic2);
@@ -488,16 +530,19 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
     }
 
-    //if victim is found, reset access window (or inv window) for future.
+    // 3. if victim is found, reset access window (or inv window) for future.
     if(rrflag == 1){
         for(int i=0;i<NOB;i++){
+            // 왜 access window (아마 read access 아닐까?)는 전체 block에 대해서 초기화 시키고,
             metadata->access_window[i] = 0;
         }
+        // invalidation window는 victim block에 대해서만 초기화 하는거지?
         metadata->invalidation_window[vic1] = 0;
         metadata->invalidation_window[vic2] = 0;
     }
     
-    //find vb1 and vb2
+    // 4. find vb1 and vb2
+    // 4-(1). full block list에서 확인
     cur = full_head->head;
     while(cur != NULL){
         if(cur->idx == vic1){
@@ -508,6 +553,7 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
         cur=cur->next;
     }
+    // 4-(2). free block list에서 확인
     cur = fblist_head->head;
     while(cur != NULL){
         if(cur->idx == vic1){
@@ -518,30 +564,34 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
         cur=cur->next;
     }
+    //4-(3). victim block의 offset, state, cnt 정보 저장
     v1_offset = PPB*vic1;
     v2_offset = PPB*vic2;
     v1_state = metadata->state[vb1->idx];
     v2_state = metadata->state[vb2->idx];
     v1_cnt = PPB - metadata->invnum[vic1];
     v2_cnt = PPB - metadata->invnum[vic2];
-    //find data relocation period
+
+    // 5. find data relocation period (slack-based)
     rrp = find_RR_period(vic1,vic2,v1_cnt,v2_cnt,rrutil, metadata);
-    //edge case : if read relocation util is lower than 0.0, assign longest possible deadline.
+
+    // !!! edge case : if read relocation util is lower than 0.0, assign longest possible deadline.
     if(rrutil <= 0.0){
         rrp = __LONG_MAX__ - cur_cp;
     }
+
     //copy the metadata into temp param and use temp
     //make sure that metadata update do NOT generate concurrency issue.
     memcpy(&temp,metadata,sizeof(meta));
 
-    //generate relocation requests.
+    // 6. generate relocation requests.
     execution_time += gen_read_rr(vic1,vic2,cur_cp,rrp,metadata,rrq);
     //make erase request.
     execution_time += gen_erase_rr(vic1,vic2,cur_cp,rrp,metadata,rrq);
     //make write request
     execution_time += gen_write_rr(vic1,vic2,cur_cp,rrp,metadata,rrq);
 
-    //remove target block from blocklist & update block info.
+    // 7. remove target block from blocklist
     if(is_idx_in_list(full_head,vic1)){
         vb1 = ll_remove(full_head,vic1);
     }
@@ -553,7 +603,7 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         abort();
     }
 
-    //update block info & allocate pointer to tracker
+    // 8. update block info & allocate pointer to tracker
     vb1->fpnum = PPB-v2_cnt;
     vb2->fpnum = PPB-v1_cnt;
     cur_RR->cur_vic1 = vb1;
