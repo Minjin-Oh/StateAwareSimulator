@@ -2,6 +2,7 @@
 
 #include "assignW.h"
 #include "findW.h"
+#include "stdlib.h"
 
 extern long cur_cp;
 extern int max_valid_pg;
@@ -10,6 +11,34 @@ extern FILE **fps;
 extern bhead* glob_yb;
 extern bhead* glob_ob;
 extern long* lpa_update_timing[NOP];
+
+// Prediction error injection (for accuracy sweep experiments)
+// Compile-time controls (can be overridden by -D options)
+#ifndef ENABLE_PRED_ERR
+// 0: off, 1: on
+#define ENABLE_PRED_ERR 0
+#endif
+
+#ifndef PRED_ACC
+// accuracy in [0,1], e.g., 0.9 means 10% misprediction
+#define PRED_ACC 1.0
+#endif
+
+static inline double __rand01(void){
+    return (double)rand() / (double)RAND_MAX;
+}
+
+// pick a random block idx from a list (write_head)
+static int __pick_random_idx_from_list(bhead* head){
+    if (head==NULL || head->blocknum <= 0 || head->head == NULL) return -1;
+    int r = rand() % head->blocknum;
+    block* cur = head->head;
+    while (cur != NULL && r>0){
+        cur = cur->next;
+        r--;
+    }
+    return (cur != NULL) ? cur->idx : -1;
+}
 
 block* assign_write_greedy(rttask* task, int taskidx, int tasknum, meta* metadata,
                            bhead* fblist_head, bhead* write_head, block* cur_b){
@@ -522,6 +551,16 @@ block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* met
     
     //gettimeofday(&a,NULL);
     target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,cur_cp);
+    #if ENABLE_PRED_ERR
+        // with probability (1-PRED_ACC), override the "correct" target with a random WB target
+        if(__rand01() > PRED_ACC){
+            int alt = __pick_random_idx_from_list(write_head);
+            if(alt != -1){
+                target = alt;
+            }
+        }
+    #endif
+
     cur = ll_findidx(write_head,target);
     //gettimeofday(&b,NULL);
     //sec = (b.tv_sec - a.tv_sec)*1000000;

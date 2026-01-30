@@ -338,13 +338,18 @@ void  _get_write_reqs(FILE** w_workloads, int tasknum, int taskidx, rttask* task
     //sleep(3);
 }
 
+// 각 LPA에 대해 다음에 update될 시각을 계산하여 updateorder로 저장하는 함수
 void _get_write_updateorder(int* jobnum, int** lpas_to_arrange, int tasknum, rttask* task, meta* metadata, long** updateorder_per_task){
     for(int i=0;i<tasknum;i++){
         for(int j=0;j<jobnum[i]*task[i].wn;j++){
             int lpa_cur = lpas_to_arrange[i][j];
-            //normally lpa freq will be 0 (lpa X accessed more than twice in single window)
+            // normally lpa freq will be 0 (lpa X accessed more than twice in single window)
+            // 현재 cycle에서 해당 LPA가 지금까지 write된 횟수
             int lpa_cyc = metadata->write_cnt_per_cycle[lpa_cur];
+            
+            // updateorder: 현재 LPA에 대해 다음 update가 존재하면 해당 시각을, 없으면 window 끝으로 설정
             if(lpa_cyc <= update_cnt[lpa_cur]-1){
+                // lpa_update_timing[lpa_cur][lpa_cyc+1]: 해당 LPA가 lpa_cyc+1번째로 update되는 시각
                 updateorder_per_task[i][j] = lpa_update_timing[lpa_cur][lpa_cyc+1];
             } else {
                 updateorder_per_task[i][j] = WORKLOAD_LENGTH+cur_cp;
@@ -396,6 +401,8 @@ int __get_rank(int order, meta* metadata){
     return ranknum;
 }
 
+// 결정된 bound (rank)를 기준으로, updateorder가 어느 구간에 속하는지 반환
+// updateorder가 빠를수록 낮은 rank, 느릴수록 큰 rank에 속함
 int __get_rank_long_dyn(long order, long* rank, int ranknum){
     for(int i=0;i<ranknum;i++){
         if(order <= rank[i] && i == 0){
@@ -1418,6 +1425,8 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
 
 #ifdef MAXINVALID_RANK_DYN
     // active rank calculation-based method
+
+    // cur_left_write[taskidx] : pre-assigned write (taskidx에 대한 rank가 남아있는 write reqeust 수)
     if(metadata->cur_rank_info.cur_left_write[taskidx] == 0){
         // if pre-assigned write is finished, re-assign ranks for future N writes.
         // 1. find jobs and their corresponding update timing within given interval (cur interval = 500ms)
@@ -1432,6 +1441,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             jobnum[i] = 0;
         }
 
+        // jobnum: task마다 current 이후에 release되는 job 수
         _get_jobnum_interval(cur_cp,90000000,task,tasknum,jobnum);
         // for(int i=0;i<tasknum;i++){
         //     printf("reqnum : %d\n",jobnum[i]*task[i].wn);
@@ -1440,7 +1450,9 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             req_per_task[i] = (int*)malloc(sizeof(int)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
             updateorders[i] = (long*)malloc(sizeof(long)*(unsigned long)jobnum[i]*(unsigned long)task[i].wn);
         }
+        // req_per_task: current 이후에 발생할 write가 접근하는 LPA
         _get_write_reqs(w_workloads,tasknum,taskidx,task,w_lpas,90000000,jobnum,req_per_task);
+        // updateorders: 각 LPA에 대해 다음 update 시점을 저장
         _get_write_updateorder(jobnum,req_per_task,tasknum,task,metadata,updateorders);
     
         // 1-(1). put update timing values in single array
@@ -1497,6 +1509,8 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             for(int j=0;j<jobnum[i]*task[i].wn;j++){
                 // find rank of each reqs & make a rank record.
                 // printf("cur rec idx : %d\n",record_idx);
+
+                // 현재 job의 updateorder에 따른 rank 결정
                 metadata->cur_rank_info.ranks_for_write[i][record_idx] = __get_rank_long_dyn(updateorders[i][j],bounds,metadata->ranknum);
                 record_idx++;
             }
