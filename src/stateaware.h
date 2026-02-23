@@ -67,12 +67,12 @@ int is_idx_in_list(bhead* head, int tar);
 void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOhead* rq, long cur_cp);
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp);
+                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp, FILE* fpovhd_W, FILE* fpovhd_w_process);
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
-                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp);
+                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp, FILE* fpovhd_gc, FILE* fpovhd_gc_utilsort);
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
-                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, int skewnum);
+                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, int skewnum, FILE* fpovhd_rr_detail, FILE* fpovhd_rr_detail_process);
 void BWR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* write_head,IOhead* bwrq, long cur_cp);
 
 
@@ -109,6 +109,7 @@ rttask* generate_taskset(int tasknum, float util, int addr, float* result_util, 
 rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
 rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle);
 rttask* generate_taskset_hardcode(int tasknum, int addr, float* result_util);
+rttask* generate_taskset_hardcode_motiv(int tasknum, float tot_util, int addr, float* result_util, int cycle);
 rttask* generate_taskset_fixed(int addr, float* result_util);
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile);
 void get_loc_from_file(rttask* tasks, int tasknum, FILE* locfile);

@@ -5,13 +5,24 @@ extern int THRES_HOT;
 extern int prev_erase;
 extern int prev_mincyc;
 extern int prev_cyc[NOB];
-void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_head, bhead* hotlist, bhead* coldlist, int* res1, int* res2){
+void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_head, bhead* hotlist, bhead* coldlist, int* res1, int* res2, FILE* fpovhd_rr_detail_process){
     
+    long reloc_target, update_pool, hot_evict, cold_evict;
+    struct timeval algo_start_time_rr;
+    struct timeval algo_end_time_rr;
+
     //get relocation target
+
+    gettimeofday(&(algo_start_time_rr),NULL);
+    
     int hot_old = get_blkidx_byage(metadata,hotlist,full_head,0,0);         // read hot? write hot?, old : high P/E cycle
     int hot_young = get_blkidx_byage(metadata,hotlist,full_head,1,0);
     int cold_young = get_blkidx_byage(metadata,coldlist,full_head,1,0);
     int cold_max_eec, hot_min_eec, cold_evict_idx;
+
+    gettimeofday(&(algo_end_time_rr),NULL);
+    reloc_target = algo_end_time_rr.tv_sec * 1000000 + algo_end_time_rr.tv_usec - algo_start_time_rr.tv_sec * 1000000 - algo_start_time_rr.tv_usec;
+
     //printf("hotold : %d(%d), coldyoung : %d(%d)\n",hot_old,metadata->state[hot_old],cold_young,metadata->state[cold_young]);
     
     if (cold_young == -1 || hot_old == -1){
@@ -24,7 +35,10 @@ void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_hea
         *res2 = -1;
         return;
     }
+
     //update hot-cold pool
+    gettimeofday(&(algo_start_time_rr),NULL);
+    
     block* hot_b = ll_remove(hotlist,hot_old);
     block* cold_b = ll_remove(coldlist,cold_young);
     ll_append(hotlist,cold_b);
@@ -32,14 +46,24 @@ void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_hea
     metadata->EEC[hot_old] = 0;
     metadata->EEC[cold_young] = 0;
 
+    gettimeofday(&(algo_end_time_rr),NULL);
+    update_pool = algo_end_time_rr.tv_sec * 1000000 + algo_end_time_rr.tv_usec - algo_start_time_rr.tv_sec * 1000000 - algo_start_time_rr.tv_usec;
+
     //adjust hot-cold pool if necessary
     //hot pool eviction code
+    gettimeofday(&(algo_start_time_rr),NULL);
+
     if(metadata->state[hot_old] - metadata->state[hot_young] >  2*THRESHOLD){
         block* hot_evict = ll_remove(hotlist,hot_young);
         ll_append(coldlist,hot_evict);
     }
 
+    gettimeofday(&(algo_end_time_rr),NULL);
+    hot_evict = algo_end_time_rr.tv_sec * 1000000 + algo_end_time_rr.tv_usec - algo_start_time_rr.tv_sec * 1000000 - algo_start_time_rr.tv_usec;
+
     //cold pool eviction code
+    gettimeofday(&(algo_start_time_rr),NULL);
+
     block* cur = coldlist->head;
     cold_max_eec = metadata->EEC[cur->idx];
     cold_evict_idx = cur->idx;
@@ -63,6 +87,12 @@ void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_hea
         block* cold_evict = ll_remove(coldlist,cold_evict_idx);
         ll_append(hotlist,cold_evict);
     }
+
+    gettimeofday(&(algo_end_time_rr),NULL);
+    cold_evict = algo_end_time_rr.tv_sec * 1000000 + algo_end_time_rr.tv_usec - algo_start_time_rr.tv_sec * 1000000 - algo_start_time_rr.tv_usec;
+
+    fprintf(fpovhd_rr_detail_process, "%ld, %ld, %ld, %ld\n", reloc_target, update_pool, hot_evict, cold_evict);
+
     //return value
     
     *res1 = hot_old;

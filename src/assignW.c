@@ -542,7 +542,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
 }
 
 block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, long cur_cp){
+                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, long cur_cp, FILE* fpovhd_w_process){
     //struct timeval a;
     //struct timeval b;
     //int sec, usec;
@@ -550,7 +550,7 @@ block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* met
     block* cur = NULL;
     
     //gettimeofday(&a,NULL);
-    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,cur_cp);
+    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,cur_cp, fpovhd_w_process);
     #if ENABLE_PRED_ERR
         // with probability (1-PRED_ACC), override the "correct" target with a random WB target
         if(__rand01() > PRED_ACC){

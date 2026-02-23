@@ -117,6 +117,7 @@ int main(int argc, char* argv[]){
     // log file pointers
     FILE* rr_profile;
     FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
+    FILE *fpovhd_gc, *fpovhd_w, *fpovhd_rr, *fpovhd_gc_utilsort, *fpovhd_gc_detail, *fpovhd_w_detail, *fpovhd_w_process, *fpovhd_rr_detail, *fpovhd_rr_detail_process;
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
@@ -180,9 +181,11 @@ int main(int argc, char* argv[]){
     long write_release_num = 0;
     long gc_release_num = 0;
     long rr_release_num = 0;
-    long write_ovhd_sum = 0;
-    long gc_ovhd_sum = 0;
+    // long write_ovhd_sum = 0;
+    // long gc_ovhd_sum = 0;
     long rr_ovhd_sum = 0;
+    long write_ovhd = 0;
+    long gc_ovhd = 0;
     long tot_runtime;
     double tot_runtime_readable;
     double write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg;
@@ -470,30 +473,60 @@ int main(int argc, char* argv[]){
         updateorder_fp = fopen("Baseline_updateorder.csv", "w");
         fplife = fopen("Baseline_lifetime.csv","w");
         fpovhd = fopen("Baseline_overhead.csv","w");
+        fpovhd_w = fopen("w_overhead_FIFO.csv","w");
+        fpovhd_gc = fopen("GC_overhead_greedy.csv","w");
     }
     else if(wflag == 11 && gcflag == 0 && rrflag ==  0){       // Hybrid WL
         rr_profile = fopen("Hyb_rr_prof.csv","w");
         updateorder_fp = fopen("Hyb_updateorder.csv", "w");
         fplife = fopen("Hyb_lifetime.csv","w");
-        fpovhd = fopen("Hyb_overhead.csv","w");
+
+        // overhead
+        fpovhd_w = fopen("Hyb_overhead_write.csv","w");
+        fpovhd_gc = fopen("Hyb_overhead_gc.csv", "w");
+        fpovhd_rr = fopen("Hyb_overhead_rr.csv", "w");
+        fpovhd_w_detail = fopen("w_overhead_detail_hyb.csv","w");
+        fpovhd_gc_detail = fopen("GC_overhead_greedy.csv","w");
+        fpovhd_gc_utilsort = fopen("GC_overhead_efficiency_detail.csv","w");
+        fpovhd_rr_detail = fopen("rr_overhead_detail_hyb.csv","w");
+        fpovhd_rr_detail_process = fopen("rr_overhead_detail_hyb_process.csv", "w");
+        fprintf(fpovhd_rr_detail_process, "%s\n", "reloc_target, update_pool, hot_evict, cold_evict");
     }
     else if(wflag == 14 && gcflag == 6 && rrflag == -1){       // LaWL-D
         rr_profile = fopen("LaWL_D_rr_prof.csv","w");
         updateorder_fp = fopen("LaWL_D_updateorder.csv", "w");
         fplife = fopen("LaWL_D_lifetime.csv","w");
         fpovhd = fopen("LaWL_D_overhead.csv","w");
+        fpovhd_w = fopen("w_overhead_lawl.csv","w");
+        fpovhd_gc = fopen("GC_overhead_efficiency.csv","w");
+        fpovhd_gc_utilsort = fopen("GC_overhead_efficiency_detail.csv","w");
+        fprintf(fpovhd_gc_utilsort,"%s\n","init_array, sort, find_priority, find_offset, candidate, edge_case");
     }
     else if(wflag == 14 && gcflag == 6 && rrflag ==  1){       // LaWL
         rr_profile = fopen("LaWL_rr_prof.csv","w");
         updateorder_fp = fopen("LaWL_updateorder.csv", "w");
         fplife = fopen("LaWL_lifetime.csv","w");
-        fpovhd = fopen("LaWL_overhead.csv","w");
+
+        fpovhd_w = fopen("LaWL_overhead_write.csv","w");
+        fpovhd_gc = fopen("LaWL_overhead_gc.csv", "w");
+        fpovhd_rr = fopen("LaWL_overhead_rr.csv", "w");
+        fpovhd_w_detail = fopen("w_overhead_detail_lawl.csv","w");
+        fpovhd_w_process = fopen("w_overhead_process_lawl.csv","w");
+        fprintf(fpovhd_w_process, "%s \n", "clustering, select_target, fail, select_free, select_closest");
+        fpovhd_gc_detail = fopen("GC_overhead_efficiency.csv","w");
+        fpovhd_gc_utilsort = fopen("GC_overhead_efficiency_detail.csv","w");
+        fprintf(fpovhd_gc_utilsort,"%s\n","init_array, sort, find_priority, find_offset, candidate, edge_case");
+        fpovhd_rr_detail = fopen("rr_overhead_detail_LaWL.csv","w");
+        fpovhd_rr_detail_process = fopen("rr_overhead_detail_LaWL_process.csv", "w");
+        fprintf(fpovhd_rr_detail_process, "%s\n", "reloc_target, update_pool, hot_evict, cold_evict");
     }
     else{                                                      // Dynamic WL
         rr_profile = fopen("Dyn_rr_prof.csv", "w");
         updateorder_fp = fopen("Dyn_updateorder.csv", "w");
         fplife = fopen("Dyn_lifetime.csv","w");
         fpovhd = fopen("Dyn_overhead.csv","w");
+        fpovhd_w = fopen("w_overhead_dyn.csv","w");
+        fpovhd_gc = fopen("GC_overhead_greedy.csv","w");
     }
 
     IO_open(tasknum, w_workloads, r_workloads);
@@ -622,8 +655,6 @@ int main(int argc, char* argv[]){
 
     // !!! start of simulation !!!
     while(cur_cp <= RUNTIME){
-            fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-            fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
 
         // 1. 한 바퀴 돌 때마다 전체 블록의 PEC를 profiling하고, lowest and highest PEC를 check
         yngest = get_blockstate_meta(newmeta,YOUNG);
@@ -636,34 +667,34 @@ int main(int argc, char* argv[]){
             //printf("cur_u:%f\n",total_u);
 
             // utilization overflow 1 (exit code)
-            if(total_u >= 1.0){                
-                printf("[%ld]utilization overflow 1, util : %f\n",cur_cp, total_u);
-                gettimeofday(&tot_end_time,NULL);
-                tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
-                tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
-                if(write_release_num != 0){
-                    write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
-                } else {
-                    write_ovhd_avg = 0;
-                }
-                if(gc_release_num != 0){
-                    gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
-                } else {
-                    gc_ovhd_avg = 0;
-                }
-                if(rr_release_num != 0){
-                    rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
-                } else {
-                    rr_ovhd_avg = 0;
-                }
-                fprintf(fplife,"%ld,",cur_cp);
-                fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-                fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
-                print_profile_updaterate(newmeta,updaterate_fp);
-                sleep(1);
-                exit_code = 1;
-                    goto CLEANUP;
-            }
+            // if(total_u >= 1.0){                
+            //     printf("[%ld]utilization overflow 1, util : %f\n",cur_cp, total_u);
+            //     gettimeofday(&tot_end_time,NULL);
+            //     tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
+            //     tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
+            //     if(write_release_num != 0){
+            //         write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
+            //     } else {
+            //         write_ovhd_avg = 0;
+            //     }
+            //     if(gc_release_num != 0){
+            //         gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
+            //     } else {
+            //         gc_ovhd_avg = 0;
+            //     }
+            //     if(rr_release_num != 0){
+            //         rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
+            //     } else {
+            //         rr_ovhd_avg = 0;
+            //     }
+            //     fprintf(fplife,"%ld,",cur_cp);
+            //     fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
+            //     fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
+            //     print_profile_updaterate(newmeta,updaterate_fp);
+            //     sleep(1);
+            //     exit_code = 1;
+            //         goto CLEANUP;
+            // }
         }
 
         // 2-(2). max P/E cycle overflow (exit code)
@@ -697,34 +728,34 @@ int main(int argc, char* argv[]){
                                     newmeta->total_fp,cur_IO->gc_valid_count);
 
                     // utilization overflow 2 (exit code)
-                    if(total_u > 1.0){
-                        printf("[%ld]utilization overflow 2, util : %f\n",cur_cp, total_u);
-                        gettimeofday(&tot_end_time,NULL);
-                        tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
-                        tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
-                        if(write_release_num != 0){
-                            write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
-                        } else {
-                            write_ovhd_avg = 0;
-                        }
-                        if(gc_release_num != 0){
-                            gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
-                        } else {
-                            gc_ovhd_avg = 0;
-                        }
-                        if(rr_release_num != 0){
-                            rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
-                        } else {
-                            rr_ovhd_avg = 0;
-                        }
-                        fprintf(fplife,"%ld,",cur_cp);
-                        fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-                        fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
-                        print_profile_updaterate(newmeta,updaterate_fp);
-                        sleep(1);
-                        exit_code = 1;
-                        goto CLEANUP;
-                    }
+                    // if(total_u > 1.0){
+                    //     printf("[%ld]utilization overflow 2, util : %f\n",cur_cp, total_u);
+                    //     gettimeofday(&tot_end_time,NULL);
+                    //     tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
+                    //     tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
+                    //     if(write_release_num != 0){
+                    //         write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
+                    //     } else {
+                    //         write_ovhd_avg = 0;
+                    //     }
+                    //     if(gc_release_num != 0){
+                    //         gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
+                    //     } else {
+                    //         gc_ovhd_avg = 0;
+                    //     }
+                    //     if(rr_release_num != 0){
+                    //         rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
+                    //     } else {
+                    //         rr_ovhd_avg = 0;
+                    //     }
+                    //     fprintf(fplife,"%ld,",cur_cp);
+                    //     fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
+                    //     fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
+                    //     print_profile_updaterate(newmeta,updaterate_fp);
+                    //     sleep(1);
+                    //     exit_code = 1;
+                    //     goto CLEANUP;
+                    // }
                 }
                 
                 // if last req is finished, do the following
@@ -811,11 +842,10 @@ int main(int argc, char* argv[]){
                     gettimeofday(&(algo_start_time),NULL);
                     cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
                                                 fblist_head, full_head, write_head,
-                                                w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp); // return last access block
+                                                w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp, fpovhd_w_detail, fpovhd_w_process); // return last access block
                     write_release_num++;
                     gettimeofday(&(algo_end_time),NULL);
-                    // printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
-                    write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+                    fprintf(fpovhd_w,"%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                     next_w_release[j] = cur_cp + (long)tasks[j].wp; // next write request는 write period 후에 release
                     wjob_finished[j] = 0; // 수행 중인 write request가 있음을 나타내는 flag
                 }
@@ -855,11 +885,10 @@ int main(int argc, char* argv[]){
                         gettimeofday(&(algo_start_time),NULL);
                         gc_job_start_q(tasks, j, tasknum, newmeta,
                                     fblist_head, full_head, rsvlist_head, write_head, 0,
-                                    gcq[j], &(cur_GC[j]), gcflag, cur_cp);
+                                    gcq[j], &(cur_GC[j]), gcflag, cur_cp, fpovhd_gc_detail, fpovhd_gc_utilsort);
                         gc_release_num++;
                         gettimeofday(&(algo_end_time),NULL);
-                        // printf("gcovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
-                        gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+                        fprintf(fpovhd_gc, "%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                         next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
                         gcjob_finished[j] = 0;
                     }
@@ -890,11 +919,10 @@ int main(int argc, char* argv[]){
             rrutil = -1.0;                  // override util so that WL always run in background mode.
             gettimeofday(&(algo_start_time),NULL);
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
-                            rr,&(cur_rr),(double)rrutil,cur_cp, skewnum);
+                            rr,&(cur_rr),(double)rrutil,cur_cp, skewnum, fpovhd_rr_detail, fpovhd_rr_detail_process);
             rr_release_num++;
             gettimeofday(&(algo_end_time),NULL);
-            // printf("rrovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
-            rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+            fprintf(fpovhd_rr, "%ld\n", algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
             if(rr->reqnum != 0){
                 rr_finished = 0;
             } 

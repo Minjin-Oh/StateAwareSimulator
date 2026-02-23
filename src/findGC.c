@@ -15,6 +15,12 @@ extern int update_cnt[NOP];
 extern int max_valid_pg;
 extern long* lpa_update_timing[NOP];
 
+FILE *fpovhd_gc_utilsort;
+static struct timeval algo_start_time_gc_detail;
+static struct timeval algo_end_time_gc_detail;
+long init_array, sort, find_priority, find_offset, candidate, edge_case = 0;
+
+
 int _find_gc_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util, int cur_b, int rsv_b){
     //check if current I/O job does not violate util test along with recently released other jobs.
     
@@ -408,7 +414,7 @@ int find_gcweighted(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
     return best_idx;
 }
 
-int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head, bhead* write_head){
+int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head, bhead* write_head, FILE* fpovhd_gc_utilsort){
     // !!!find_gc_ has floating point issues
     // sort the victim blocks in order of utilization
     // allocate victim block to GC task proportionally with GC period
@@ -441,6 +447,8 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     char block_origin[full_head->blocknum + write_head->blocknum];
 #endif
     // 1. init arrays
+    gettimeofday(&(algo_start_time_gc_detail),NULL);
+    
     for(int i=0;i<full_head->blocknum;i++){
         vic_arr[i] = -1;
     }
@@ -450,7 +458,12 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         proportion_tot += gc_period_sort[i];
     }
 
+    gettimeofday(&(algo_end_time_gc_detail),NULL);
+    init_array = algo_end_time_gc_detail.tv_sec * 1000000 + algo_end_time_gc_detail.tv_usec - algo_start_time_gc_detail.tv_sec * 1000000 - algo_start_time_gc_detail.tv_usec;
+
     // 2. sort gc period
+    gettimeofday(&(algo_start_time_gc_detail),NULL);
+
     for(int i=tasknum-1;i>0;i--){
         for(int j=0;j<i;j++){
             if(gc_period_sort[j] > gc_period_sort[j+1]){
@@ -464,21 +477,36 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         }
     }
 
+    gettimeofday(&(algo_end_time_gc_detail),NULL);
+    sort = algo_end_time_gc_detail.tv_sec * 1000000 + algo_end_time_gc_detail.tv_usec - algo_start_time_gc_detail.tv_sec * 1000000 - algo_start_time_gc_detail.tv_usec;
+
     // 3. find priority of cur gc
+    gettimeofday(&(algo_start_time_gc_detail),NULL);
+
     for(int i=0;i<tasknum;i++){
         if(task_order[i] == taskidx){
             cur_priority = i;
         }
     }
+
+    gettimeofday(&(algo_end_time_gc_detail),NULL);
+    find_priority = algo_end_time_gc_detail.tv_sec * 1000000 + algo_end_time_gc_detail.tv_usec - algo_start_time_gc_detail.tv_sec * 1000000 - algo_start_time_gc_detail.tv_usec;
     
     // 4. find start offset of cur gc
+    gettimeofday(&(algo_start_time_gc_detail),NULL);
+
     for(int i=0;i<cur_priority-1;i++){
         proportion_sum += gc_period_sort[i];
     }
     
     cur_offset = (float)proportion_sum / (float)proportion_tot;
+
+    gettimeofday(&(algo_end_time_gc_detail),NULL);
+    find_offset = algo_end_time_gc_detail.tv_sec * 1000000 + algo_end_time_gc_detail.tv_usec - algo_start_time_gc_detail.tv_sec * 1000000 - algo_start_time_gc_detail.tv_usec;
     
     // 5. build up candidate block list
+    gettimeofday(&(algo_start_time_gc_detail),NULL);
+
     block* cur = NULL;
     cur = full_head->head;
     gettimeofday(&a,NULL);
@@ -530,6 +558,9 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
         cur = cur->next;
     }
 
+    gettimeofday(&(algo_end_time_gc_detail),NULL);
+    candidate = algo_end_time_gc_detail.tv_sec * 1000000 + algo_end_time_gc_detail.tv_usec - algo_start_time_gc_detail.tv_sec * 1000000 - algo_start_time_gc_detail.tv_usec;
+
 #ifdef utilsort_writecheck
     // testcode:: search the write block list
     cur = write_head->head;
@@ -577,6 +608,8 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     
     // 5-1. EDGE CASE HANDLING : if vic_num is 0, ignore find_gc_safe and add victims.
     // 즉, schedulability를 만족하는 victim block이 없는 경우, schedulability는 무시하고 victim 선택
+    gettimeofday(&(algo_start_time_gc_detail),NULL);
+
     if(vic_num == 0){
         printf("vic_num == 0\n");
         cur = full_head->head;
@@ -631,6 +664,8 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
             best_idx = vic_arr[i];
         }
     }
+    gettimeofday(&(algo_end_time_gc_detail),NULL);
+    edge_case = algo_end_time_gc_detail.tv_sec * 1000000 + algo_end_time_gc_detail.tv_usec - algo_start_time_gc_detail.tv_sec * 1000000 - algo_start_time_gc_detail.tv_usec;
     // printf("util:%f\n,best_idx:%d,invnum:%d\n",cur_min_util,best_idx,metadata->invnum[best_idx]);
     gettimeofday(&b,NULL);
 #ifdef utilsort_writecheck
@@ -667,6 +702,7 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     test_best_idx,metadata->state[test_best_idx],
     block_origin[test_cur_offset_int],test_vicnum - vic_num);
 #endif
+    fprintf(fpovhd_gc_utilsort,"%ld, %ld, %ld, %ld, %ld, %ld \n", init_array, sort, find_priority, find_offset, candidate, edge_case);
     return best_idx;
 }
 
