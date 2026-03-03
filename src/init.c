@@ -1,5 +1,6 @@
 #include "init.h"
 #include "IOgen.h"
+
 void init_metadata(meta* metadata, int tasknum, int cycle){
     FILE* cyc_fp;
     FILE* timing_fp;

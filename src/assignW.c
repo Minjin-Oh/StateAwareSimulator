@@ -513,19 +513,20 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
 }
 
 block* assign_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, 
-                             bhead* fblist_head, bhead* write_head, block* cur_b, int* w_lpas, int idx, long cur_cp){
-    //struct timeval a;
-    //struct timeval b;
-    //int sec, usec;
+                             bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, long cur_cp, 
+                             FILE* fpovhd_w_assign, FILE* w_assign_detail){
+    struct timeval a;
+    struct timeval b;
+    int sec, usec;
     int target;
     block* cur = NULL;
     
-    //gettimeofday(&a,NULL);
-    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,cur_cp);
+    gettimeofday(&a,NULL);
+    target = find_write_maxinvalid(task,taskidx,tasknum,metadata,fblist_head,write_head,w_lpas,idx,cur_cp, w_assign_detail);
     cur = ll_findidx(write_head,target);
-    //gettimeofday(&b,NULL);
-    //sec = (b.tv_sec - a.tv_sec)*1000000;
-    //usec = (b.tv_usec - a.tv_usec);
-    //printf("[assignovhd]:%d\n",sec+usec);
+    gettimeofday(&b,NULL);
+    sec = (b.tv_sec - a.tv_sec)*1000000;
+    usec = (b.tv_usec - a.tv_usec);
+    fprintf(fpovhd_w_assign, "%d\n", sec+usec);
     return cur;
 }

@@ -116,7 +116,9 @@ int main(int argc, char* argv[]){
     
     // log file pointers
     FILE* rr_profile;
-    FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
+    FILE *fp, *fplife, *fpwrite, *fpread, *fprr; 
+    FILE *fpovhd, *fpovhd_w, *fpovhd_gc, *fpovhd_rr, *fpovhd_w_release, *fpovhd_w_assign, *w_assign_detail, *gc_detail;
+    FILE* u_check = NULL;
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
@@ -180,6 +182,9 @@ int main(int argc, char* argv[]){
     long write_release_num = 0;
     long gc_release_num = 0;
     long rr_release_num = 0;
+    long write_ovhd = 0;
+    long gc_ovhd = 0;
+    long rr_ovhd = 0;
     long write_ovhd_sum = 0;
     long gc_ovhd_sum = 0;
     long rr_ovhd_sum = 0;
@@ -321,7 +326,6 @@ int main(int argc, char* argv[]){
         while(EOF != fscanf(w_workloads[a],"%d,",&prof_targ_lpa)){
             // write on memory
             lpa_update_timing[prof_targ_lpa][update_cnt[prof_targ_lpa]] = cur_cp;
-            // printf("lpa_update_timing[%d][%d] = %ld",prof_targ_lpa,update_cnt[prof_targ_lpa],cur_cp);
             update_cnt[prof_targ_lpa]++;
 
             // if malloc space is not enough, relocate the update timing records.
@@ -469,32 +473,59 @@ int main(int argc, char* argv[]){
         rr_profile = fopen("Baseline_rr_prof.csv","w");
         updateorder_fp = fopen("Baseline_updateorder.csv", "w");
         fplife = fopen("Baseline_lifetime.csv","w");
-        fpovhd = fopen("Baseline_overhead.csv","w");
+        fpovhd = fopen("Baseline_overhead_avg.csv","w");
+        fpovhd_w = fopen("Baseline_overhead_write.csv","w");
+        fpovhd_gc = fopen("Baseline_overhead_gc.csv","w");
+        fpovhd_rr = fopen("Baseline_overhead_reloc.csv","w");
+        u_check = fopen("Baseline_rrchecker.csv","w");
+        updaterate_fp = fopen("Baseline_updaterate.csv","w");
     }
     else if(wflag == 11 && gcflag == 0 && rrflag ==  0){       // Hybrid WL
         rr_profile = fopen("Hyb_rr_prof.csv","w");
         updateorder_fp = fopen("Hyb_updateorder.csv", "w");
         fplife = fopen("Hyb_lifetime.csv","w");
-        fpovhd = fopen("Hyb_overhead.csv","w");
+        fpovhd = fopen("Hyb_overhead_avg.csv","w");
+        fpovhd_w = fopen("Hyb_overhead_write.csv","w");
+        fpovhd_gc = fopen("Hyb_overhead_gc.csv","w");
+        fpovhd_rr = fopen("Hyb_overhead_reloc.csv","w");
+        u_check = fopen("Hyb_rrchecker.csv","w");
+        updaterate_fp = fopen("Hyb_updaterate.csv","w");
     }
     else if(wflag == 14 && gcflag == 6 && rrflag == -1){       // LaWL-D
         rr_profile = fopen("LaWL_D_rr_prof.csv","w");
         updateorder_fp = fopen("LaWL_D_updateorder.csv", "w");
         fplife = fopen("LaWL_D_lifetime.csv","w");
         fpovhd = fopen("LaWL_D_overhead.csv","w");
+        u_check = fopen("LaWL_D_rrchecker.csv","w");
+        updaterate_fp = fopen("LaWL_D_updaterate.csv","w");
     }
     else if(wflag == 14 && gcflag == 6 && rrflag ==  1){       // LaWL
         rr_profile = fopen("LaWL_rr_prof.csv","w");
         updateorder_fp = fopen("LaWL_updateorder.csv", "w");
         fplife = fopen("LaWL_lifetime.csv","w");
-        fpovhd = fopen("LaWL_overhead.csv","w");
+        fpovhd = fopen("LaWL_overhead_avg.csv","w");
+        fpovhd_w = fopen("LaWL_overhead_write.csv","w");
+        fpovhd_gc = fopen("LaWL_overhead_gc.csv","w");
+        fpovhd_rr = fopen("LaWL_overhead_reloc.csv","w");
+        u_check = fopen("LaWL_rrchecker.csv","w");
+        updaterate_fp = fopen("LaWL_updaterate.csv","w");
     }
     else{                                                      // Dynamic WL
         rr_profile = fopen("Dyn_rr_prof.csv", "w");
         updateorder_fp = fopen("Dyn_updateorder.csv", "w");
         fplife = fopen("Dyn_lifetime.csv","w");
-        fpovhd = fopen("Dyn_overhead.csv","w");
+        fpovhd = fopen("Dyn_overhead.csv", "w");
+        fpovhd_w = fopen("Dyn_overhead_write.csv","w");
+        fpovhd_gc = fopen("Dyn_overhead_gc.csv","w");
+        fpovhd_rr = fopen("Dyn_overhead_reloc.csv","w");
+        u_check = fopen("Dyn_rrcheckers.csv", "w");
+        updaterate_fp = fopen("Dyn_updaterate.csv","w");
     }
+
+    fpovhd_w_release = fopen("overhead_w_release.csv", "w");
+    fpovhd_w_assign = fopen("overhead_w_assign.csv", "w");
+    w_assign_detail = fopen("w_assign_detail.csv", "w");
+    gc_detail = fopen("gc_detail.csv", "w");
 
     IO_open(tasknum, w_workloads, r_workloads);
     lat_open(gcflag, wflag, rrflag, tasknum, lat_log_w, lat_log_r, lat_log_gc);
@@ -583,32 +614,6 @@ int main(int argc, char* argv[]){
 
     // Run simulation
 
-    FILE* u_check = NULL;
-    if(wflag == 0 && gcflag == 0 && rrflag == -1){           // Baseline
-        u_check = fopen("Baseline_rrchecker.csv","w");
-        updaterate_fp = fopen("Baseline_updaterate.csv","w");
-    }
-    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){     // Hybrid WL
-        u_check = fopen("Hyb_rrchecker.csv","w");
-        updaterate_fp = fopen("Hyb_updaterate.csv","w");
-    }
-    // else if(wflag == 14 && gcflag == 0 && rrflag == -1){     // LaWL-D (write only)
-    //     u_check = fopen("wonly_rrchecker.csv","w");
-    //     updaterate_fp = fopen("wonly_updaterate.csv","w");
-    // }
-    else if(wflag == 14 && gcflag == 6 && rrflag == -1){        // LaWL-D
-        u_check = fopen("LaWL_D_rrchecker.csv","w");
-        updaterate_fp = fopen("LaWL_D_updaterate.csv","w");
-    }
-    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){        // LaWL
-        u_check = fopen("LaWL_rrchecker.csv","w");
-        updaterate_fp = fopen("LaWL_updaterate.csv","w");
-    }
-    else{                                                       // Dynamic WL
-        u_check = fopen("Dyn_rrcheckers.csv", "w");
-        updaterate_fp = fopen("Dyn_updaterate.csv","w");
-    }
-
 #ifdef utilsort_writecheck
     for(int i=0;i<4;i++){
         char testgcwriteblockname[20];
@@ -622,8 +627,24 @@ int main(int argc, char* argv[]){
 
     // !!! start of simulation !!!
     while(cur_cp <= RUNTIME){
-            fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-            fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
+        if(write_release_num != 0){
+            write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
+        } else {
+            write_ovhd_avg = 0;
+        }
+        if(gc_release_num != 0){
+            gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
+        } else {
+            gc_ovhd_avg = 0;
+        }
+        if(rr_release_num != 0){
+            rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
+        } else {
+            rr_ovhd_avg = 0;
+        }
+
+        fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
+        fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
 
         // 1. 한 바퀴 돌 때마다 전체 블록의 PEC를 profiling하고, lowest and highest PEC를 check
         yngest = get_blockstate_meta(newmeta,YOUNG);
@@ -778,7 +799,6 @@ int main(int argc, char* argv[]){
                 // set start flags to schedule new WL
                 if(cur_IO->type == WR && cur_IO->islastreq == 1){
                     do_rr = 1;
-                    wr_end_bwr_flag = 1;
                 }
                 // finish request
                 finish_req(tasks, cur_IO, newmeta, 
@@ -811,10 +831,13 @@ int main(int argc, char* argv[]){
                     gettimeofday(&(algo_start_time),NULL);
                     cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
                                                 fblist_head, full_head, write_head,
-                                                w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp); // return last access block
+                                                w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp, 
+                                                fpovhd_w_release, fpovhd_w_assign, w_assign_detail); // return last access block
                     write_release_num++;
                     gettimeofday(&(algo_end_time),NULL);
-                    // printf("wovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+                    write_ovhd = algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+                    fprintf(fpovhd_w,"%ld, %ld, \n", write_release_num, write_ovhd);
+                    // write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                     write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                     next_w_release[j] = cur_cp + (long)tasks[j].wp; // next write request는 write period 후에 release
                     wjob_finished[j] = 0; // 수행 중인 write request가 있음을 나타내는 flag
@@ -855,9 +878,11 @@ int main(int argc, char* argv[]){
                         gettimeofday(&(algo_start_time),NULL);
                         gc_job_start_q(tasks, j, tasknum, newmeta,
                                     fblist_head, full_head, rsvlist_head, write_head, 0,
-                                    gcq[j], &(cur_GC[j]), gcflag, cur_cp);
+                                    gcq[j], &(cur_GC[j]), gcflag, cur_cp, gc_detail);
                         gc_release_num++;
                         gettimeofday(&(algo_end_time),NULL);
+                        gc_ovhd = algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+                        fprintf(fpovhd_gc,"%ld, %ld, \n", gc_release_num, gc_ovhd);
                         // printf("gcovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                         gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
                         next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
@@ -893,6 +918,8 @@ int main(int argc, char* argv[]){
                             rr,&(cur_rr),(double)rrutil,cur_cp, skewnum);
             rr_release_num++;
             gettimeofday(&(algo_end_time),NULL);
+            rr_ovhd = algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+            fprintf(fpovhd_rr,"%ld, %ld, \n", rr_release_num, rr_ovhd);
             // printf("rrovhd:%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
             rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
             if(rr->reqnum != 0){

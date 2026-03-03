@@ -78,7 +78,8 @@ void make_req_gc(meta* metadata, rttask* tasks, int taskidx, long cur_cp, block*
 
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp){
+                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp, 
+                     FILE* fpovhd_w_release, FILE* fpovhd_w_assign, FILE* w_assign_detail){
 
     //makes write job according to workload and task parameter
     //printf("[%d]write start, time : %d\n",taskidx,cur_cp);
@@ -92,7 +93,12 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     int cur_offset;
     int bnum = 0;
     float exec_sum = 0.0, period = (float)tasks[taskidx].wp;
+
+    struct timeval a;
+    struct timeval b;
+    long get_lpa, alloc_blk, gen_IO;
     
+    gettimeofday(&a,NULL);
     for(int i=0;i<tasks[taskidx].wn;i++){
         lpas[i] = IOget(fp_w); // fp_w : wr_t%d.csv
         if(lpas[i] == EOF){
@@ -105,7 +111,10 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             reset_IO_update(metadata,tasks[taskidx].addr_lb,tasks[taskidx].addr_ub,cur_cp);
         }
     }
+    gettimeofday(&b,NULL);
+    get_lpa = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
     
+    gettimeofday(&a,NULL);
     for(int i=0;i<tasks[taskidx].wn;i++){
         //make sure that no full block is in write block list during assign logic.
         //allocate current block to full B.
@@ -125,7 +134,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         } else if(wflag == 12 || wflag == 13){ // argv[2] == GRADW or GRADW_MOD
             cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
         } else if(wflag == 14){ // argv[2] == INVW
-            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,cur_cp);
+            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,lpas,i,cur_cp, fpovhd_w_assign, w_assign_detail);
         }
         block* checktemp = fblist_head->head; 
         cur_offset = PPB - cur->fpnum;
@@ -150,11 +159,15 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             }
         }
     }
+    gettimeofday(&b,NULL);
+    alloc_blk = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
     
     //assign page write destination
     //generate I/O requests.
     char name[30];
     FILE* timing_fp;
+
+    gettimeofday(&a, NULL);
     for (int i=0;i<tasks[taskidx].wn;i++){
         IO* req = (IO*)malloc(sizeof(IO));
         lpa = lpas[i];
@@ -183,9 +196,6 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             req->islastreq = 1;
         }                           
         ll_append_IO(wq,req);
-        // printf("[DEBUG] cur_cp=%ld, target_task=%d, target_type=%d\n", cur_cp, target_task, target_type);
-        // printf("[DEBUG] write_head blocknum=%d, fblist blocknum=%d, cur->fpnum=%d\n", write_head->blocknum, fblist_head->blocknum, cur ? cur->fpnum : -1);
-        // printf("[DEBUG] total_fp=%d, expected_fp=%d\n", metadata->total_fp, expected_fp);
 
         exec_sum += w_exec(ppa_state[i]);
         if(i==0){
@@ -202,12 +212,13 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             req->init = 1;
             req->last = 1;
         }
-        //printf("tp:%d,lpa:%d,ppa:%d,dl:%ld,exec:%ld\n",req->type,req->lpa,req->ppa,req->deadline,req->exec);
     }
-        
+    gettimeofday(&b,NULL);
+    gen_IO = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
+
     //update runtime utilization
     metadata->runutils[0][taskidx] = exec_sum / period;
-    //sleep(1);
+    fprintf(fpovhd_w_release, "%ld, %ld, %ld, \n", get_lpa, alloc_blk, gen_IO);
     return last_access_block;
 }
 
@@ -258,7 +269,7 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
 
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
-                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp){
+                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp, FILE* gc_detail){
     if(gcq->reqnum != 0){
         //printf("[%ld]queue not empty, dl miss detected. task %d GC\n",cur_cp,taskidx);
         //sleep(3);
@@ -297,7 +308,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     } else if (gcflag == 5){
         gc_limit = find_gcweighted(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
     } else if (gcflag == 6){
-        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head);
+        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head, gc_detail);
     }
     print_blocklist_info(write_head,metadata);
     print_blocklist_info(full_head,metadata);
@@ -342,7 +353,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
     }
     
-    // 2-(2). if not, choose a victim block from full_block list using index
+    // 2-(2). if not, choose a victim block from full_block list using index (UTILGC = 6)
     else if (gcflag == 1 || gcflag == 2 || gcflag == 3 || gcflag == 4 || gcflag == 5 || gcflag == 6){
         //printf("target block : %d\n",gc_limit);
         while(cur != NULL){
