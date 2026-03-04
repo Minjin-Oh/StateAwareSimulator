@@ -129,7 +129,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         } else if(wflag == 11){ // argv[2] == MOTIVALLY
             cur = assign_write_dynwl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         } else if(wflag == 14){ // argv[2] == INVW
-            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,lpas,i,cur_cp, fpovhd_w_assign, w_assign_detail);
+            cur = find_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,lpas,i,cur_cp, w_assign_detail);
         }
         cur_offset = PPB - cur->fpnum;
         ppa_dest[i] = cur->idx*PPB + cur_offset;

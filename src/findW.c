@@ -319,7 +319,7 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
 }
 
 // function for write block selection
-int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, long workload_reset_time, FILE* w_assign_detail){
+block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, long workload_reset_time, FILE* w_assign_detail){
     // 3 variants
     // MAXINVALID_RANK_DYN :: window-based request clustering. dynamically change range for cluster
     // MAXINVALID_RANK_STAT :: window-based request clutsering, based on pre-assigned threshold
@@ -465,118 +465,6 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         free(invorders_sort);
         free(bounds);    
     }
-    
-    // opt-ver.
-    // if(metadata->cur_rank_info.cur_left_write[taskidx] == 0){
-    //     //if pre-assigned write is finished, re-assign ranks for future N writes.
-    //     //1. find jobs and their corresponding update timing within given interval (cur interval = 500ms)
-    //     static int ws_tasknum_cap = 0;
-    //     static int* ws_jobnum = NULL;
-    //     static int** ws_req_per_task = NULL;
-    //     static long** ws_updateorders = NULL;
-    //     static int* ws_req_cap_per_task = NULL;
-    //     static long* ws_invorders_sort = NULL;
-    //     static int ws_invorders_cap = 0;
-    //     static long* ws_bounds = NULL;
-    //     static int ws_bounds_cap = 0;
-    //
-    //     if(ws_tasknum_cap < tasknum){
-    //         int old_cap = ws_tasknum_cap;
-    //         ws_jobnum = (int*)realloc(ws_jobnum,sizeof(int)*(unsigned long)tasknum);
-    //         ws_req_per_task = (int**)realloc(ws_req_per_task,sizeof(int*)*(unsigned long)tasknum);
-    //         ws_updateorders = (long**)realloc(ws_updateorders,sizeof(long*)*(unsigned long)tasknum);
-    //         ws_req_cap_per_task = (int*)realloc(ws_req_cap_per_task,sizeof(int)*(unsigned long)tasknum);
-    //         for(int i=old_cap;i<tasknum;i++){
-    //             ws_req_per_task[i] = NULL;
-    //             ws_updateorders[i] = NULL;
-    //             ws_req_cap_per_task[i] = 0;
-    //         }
-    //         ws_tasknum_cap = tasknum;
-    //     }
-    //
-    //     for(int i=0;i<tasknum;i++){
-    //         ws_jobnum[i] = 0;
-    //     }
-    //
-    //     _get_jobnum_interval(cur_cp,90000000,task,tasknum,ws_jobnum);
-    //
-    //     int reqnum = 0;
-    //     for(int i=0;i<tasknum;i++){
-    //         int req_need = ws_jobnum[i] * task[i].wn;
-    //         reqnum += req_need;
-    //         if(ws_req_cap_per_task[i] < req_need){
-    //             ws_req_per_task[i] = (int*)realloc(ws_req_per_task[i],sizeof(int)*(unsigned long)req_need);
-    //             ws_updateorders[i] = (long*)realloc(ws_updateorders[i],sizeof(long)*(unsigned long)req_need);
-    //             ws_req_cap_per_task[i] = req_need;
-    //         }
-    //     }
-    //
-    //     if(ws_invorders_cap < reqnum){
-    //         ws_invorders_sort = (long*)realloc(ws_invorders_sort,sizeof(long)*(unsigned long)reqnum);
-    //         ws_invorders_cap = reqnum;
-    //     }
-    //     if(ws_bounds_cap < metadata->ranknum){
-    //         ws_bounds = (long*)realloc(ws_bounds,sizeof(long)*(unsigned long)metadata->ranknum);
-    //         ws_bounds_cap = metadata->ranknum;
-    //     }
-    //
-    //     _get_write_reqs(w_workloads,tasknum,taskidx,task,w_lpas,90000000,ws_jobnum,ws_req_per_task);
-    //     _get_write_updateorder(ws_jobnum,ws_req_per_task,tasknum,task,metadata,ws_updateorders);
-    //
-    //     //1-1. put update timing values in single array
-    //     int invorderarr_idx = 0;
-    //     for(int i=0;i<tasknum;i++){
-    //         for(int j=0;j<ws_jobnum[i]*task[i].wn;j++){
-    //             ws_invorders_sort[invorderarr_idx] = ws_updateorders[i][j];
-    //             invorderarr_idx++;
-    //         }
-    //     }
-    //
-    //     //2. sort update timing array and find bounds for each rank
-    //     int cluster_cur = 0;
-    //     int member_num = 0;
-    //     int req_per_rank = reqnum / (metadata->ranknum+1);
-    //     if(req_per_rank <= 0){
-    //         req_per_rank = 1;
-    //     }
-    //     qsort(ws_invorders_sort,reqnum,sizeof(long),compare);
-    //     for(int i=0;i<reqnum;i++){
-    //         member_num++;
-    //         if(member_num == req_per_rank){
-    //             ws_bounds[cluster_cur] = ws_invorders_sort[i];
-    //             cluster_cur++;
-    //             member_num = 0;
-    //         }
-    //         if(cluster_cur == metadata->ranknum){
-    //             break;
-    //         }
-    //     }
-    //     //2-1. save current bound info on metadata(note that metadata->rank_bound[0] = 0)
-    //     metadata->rank_bounds[0] = 0;
-    //     for(int i=0;i<metadata->ranknum;i++){
-    //         metadata->rank_bounds[i+1] = ws_bounds[i];
-    //     }
-    //
-    //     //3. update cur_rank_info structure in metadata
-    //     for(int i=0;i<tasknum;i++){
-    //         int record_idx = 0;
-    //         if(metadata->cur_rank_info.cur_left_write[i] != 0){
-    //             //if a task has a leftover rank records, move them to front of rank array.
-    //             for(int j=0;j<metadata->cur_rank_info.cur_left_write[i];j++){
-    //                 int prev_offset = metadata->cur_rank_info.tot_ranked_write[i] - metadata->cur_rank_info.cur_left_write[i] + j;
-    //                 metadata->cur_rank_info.ranks_for_write[i][record_idx] = metadata->cur_rank_info.ranks_for_write[i][prev_offset];
-    //                 record_idx++;
-    //             }
-    //         }
-    //         metadata->cur_rank_info.cur_left_write[i] += ws_jobnum[i] * task[i].wn;
-    //         metadata->cur_rank_info.tot_ranked_write[i] = metadata->cur_rank_info.cur_left_write[i];
-    //         for(int j=0;j<ws_jobnum[i]*task[i].wn;j++){
-    //             //find rank of each reqs & make a rank record.
-    //             metadata->cur_rank_info.ranks_for_write[i][record_idx] = __get_rank_long_dyn(ws_updateorders[i][j],ws_bounds,metadata->ranknum);
-    //             record_idx++;
-    //         }
-    //     }
-    // }
 
     gettimeofday(&b,NULL);
     alloc_rank = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
@@ -591,23 +479,11 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     gettimeofday(&a, NULL);
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-
-        // if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
-        //     cur = cur->next;
-        //     continue;
-        // }
-        // if(cur->wb_rank == cur_rank){
-        //     gettimeofday(&b,NULL);
-        //     find_cor_blk = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
-        //     fprintf(w_assign_detail, "%ld, %ld, %ld, %ld \n", alloc_rank, find_cor_blk, find_new_blk, edge_case);
-        //     return cur->idx;
-        // }
-
         if(cur->wb_rank == cur_rank && _find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == 0){
             gettimeofday(&b,NULL);
             find_cor_blk = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
             fprintf(w_assign_detail, "%ld, %ld, %ld, %ld \n", alloc_rank, find_cor_blk, find_new_blk, edge_case);
-            return cur->idx;
+            return cur;
         }
 
         cur = cur->next;
@@ -642,7 +518,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
         find_new_blk = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
         fprintf(w_assign_detail, "%ld, %ld, %ld, %ld \n", alloc_rank, find_cor_blk, find_new_blk, edge_case);
 
-        return wb_new->idx;
+        return wb_new;
     }
     // 3-(3). if free block not found, find closest cluster in write block list.
     else{
@@ -664,7 +540,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             cur = cur->next;
         }
 
-        return ret_b_idx;
+        return cur;
     }
 
     // 4. 적절한 블록을 찾지 못한 경우, write_head와 fblist_head 중에서 가장 lowest PEC 블록에 writing
@@ -689,7 +565,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             edge_case = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
             fprintf(w_assign_detail, "%ld, %ld, %ld, %ld \n", alloc_rank, find_cor_blk, find_new_blk, edge_case);
 
-            return final_idx;
+            return cur;
         }
 
         // 4-(2). free block 리스트도 같이 스캔
@@ -721,7 +597,7 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
             edge_case = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
             fprintf(w_assign_detail, "%ld, %ld, %ld, %ld \n", alloc_rank, find_cor_blk, find_new_blk, edge_case);
 
-            return wb_new->idx;
+            return wb_new;
         }
     }
     // !end of active rank calculation-based method
