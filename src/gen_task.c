@@ -282,53 +282,6 @@ rttask* generate_taskset_skew(int tasknum, float tot_util, int addr, float* resu
     return tasks;
 }
 
-rttask* generate_taskset_skew2(int tasknum, float tot_util, int addr, float* result_util, int skewnum, char type, int cycle){
-    float utils[tasknum];
-    float per_task_portion = 0.05;
-    float offset = 0.045;
-    float rand_portion = 0.005;
-    float r_util[tasknum], w_util[tasknum];
-    int wp, rp, gcp, wnum, rnum;
-    rttask* tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
-    
-    //generate util for each task
-    for(int i=0;i<tasknum;i++){
-        float rand_u = (float)(rand()%(int)(rand_portion*1000)) / 1000.0;
-        if(i<skewnum){
-            w_util[i] = rand_u + offset;
-            r_util[i] = per_task_portion - w_util[i];
-        } else {
-            r_util[i] = rand_u + offset;
-            w_util[i] = per_task_portion - r_util[i];
-        }
-    }
-
-    //assign 90% of util for write if task is write-intensive
-    for(int i=0;i<tasknum;i++){
-        wnum = rand()%30 + 1;
-        rnum = rand()%50 + 1;
-        wp = (int)((float)(wnum*STARTW) / w_util[i]);
-        rp = (int)((float)(rnum*STARTR) / r_util[i]);
-        gcp = __calc_gcmult(wp,wnum,MINRC);
-        init_task(&(tasks[i]),i,wp,wnum,rp,rnum,gcp,addr/tasknum*i,addr/tasknum*(i+1)-1);
-        printf("wp: %d, wn : %d, rp : %d, rn : %d, gcp : %d wu: %f, ru: %f, gcu : %f\n",
-            wp,wnum,rp,rnum,gcp,w_util[i],r_util[i],__calc_gcu(&(tasks[i]),MINRC,0,0,0));
-    }
-
-
-    float checker = 0.0;
-    for(int i=0;i<tasknum;i++){
-        checker += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
-        checker += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
-        checker += __calc_gcu(&(tasks[i]),MINRC,0,0,0);
-    }
-    checker += (float)STARTE/(float)_find_min_period(tasks,tasknum);
-    printf("checker : %f\n",checker);
-    *result_util = checker;
-    sleep(1);
-    return tasks;
-}
-
 rttask* generate_taskset_fixed(int addr, float* result_util){
     rttask* tasks;
     float w_util[3];
@@ -370,6 +323,7 @@ rttask* generate_taskset_fixed(int addr, float* result_util){
     return tasks;
 
 }
+
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile){
     rttask* rand_tasks = tasks;
     int wn, wp, rn, rp, gcp, lb, ub;
@@ -397,6 +351,7 @@ void get_loc_from_file(rttask* tasks, int tasknum, FILE* locfile){
         
     }
 }
+
 void get_task_from_file_recalc(rttask* tasks, int tasknum, FILE* taskfile, int max_valid_pg){
     //call this function instead of get_task_from_file, when OP changes.
     rttask* rand_tasks = tasks;
@@ -417,55 +372,4 @@ void get_task_from_file_recalc(rttask* tasks, int tasknum, FILE* taskfile, int m
         rand_tasks[i].addr_lb = lb;
         rand_tasks[i].addr_ub = ub;        
     }
-}
-float calcutil_per_pecycle(rttask* task,int tasknum, int cycle){
-    float res = 0.0;
-    for(int i=0;i<tasknum;i++){
-        res += __calc_wu(&(task[i]),cycle);
-        res += __calc_ru(&(task[i]),cycle);
-        res += __calc_gcu(&(task[i]),MINRC,cycle,cycle,cycle);
-    }
-    res += e_exec(cycle)/(float)_find_min_period(task,tasknum);
-    return res;
-}
-void randtask_statechecker(int tasknum,int addr){
-    float startutil = 0.05;
-    int ratios[10][11];
-    //init result array
-    for(int i=0;i<10;i++){
-        for(int j=0;j<11;j++){
-            ratios[i][j] = 0;
-        }
-    }
-    for(int i=0;i<10;i++){//for util ranging from 0.05 ~ 0.5
-        for(int j=0;j<1000;j++){//generate 1000 tasks and check success or not
-            float res;
-            float cur_util = startutil*(i+1);
-            //generate taskset && save initial util.
-            rttask* zstate_task = generate_taskset(tasknum,cur_util,addr,&res,0);
-            for(int k=0;k<11;k++){
-                res = calcutil_per_pecycle(zstate_task,tasknum,10*k);
-                if(res <= 1.0){
-                    ratios[i][k]++;
-                }
-            }   
-        }
-    }
-    
-    for(int i=0;i<11;i++){
-        printf("ratios[CYC:%d] :",10*i);
-        for(int j=0;j<10;j++){
-            printf("%f, ",(float)ratios[j][i]/10.0);
-        }
-        printf("\n");
-    }
-    FILE* fp = fopen("utilpercycle.csv","w");
-    for(int i=0;i<11;i++){
-        for(int j=0;j<10;j++){
-            fprintf(fp,"%f,",(float)ratios[j][i]/10.0);
-        }
-        fprintf(fp,"\n");
-    }
-    fflush(fp);
-    fclose(fp);
 }

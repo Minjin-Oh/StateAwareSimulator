@@ -6,7 +6,6 @@
 #define RRRE 6
 #define RRWR 7
 #define RRER 8
-#define BWR 9
 
 // differentiate GCTHRESNOB and NOB
 // normally, GCTHRESNOB == NOB

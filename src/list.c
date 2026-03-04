@@ -9,21 +9,6 @@ bhead* ll_init(){
     return head;
 }
 
-void ll_free(bhead* head){
-    int freecnt = 0;
-    int component = head->blocknum;
-    block* cur = head->head;
-    //free linked blocks starting from the head
-    block* temp = head->head;
-    while(freecnt != component){
-        cur = cur->next;
-        freecnt++;
-        printf("temp info : %d, %dvs%d\n",temp->idx,freecnt,component);
-        free(temp);
-        temp = cur;
-    }   
-}
-
 block* ll_append(bhead* head, block* new){
     //append block
     block* cur;
@@ -87,6 +72,7 @@ block* ll_findidx(bhead* head, int tar){
     }
     return cur;
 }
+
 block* ll_remove(bhead* head, int tar){
     //remove certain block
     block* cur = NULL;
@@ -159,54 +145,6 @@ block* ll_find(meta* metadata, bhead* head, int cond){
         }
         cur = cur->next;
     }
-    return tar;
-}
-
-block* ll_condremove(meta* metadata, bhead* head, int cond){
-    //remove certain block, according to condition of block.
-    //if cond == YOUNG, return youngest block
-    //else if cond over 1 is given, return only the block with state >= cond.
-    block* cur;
-    block* tar;
-    cur = head->head;
-    tar = cur;
-    while(cur != NULL){
-        //printf("[ll]traversing %d(%d)\n",cur->idx, metadata->state[cur->idx]);
-        if(cond == YOUNG){
-            if(metadata->state[cur->idx] <= metadata->state[tar->idx]){
-                tar = cur;
-            }
-        }
-        cur = cur->next;
-    }
-
-    //edge cases
-    //if condition is not YOUNG, check if head is suitable
-    if(tar == NULL){
-        printf("there's no such block!\n");
-        return NULL;
-    }
-
-    //link other blocks if necessary
-    if((tar->next != NULL) && (tar->prev != NULL)){//middle
-        tar->prev->next = tar->next;
-        tar->next->prev = tar->prev;
-    }
-    else if (head->head == tar){//head
-        if(tar->next != NULL){//removing head & link next as head
-            head->head = tar->next;
-            head->head->prev = NULL;
-        } else {
-            head->head = NULL;
-        }
-    }
-    else if ((tar->next == NULL) && (tar->prev != NULL)){//tail
-        tar->prev->next = NULL;
-    }
-    head->blocknum--;
-    //printf("[ll]blocknum:%d, tar : %d\n",head->blocknum,tar->idx);
-    tar->prev = NULL;
-    tar->next = NULL;
     return tar;
 }
 

@@ -1,5 +1,11 @@
 #include "IOgen.h"
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#if defined(_WIN32)
+#include <direct.h>
+#endif
 
 extern long* lpa_update_timing[NOP];
 extern int update_cnt[NOP];
@@ -157,7 +163,6 @@ void IOgen_task_new(rttask* task, long runtime, int w_area, int r_area, int offs
     fclose(r_fp);
 }
 
-
 int IOget(FILE* fp){
     //now IOget rewinds back to the start of I/O if necessary
     int scan_ret;
@@ -220,6 +225,7 @@ void gen_loc(rttask* task, int rank, float* _sploc, float* _tploc, int* offset){
     }
     *offset = (int)((float)(task->addr_ub - task->addr_lb)* (*_sploc)/2.0);
 }
+
 void IOgen(int tasknum, rttask* tasks,long runtime, int offset, float _splocal, float _tplocal){
     //generates a set of target address for write or read workload.
     //Address is generated according to the task parameter and target runtime.
@@ -420,107 +426,132 @@ void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
     //printf("%d next_update_time : %ld, offset : %ld\n",lpa,metadata->next_update[lpa],offset);
 }
 
+static void create_log_directory(const char* path) {
+    struct stat st = {0};
+    if (stat(path, &st) == -1) {
+#if defined(_WIN32)
+        _mkdir(path);
+#else
+        mkdir(path, 0755);
+#endif
+    }
+}
+
+static FILE* open_log_file(const char* dir, const char* filename, const char* mode) {
+    char filepath[512];
+    snprintf(filepath, sizeof(filepath), "%s/%s", dir, filename);
+    FILE* fp = fopen(filepath, mode);
+    if (fp == NULL) {
+        fprintf(stderr, "Error: Failed to open file %s\n", filepath);
+        perror("fopen");
+    }
+    return fp;
+}
+
 void lat_open(int gcflag, int wflag, int rrflag, int tasknum, FILE** wlpp, FILE** rlpp, FILE** gclpp){
+    const char* log_dir = "logs";
+    create_log_directory(log_dir);
+
     if(wflag == 0 && gcflag == 0 && rrflag == -1){          // Baseline
         for(int i=0;i<tasknum;i++){
             char name[20];
             sprintf(name,"Baseline_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
+            wlpp[i] = open_log_file(log_dir, name, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name2[20];
             sprintf(name2,"Baseline_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
+            rlpp[i] = open_log_file(log_dir, name2, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name3[20];
             sprintf(name3,"Baseline_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
+            gclpp[i] = open_log_file(log_dir, name3, "w");
         }
     }
     else if(wflag == 11 && gcflag == 0 && rrflag ==  0){    // Hybrid WL
         for(int i=0;i<tasknum;i++){
             char name[20];
             sprintf(name,"Hyb_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
+            wlpp[i] = open_log_file(log_dir, name, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name2[20];
             sprintf(name2,"Hyb_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
+            rlpp[i] = open_log_file(log_dir, name2, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name3[20];
             sprintf(name3,"Hyb_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
+            gclpp[i] = open_log_file(log_dir, name3, "w");
         }
     }
     // else if(wflag == 14 && gcflag == 0 && rrflag == -1){    // LaWL-D (write only)
     //     for(int i=0;i<tasknum;i++){
     //         char name[20];
     //         sprintf(name,"wonly_lat_w%d.csv",i);
-    //         wlpp[i] = fopen(name,"w");
+    //         wlpp[i] = open_log_file(log_dir, name, "w");
     //     }
     //     for(int i=0;i<tasknum;i++){
     //         char name2[20];
     //         sprintf(name2,"wonly_lat_r%d.csv",i);
-    //         rlpp[i] = fopen(name2,"w");
+    //         rlpp[i] = open_log_file(log_dir, name2, "w");
     //     }
     //     for(int i=0;i<tasknum;i++){
     //         char name3[20];
     //         sprintf(name3,"wonly_lat_gc%d.csv",i);
-    //         gclpp[i] = fopen(name3,"w");
+    //         gclpp[i] = open_log_file(log_dir, name3, "w");
     //     }
     // }
     else if(wflag == 14 && gcflag == 6 && rrflag == -1){       // LaWL-D
         for(int i=0;i<tasknum;i++){
             char name[20];
             sprintf(name,"LaWL_D_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
+            wlpp[i] = open_log_file(log_dir, name, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name2[20];
             sprintf(name2,"LaWL_D_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
+            rlpp[i] = open_log_file(log_dir, name2, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name3[20];
             sprintf(name3,"LaWL_D_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
+            gclpp[i] = open_log_file(log_dir, name3, "w");
         }
     }
     else if(wflag == 14 && gcflag == 6 && rrflag ==  1){       // LaWL
         for(int i=0;i<tasknum;i++){
             char name[20];
             sprintf(name,"LaWL_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
+            wlpp[i] = open_log_file(log_dir, name, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name2[20];
             sprintf(name2,"LaWL_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
+            rlpp[i] = open_log_file(log_dir, name2, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name3[20];
             sprintf(name3,"LaWL_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
+            gclpp[i] = open_log_file(log_dir, name3, "w");
         }
     }
     else {                                                     // Dynamic WL
         for(int i=0;i<tasknum;i++){
             char name[20];
             sprintf(name,"Dyn_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
+            wlpp[i] = open_log_file(log_dir, name, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name2[20];
             sprintf(name2,"Dyn_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
+            rlpp[i] = open_log_file(log_dir, name2, "w");
         }
         for(int i=0;i<tasknum;i++){
             char name3[20];
             sprintf(name3,"Dyn_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
+            gclpp[i] = open_log_file(log_dir, name3, "w");
         }
     }
 }

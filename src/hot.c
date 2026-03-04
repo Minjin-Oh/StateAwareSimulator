@@ -2,19 +2,6 @@
 
 extern int rrflag;
 
-void _build_hc_fromlist(bhead* list, meta* metadata, bhead* hotlist, bhead* coldlist,int max){
-    block* cur = list->head;
-    while(cur != NULL){
-        block* new = (block*)malloc(sizeof(block));
-        memcpy(new,cur,sizeof(block));
-        if(metadata->state[cur->idx] >= max-MARGIN)
-            ll_append(hotlist,new);
-        else
-            ll_append(coldlist,new);
-        cur = cur->next;
-    }
-}
-
 void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist){
     //this function is called when P/E diff reaches threshold,
     // but hot cold sep is not done yet
@@ -40,12 +27,6 @@ void build_hot_cold(meta* metadata, bhead* hotlist, bhead* coldlist){
     /*
     printf("checking. ");
     */
-}
-
-void swap(int* a, int* b){
-    int temp = *b;
-    *b = *a;
-    *a = temp;
 }
 
 int* _sort_bystate(meta* metadata, bhead* list, int order){
@@ -128,19 +109,3 @@ int get_blockstate_meta(meta* metadata, int param){
     }
     return ret_state;
 }
-/*
-if(rrflag == 1){
-        for(int i=0;i<NOB;i++){
-            if(metadata->state[i] > cycle_avg && (block_vmap[hightask_idx][i]==1) && is_idx_in_list(full_head,i)){
-                //printf("[HI][RRC]%d, state : %d\n",i,metadata->state[i]);
-                temp_high[highcnt] = i;
-                highcnt++;
-            }
-            else if(metadata->state[i] <= cycle_avg && (block_vmap[hightask_idx][i]==0) && is_idx_in_list(full_head,i)){
-                //printf("[LO][RRC]%d, state : %d\n",i,metadata->state[i]);
-                temp_low[lowcnt] = i;
-                lowcnt++;
-            }
-        }
-    }
-*/

@@ -110,16 +110,6 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
     sleep(1);
 }
 
-void free_metadata(meta* metadata){
-    free(metadata->cur_read_worst);
-    free(metadata->read_cnt_task);
-    free(metadata->write_cnt_task);
-    free(metadata->runutils);
-    free(metadata->access_tracker);
-    free(metadata->rank_bounds);
-    free(metadata);
-}
-
 bhead* init_blocklist(int start, int end){
     bhead* newlist =  ll_init();
     for (int i=start;i<end+1;i++){
@@ -135,10 +125,6 @@ bhead* init_blocklist(int start, int end){
     }
     printf("init done\n");
     return newlist;
-}
-
-void free_blocklist(bhead* head){
-    ll_free(head);
 }
 
 void init_prof_exec(prof_exec* pe){
@@ -171,16 +157,6 @@ void init_prof_exec(prof_exec* pe){
         }
         printf("\n");
     }
-}
-
-void free_prof_exec(prof_exec* pe){
-    free(pe->pe_steps);
-    for(int i=0;i<OPTYPENUM;i++){
-        free(pe->pe_values[i]);
-        free(pe->pe_thres[i]);
-    }
-    free(pe->pe_values);
-    free(pe->pe_thres);
 }
 
 void init_task(rttask* task,int idx, int wp, int wn, int rp ,int rn, int gcp,int lb, int ub){

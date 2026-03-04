@@ -31,85 +31,10 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     metadata->vmap_task[ppa] = cur_IO->taskidx;
 }
 
-void finish_BWR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
-    // currently, BWR does nothing.(testing sched)
-    printf("[BWR]%d goto %d\n",cur_IO->rr_vic_ppa, cur_IO->rr_tar_ppa);
-    sleep(1);
-    /*
-    // similar to WR, but have to check concurrency issue
-    int old_ppa, old_lpa, new_ppa, old_block;
-    int new_block = cur_IO->rr_tar_ppa / (int)PPB;
-    old_lpa = cur_IO->rr_old_lpa;
-    new_ppa = cur_IO->rr_tar_ppa;
-    old_ppa = cur_IO->rr_vic_ppa;
-    old_block = (int)(old_ppa/PPB);
-
-    // invalidate old ppa (1 == invalid, 0 == valid)
-    // !! do invalidtion only if the page X relocated before BG write
-    if(metadata->invmap[old_ppa] == 0 && metadata->pagemap[old_lpa] == old_ppa){
-        metadata->rmap[old_ppa] = -1;
-        metadata->vmap_task[old_ppa] = -1;
-        metadata->invmap[old_ppa] = 1;
-        metadata->invnum[old_block] += 1;
-    }
-    
-    // validate or invalidate new ppa
-    if(metadata->pagemap[old_lpa] == old_ppa){
-        // if still valid data, update mapping
-        metadata->pagemap[old_lpa] = new_ppa;
-        metadata->rmap[new_ppa] = old_lpa;
-        metadata->invmap[new_ppa] = 0;
-        metadata->vmap_task[new_ppa] = cur_IO->taskidx;
-    } 
-    else {
-        // else, invalidate newly written page
-        metadata->rmap[new_ppa] = -1;
-        metadata->invmap[new_ppa] = 1;
-        metadata->invnum[new_block]++;
-        metadata->vmap_task[new_ppa] = -1;
-    }
-
-    // update total fp and access tracker
-    metadata->total_fp--;
-    if(metadata->pagemap[old_lpa]==old_ppa){
-        metadata->access_tracker[cur_IO->taskidx][new_ppa/PPB] = 1;
-    }*/
-}
-
 void finish_RD(rttask* tasks, IO* cur_IO, meta* metadata){
     int target_block;
     target_block = metadata->pagemap[cur_IO->lpa] / PPB;
     metadata->access_window[target_block]++;
-}
-
-void finish_GC(rttask* task, IO* cur_IO, meta* metadata){
-    int taridx, old_lpa, new_ppa, old_ppa;
-    taridx = cur_IO->gc_tar_ppa / (int)PPB;
-    old_lpa = cur_IO->gc_old_lpa;
-    new_ppa = cur_IO->gc_tar_ppa;
-    old_ppa = cur_IO->gc_vic_ppa;
-
-    // if still valid data, update mapping
-    if(metadata->pagemap[old_lpa]==old_ppa){
-        metadata->pagemap[old_lpa] = new_ppa;
-        metadata->rmap[new_ppa] = old_lpa;
-        metadata->invmap[new_ppa] = 0;
-        metadata->vmap_task[new_ppa] = metadata->vmap_task[old_ppa];
-    }
-    // if it is not valid data, invalidate map
-    else{
-        metadata->rmap[new_ppa] = -1;
-        metadata->invmap[new_ppa] = 1;
-        metadata->invnum[taridx]++;
-        metadata->vmap_task[new_ppa] = -1;
-    }
-#ifdef GC_ON_WRITEBLOCK
-    // when GC relocates page on writeblock, total fp is decreased & access tracker is updated
-    metadata->total_fp--;
-    if(metadata->pagemap[old_lpa]==old_ppa){
-        metadata->access_tracker[cur_IO->taskidx][new_ppa/PPB] = 1;
-    }
-#endif
 }
 
 void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, bhead* rsvlist_head, GCblock* cur_GC){
@@ -158,87 +83,6 @@ void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
     
 }
 
-void finish_RRRE(){
-    /*nothing*/
-}
-
-void finish_RRER(rttask* task, IO* cur_IO, meta* metadata){
-    int vicidx;
-    vicidx = cur_IO->vic_idx;
-    for(int i=0;i<PPB;i++){
-        metadata->rmap[(vicidx)*PPB+i]=-1;
-        metadata->invmap[(vicidx)*PPB+i]=0;
-        metadata->vmap_task[(vicidx)*PPB+i]=-1;
-    }
-    // update block state
-    metadata->state[vicidx]++;
-    metadata->access_window[vicidx] = 0;
-}
-
-void finish_RRWR(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, bhead* full_head, RRblock* cur_RR){
-    int taridx, vicidx, old_lpa, new_ppa, old_ppa, lastreq, tot_inv, temp;
-    taridx = cur_IO->tar_idx;
-    vicidx = cur_IO->vic_idx;
-    old_lpa = cur_IO->rr_old_lpa;
-    new_ppa = cur_IO->rr_tar_ppa;
-    old_ppa = cur_IO->rr_vic_ppa;
-    lastreq = cur_IO->islastreq;
-    tot_inv=0;
-    temp = 0;
-    // if still valid data, update mapping
-    if(metadata->pagemap[old_lpa]==old_ppa){
-        metadata->pagemap[old_lpa] = new_ppa;
-        metadata->rmap[new_ppa] = old_lpa;
-        metadata->invmap[new_ppa] = 0;
-        metadata->vmap_task[new_ppa] = metadata->vmap_task[old_ppa];
-    }
-    // if it is not valid data, invalidate map
-    else{ 
-        metadata->rmap[new_ppa] = -1;
-        metadata->invmap[new_ppa] = 1;
-        metadata->vmap_task[new_ppa] = -1;
-    }
-    // printf("[RRWR-fin]tar:%d,inv?:%d\n",cur_IO->rr_tar_ppa,metadata->invmap[cur_IO->rr_tar_ppa]);
-    if(lastreq==1){
-        // last write request means metadata update!
-        metadata->total_invalid -= PPB - cur_IO->rr_valid_count;
-        metadata->total_fp += PPB - cur_IO->rr_valid_count;
-        // check current invalid number
-        for(int i=0;i<PPB;i++){
-            if(metadata->invmap[taridx*PPB+i]==1){
-                tot_inv += 1;
-            }
-        }
-        metadata->invnum[taridx] = tot_inv;
-        // printf("[RRWR-fin]move completed,tar:%d,invnum:%d\n",taridx,metadata->invnum[taridx]);
-        
-        // if vic1->vic2 movement is completed,
-        // printf("cur->tar : %d, vic1 : %d, vic2 : %d\n",cur_IO->tar_idx, cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx);
-        if(cur_RR->cur_vic2->idx == cur_IO->tar_idx){    
-            if(cur_IO->rr_valid_count == PPB){
-                ll_append(full_head,cur_RR->cur_vic2);
-                // printf("app %d to full, fullnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
-            } 
-            else {
-                ll_append(fblist_head,cur_RR->cur_vic2);
-                // printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic2->idx,full_head->blocknum);
-            }
-            
-        } 
-        // if vic2->vic1 movement is completed,
-        else if (cur_RR->cur_vic1->idx == cur_IO->tar_idx){
-            if(cur_IO->rr_valid_count == PPB){
-                ll_append(full_head,cur_RR->cur_vic1);
-                // printf("app %d to full, fullnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
-            } 
-            else {
-                ll_append(fblist_head,cur_RR->cur_vic1);
-                // printf("app %d to fb, fbnum : %d\n",cur_RR->cur_vic1->idx,full_head->blocknum);
-            }
-        }
-    }
-}
-
 void finish_req(rttask* task, IO* cur_IO, meta* metadata, 
                 bhead* fblist_head, bhead* rsvlist_head, bhead* full_head,
                 GCblock* cur_GC, RRblock* cur_RR){
@@ -250,25 +94,9 @@ void finish_req(rttask* task, IO* cur_IO, meta* metadata,
     else if (cur_IO->type==RD){
         finish_RD(task,cur_IO, metadata);
     }
-    else if(cur_IO->type==GC){
-        finish_GC(task, cur_IO,metadata);
-    }
     else if(cur_IO->type==GCER){
         finish_GCER(task,cur_IO,metadata,fblist_head,rsvlist_head,cur_GC);
         // sleep(1);  
-    }
-    else if(cur_IO->type==RRRE){
-        finish_RRRE();
-    }
-    else if(cur_IO->type==RRER){
-        finish_RRER(task,cur_IO,metadata);
-    }
-    else if(cur_IO->type==RRWR){
-        finish_RRWR(task,cur_IO,metadata,fblist_head,full_head,cur_RR);
-    }
-    else if(cur_IO->type==BWR){
-        finish_BWR(task,cur_IO,metadata,full_head);
-        printf("finish BWR, timing : %ld, exec : %ld\n",cur_cp,cur_IO->exec);
     }
 }
 

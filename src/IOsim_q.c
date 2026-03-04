@@ -82,7 +82,6 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                      FILE* fpovhd_w_release, FILE* fpovhd_w_assign, FILE* w_assign_detail){
 
     //makes write job according to workload and task parameter
-    //printf("[%d]write start, time : %d\n",taskidx,cur_cp);
     block *cur = NULL;
     block *temp = NULL;
     block *last_access_block = NULL;
@@ -118,35 +117,25 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     for(int i=0;i<tasks[taskidx].wn;i++){
         //make sure that no full block is in write block list during assign logic.
         //allocate current block to full B.
-        if(cur != NULL){
-            if(cur->fpnum == 0){
-                temp = ll_remove(write_head,cur->idx);
-                ll_append(full_head,temp);
-                cur = NULL;
-            } else {
-                //do nothing
-            }
-        }
+        // if(cur != NULL){
+        //     if(cur->fpnum == 0){
+        //         temp = ll_remove(write_head,cur->idx);
+        //         ll_append(full_head,temp);
+        //         cur = NULL;
+        //     }
+        // }
         if(wflag == 0){ // argv[2] == NO
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         } else if(wflag == 11){ // argv[2] == MOTIVALLY
             cur = assign_write_dynwl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        } else if(wflag == 12 || wflag == 13){ // argv[2] == GRADW or GRADW_MOD
-            cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
         } else if(wflag == 14){ // argv[2] == INVW
             cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,lpas,i,cur_cp, fpovhd_w_assign, w_assign_detail);
         }
-        block* checktemp = fblist_head->head; 
         cur_offset = PPB - cur->fpnum;
         ppa_dest[i] = cur->idx*PPB + cur_offset;
         ppa_state[i] = metadata->state[cur->idx];
         cur->fpnum--;
-        //update lifespan related metadata (!!!!ONLY WHEN lifespan metadata is required!!!!)
-        //if(wflag == 14){
-        //    metadata->left_rankwrite_num--;
-        //    metadata->data_lifespan[metadata->lifespan_record_num] = cur_cp - metadata->recent_update[lpas[i]];
-        //    metadata->lifespan_record_num++;
-        //}
+    
         last_access_block = cur;
         //allocate current block to full B.
         if(cur != NULL){
@@ -154,8 +143,6 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                 temp = ll_remove(write_head,cur->idx);                
                 ll_append(full_head,temp);
                 cur = NULL;
-            } else {
-                //do nothing
             }
         }
     }
@@ -295,51 +282,10 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     int others_vic_invalid = -1;
     int oldest_vic_idx;
     int others_vic_idx;
-
-    // 1. find gc victim block index
-    if (gcflag == 1){
-        gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);
-    } else if (gcflag == 2){
-        gc_limit = find_gcctrl_greedy(tasks,taskidx,tasknum,metadata,full_head);
-    } else if (gcflag == 3){
-        gc_limit = find_gcctrl_limit(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
-    } else if (gcflag == 4){
-        gc_limit = find_gcctrl_yng(tasks,taskidx,tasknum,metadata,full_head);
-    } else if (gcflag == 5){
-        gc_limit = find_gcweighted(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
-    } else if (gcflag == 6){
-        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head, gc_detail);
-    }
-    print_blocklist_info(write_head,metadata);
-    print_blocklist_info(full_head,metadata);
-    
-    // 2. victim block selection
-    // 2-(1). if gc baseline, select most invalid block
+   
+    // 1. victim block selection
+    // 1-(1). if GC is greedy, select most invalid block
     if (gcflag == 0){
-        /*
-        while(cur != NULL){
-            if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
-               (metadata->state[cur->idx] >= write_limit)){
-                //only change when invnum for current target is high
-                if(metadata->invnum[cur_vic_idx] >= PPB/4*3){
-                    cur_vic_idx = cur->idx;
-                    vic = cur;
-                }
-            }
-            cur = cur->next;
-        }
-        if(vic==NULL){
-            //printf("!!!no feasible GC. fall back to original!!!\n");
-            cur = full_head->head;
-            while(cur != NULL){
-                if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
-                (metadata->state[cur->idx] >= write_limit)){
-                    cur_vic_idx = cur->idx;
-                    vic = cur;
-                }
-                cur = cur->next;
-            }
-        }*/
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
                (metadata->state[cur->idx] >= write_limit)){
@@ -353,9 +299,12 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         }
     }
     
-    // 2-(2). if not, choose a victim block from full_block list using index (UTILGC = 6)
-    else if (gcflag == 1 || gcflag == 2 || gcflag == 3 || gcflag == 4 || gcflag == 5 || gcflag == 6){
-        //printf("target block : %d\n",gc_limit);
+    // 1-(2). if not (UTILGC = 6)
+    else if (gcflag == 6){
+        // 1-(2)-1. find gc victim block index
+        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head, gc_detail);
+
+        // 1-(2)-2. choose a victim block from full_block list using index
         while(cur != NULL){
             if(cur->idx == gc_limit){
                 cur_vic_idx = cur->idx;
@@ -364,55 +313,15 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             }
             cur = cur->next;
         }   
-    } 
-     
-    // 2-(3). TESTGC
-    else if (gcflag == 7){
-        while(cur != NULL){
-            //check if oldest
-            if(metadata->state[cur->idx] == old){
-            //if oldest, compare invnum among oldest
-                if(metadata->invnum[cur->idx] > oldest_vic_invalid){
-                    oldest_vic_invalid = metadata->invnum[cur->idx];
-                    oldest_vic_idx = cur->idx;
-                    oldest_vic = cur;
-                }
-            }
-            else{
-            //if not oldest, compare invnum among not oldest. choose the youngest+many inv
-                if(metadata->invnum[cur->idx] > others_vic_invalid){
-                    others_vic_invalid = metadata->invnum[cur->idx];
-                    others_vic_idx = cur->idx;
-                    others_vic = cur;
-                }
-            }
-            cur=cur->next;
-        }
-        //compare two candidate. if invnum of b from oldest > invnum of b from not-oldest + X, choose former.
-        if(oldest_vic == NULL){ //not possible, but if...
-            vic = others_vic;
-        }
-        else if(others_vic == NULL){//if all block has same cyc
-            vic = oldest_vic;
-        }
-        else{//if two group exists, choose the block from oldest only when following eq holds.
-            printf("inv from oldest = %d, inv from others = %d, oldestP/E = %d\n",oldest_vic_invalid,others_vic_invalid,old);
-            if(oldest_vic_invalid > others_vic_invalid + (int)GCGROUP_THRES){ 
-                vic = oldest_vic;
-            }
-            else{
-                vic = others_vic;
-            }
-        }
     }
 
-    // Edge Case
-    // i. victim block이 없는 경우
+    // 2. Edge Case
+    // 2-(1). victim block이 없는 경우
     if(vic==NULL){
         printf("[GC]no feasible block\n");
         abort();
     }
-    // ii. victim block에 invalid page가 존재하지 않는 경우. 즉, 회수할 수 있는 free page가 0인 경우.
+    // 2-(2). victim block에 invalid page가 존재하지 않는 경우. 즉, 회수할 수 있는 free page가 0인 경우.
     if(metadata->invnum[vic->idx]==0){
         printf("no fp block\n");
         return;
@@ -627,26 +536,4 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     //printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
     //printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
 
-}
-
-void BWR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* write_head,
-                  IOhead* bwrq, long cur_cp){
-    printf("[BWR]sched BWR, %ld\n",cur_cp);
-    int vic, tar;
-    long bwrp;
-    int execution_time;
-    
-    //background relocation logic
-    //find_BWR_victim_updatetiming(tasks, tasknum, metadata, fblist_head, full_head, &vic);
-    //find_BWR_target_updatetiming(tasks, tasknum, metadata, write_head, &tar);
-    vic = 0;
-    tar = 0;
-    //schedule simple relocation job, if possible.
-    if(vic == -1 || tar == -1){
-        return ;
-    }
-    bwrp = __LONG_MAX__ - cur_cp;
-    execution_time += gen_bwr_rr(vic, tar, cur_cp, bwrp, metadata, bwrq);
-    //reloc for write does not have to consider blocks.
-    return;
 }
