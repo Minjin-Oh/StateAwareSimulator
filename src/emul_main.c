@@ -36,11 +36,6 @@ float sploc;
 float tploc;
 int offset;
 
-// FIXME:: set these as global to expose proportion (ratio) array to find_write_gradient function in findW.c
-double* w_prop;
-double* r_prop;
-double* gc_prop;
-
 // FIXME:: set these as global to expose workloads to find_write_invalid function
 FILE** w_workloads;
 FILE** r_workloads;
@@ -51,12 +46,7 @@ int max_valid_pg;
 FILE **fps;
 FILE *test_gc_writeblock[4];
 FILE *updaterate_fp;
-FILE *longliveratio_fp;
 FILE *updateorder_fp;
-
-// FIXME:: set these as global to expose global write block to assign_write_invalid function
-bhead* glob_yb;
-bhead* glob_ob;
 
 // a space to store lpa update timing (memory)
 long* lpa_update_timing[NOP];
@@ -159,10 +149,7 @@ int main(int argc, char* argv[]){
 
     rttask* rand_tasks = NULL;
     rttask* tasks = NULL;
-    w_prop = (double*)malloc(sizeof(double)*tasknum*2);
-    r_prop = (double*)malloc(sizeof(double)*tasknum*2);
-    gc_prop = (double*)malloc(sizeof(double)*tasknum*2);
-    
+
     // simulate I/O (init related params)
     float total_u;
     int oldest;
@@ -214,9 +201,6 @@ int main(int argc, char* argv[]){
     long tot_runtime;
     double tot_runtime_readable;
     double write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg;
-    
-    // TEMPCODE::open file for invfull block check.
-    longliveratio_fp = fopen("longliveratio.csv","w");
 
     // add scheme flags for flexible write policy change
     printf("[ SCHEMES ] %d, %d, %d, %d\n",wflag,gcflag,rrflag,rrcond);
@@ -296,8 +280,6 @@ int main(int argc, char* argv[]){
         }
         exit_code = 0;
         goto CLEANUP;
-        exit_code = 0;
-        goto CLEANUP;
     }
     
     // WORKLOAD GENERATOR CODE  
@@ -313,8 +295,6 @@ int main(int argc, char* argv[]){
         IOgen(tasknum,rand_tasks,WORKLOAD_LENGTH,offset,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
-        exit_code = 0;
-        goto CLEANUP;
         exit_code = 0;
         goto CLEANUP;
     }
@@ -474,8 +454,6 @@ int main(int argc, char* argv[]){
     
     full_head = init_blocklist(0,-1);   // generate 0 component ll.
     write_head = init_blocklist(0,-1);
-    glob_yb = init_blocklist(0,-1);
-    glob_ob = init_blocklist(0, -1);
     hotlist = init_blocklist(0,-1);
     coldlist = init_blocklist(0,-1);
     
@@ -549,8 +527,6 @@ int main(int argc, char* argv[]){
     gettimeofday(&(tot_start_time),NULL);
 
     // !!! start of simulation !!!
-
-    // !!! start of simulation !!!
     while(cur_cp <= RUNTIME){
         if(write_release_num != 0){
             write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
@@ -574,9 +550,6 @@ int main(int argc, char* argv[]){
         // 1. 한 바퀴 돌 때마다 전체 블록의 PEC를 profiling하고, lowest and highest PEC를 check
         yngest = get_blockstate_meta(newmeta,YOUNG);
         oldest = get_blockstate_meta(newmeta,OLD);
-
-        // 2. flash state checker
-        // 2-(1). 1000000us마다 profile 정보 저장
 
         // 2. flash state checker
         // 2-(1). 1000000us마다 profile 정보 저장
@@ -616,17 +589,12 @@ int main(int argc, char* argv[]){
         }
 
         // 2-(2). max P/E cycle overflow (exit code)
-
-        // 2-(2). max P/E cycle overflow (exit code)
         for(int idx=0;idx<NOB;idx++){
             if(newmeta->state[idx] >= MAXPE){
                 total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
                 printf("[%ld]a block reach maximum P/E, util : %d\n", cur_cp, total_u);
                 fprintf(fplife,"%ld,",cur_cp);
-                // if (PEC_profile) { fclose(PEC_profile); PEC_profile = NULL; }
                 sleep(1);
-                exit_code = 1;
-                goto CLEANUP;
                 exit_code = 1;
                 goto CLEANUP;
             } else {
@@ -688,10 +656,7 @@ int main(int argc, char* argv[]){
                         fprintf(fplife,"%ld,",cur_cp);
                         fflush(fplife);
                         printf("dl miss detected,");
-                        // if (PEC_profile) { fclose(PEC_profile); PEC_profile = NULL; }
                         sleep(1);
-                        exit_code = 1;
-                        goto CLEANUP;
                         exit_code = 1;
                         goto CLEANUP;
                     }
@@ -746,12 +711,7 @@ int main(int argc, char* argv[]){
 
         // 4. job release logic
         // 4-(1). release I/O task jobs (실제 실행하는 것 X, release job을 request queue에 저장하는 과정)
-        // 4. job release logic
-        // 4-(1). release I/O task jobs (실제 실행하는 것 X, release job을 request queue에 저장하는 과정)
         for(int j=0;j<tasknum;j++){
-
-            // 4-(1)-1. write job을 실행하기에 충분한 free page가 있는지 먼저 확인
-            //   (free page < write request page) 이면 write job을 release하는 걸 delay
 
             // 4-(1)-1. write job을 실행하기에 충분한 free page가 있는지 먼저 확인
             //   (free page < write request page) 이면 write job을 release하는 걸 delay
@@ -789,15 +749,6 @@ int main(int argc, char* argv[]){
                 // 3-(1). previous read job finish and new read request release
                 if (rjob_finished[j] == 1){ 
                 //printf("next r : %ld, cur cp : %ld, rjob : %d\n",next_r_release[j],cur_cp,rjob_finished[j]);
-                    read_job_start_q(tasks,j,newmeta,
-                                    r_workloads[j],rq[j], cur_cp);
-                    next_r_release[j] = cur_cp + (long)tasks[j].rp;
-                    rjob_finished[j] = 0;
-                } 
-                // 3-(2). previous read job is not finished
-                else if (rjob_finished[j] == 0){
-                    next_r_release[j] = cur_cp + (long)tasks[j].rp;
-                }
                     read_job_start_q(tasks,j,newmeta,
                                     r_workloads[j],rq[j], cur_cp);
                     next_r_release[j] = cur_cp + (long)tasks[j].rp;
@@ -845,7 +796,6 @@ int main(int argc, char* argv[]){
             wl_init = 1;
         }
         // 4-(2)-2. relocation request 생성
-        // 4-(2)-2. relocation request 생성
         if((do_rr == 1) && (rr_finished == 1) && (rr->head == NULL) && (rrflag != -1) && (wl_init == 1)){
             if(hot_cold_list == 0){
                 build_hot_cold(newmeta,hotlist,coldlist);
@@ -855,7 +805,6 @@ int main(int argc, char* argv[]){
             rrutil = -1.0;                  // override util so that WL always run in background mode.
             gettimeofday(&(algo_start_time),NULL);
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
-                            rr,&(cur_rr),(double)rrutil,cur_cp, skewnum);
                             rr,&(cur_rr),(double)rrutil,cur_cp, skewnum);
             rr_release_num++;
             gettimeofday(&(algo_end_time),NULL);
@@ -872,10 +821,7 @@ int main(int argc, char* argv[]){
         }
         
         // 5. req pick logic
-        
-        // 5. req pick logic
         if(cur_IO == NULL){
-            // 5-1. init params
             // 5-1. init params
             long cur_dl = __LONG_MAX__;
             int target_task = -1;
@@ -918,8 +864,6 @@ int main(int argc, char* argv[]){
                 }
         }
             // 5-3. pop IO from target task's queue
-        }
-            // 5-3. pop IO from target task's queue
             if(target_type == RD){
                 cur_IO = ll_pop_IO(rq[target_task]);  
             }
@@ -934,7 +878,6 @@ int main(int argc, char* argv[]){
             }
 
             // 5-4. if something's popped out, update cur_IO_end
-            // 5-4. if something's popped out, update cur_IO_end
             if(cur_IO != NULL){
                 cur_IO_end = cur_cp + cur_IO->exec;
             }
@@ -946,9 +889,6 @@ int main(int argc, char* argv[]){
         // 6. go to the next checkpoint
         // cur_cp는 앞에서 EDF scheduling에 따라 실행된 job이 끝난 지점으로 jump되어 있음
         // jump한 시점보다 더 앞에 release되어야 할 job이 있다면, 해당 시점으로 cur_cp를 jump
-        // 6. go to the next checkpoint
-        // cur_cp는 앞에서 EDF scheduling에 따라 실행된 job이 끝난 지점으로 jump되어 있음
-        // jump한 시점보다 더 앞에 release되어야 할 job이 있다면, 해당 시점으로 cur_cp를 jump
         cur_cp = find_next_time(tasks,tasknum,cur_IO_end,rr_check,cur_cp,
                                 next_w_release,next_r_release,next_gc_release);
         // printf("[fnt res]next_time : %ld\n",cur_cp);
@@ -956,7 +896,6 @@ int main(int argc, char* argv[]){
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
     fprintf(fplife,"%ld,",cur_cp);
     fflush(fplife);
-    // if (PEC_profile) { fclose(PEC_profile); PEC_profile = NULL; }
     sleep(1);
     
     CLEANUP:
@@ -988,11 +927,6 @@ int main(int argc, char* argv[]){
     }
     // 단일 큐 head
     if (rr)  { ll_free_IO(rr);  rr  = NULL; }
-
-    // 4) 비율 배열 free
-    if (w_prop) { free(w_prop); w_prop = NULL; }
-    if (r_prop) { free(r_prop); r_prop = NULL; }
-    if (gc_prop){ free(gc_prop); gc_prop = NULL; }
 
     // 5) task 메모리 free
     if (rand_tasks) { free(rand_tasks); rand_tasks = NULL; }

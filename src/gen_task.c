@@ -176,164 +176,30 @@ rttask* generate_taskset_hardcode_motiv(int tasknum, float tot_util, int addr, f
     return tasks;
 }
 
-rttask* generate_taskset_hardcode_motiv(int tasknum, float tot_util, int addr, float* result_util, int cycle){
-
-    // 1) 하드코딩된 파라미터들 (필요하면 아래 배열만 바꿔서 실험하면 됨)
-    const int MAX_FIXED = 8;
-    const int wp_tbl[8] = {40000, 40000, 40000, 40000, 40000, 40000, 40000, 40000};
-    const int rp_tbl[8] = {40000, 40000, 40000, 40000, 40000, 40000, 40000, 40000};
-    const int wn_tbl[8] = {1,1,1,1,1,1,1,1};
-    const int rn_tbl[8] = {2,2,2,2,2,2,2,2};
-
-    // tasknum이 MAX_FIXED 개수보다 크면 그냥 에러
-    if (tasknum > MAX_FIXED) {
-        fprintf(stderr, "generate_taskset_hardcode_motiv: tasknum(%d) > fixed table size(%d)\n",
-                tasknum, MAX_FIXED);
-        *result_util = -1.0f;
-        return NULL;
+rttask* generate_taskset_hardcode(int tasknum, int addr, float* result_util){
+    //gets already generated taskparam.csv to "reuse" read/write task params.
+    //reconfigures gcp, lb and ub according to current overprovisioning rate
+    rttask* tasks;
+    int wn, wp, rn, rp, gcp, lb, ub;
+    FILE* taskfp = fopen("taskparam.csv","r");
+    tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
+    for(int i=0;i<tasknum;i++){
+        fscanf(taskfp,"%d,%d,%d,%d,%d,%d,%d\n",&wn,&wp,&rn,&rp,&gcp,&lb,&ub);
+        //recalculate gcp using MINRC from emul_main.c
+        gcp = __calc_gcmult(wp,wn,MINRC);
+        //recalculate bounds of logical address using addr param
+        init_task(&(tasks[i]),i,wp,wn,rp,rn,gcp,addr/tasknum*(i),addr/tasknum*(i+1)-1);
     }
-
-    // 2) task array 할당
-    rttask* tasks = (rttask*)malloc(sizeof(rttask) * tasknum);
-    if (!tasks) {
-        fprintf(stderr, "generate_taskset2: malloc failed\n");
-        *result_util = -1.0f;
-        return NULL;
+    float checker = 0.0;
+    for(int i=0;i<tasknum;i++){
+        checker += (float)tasks[i].wn*STARTW / (float)tasks[i].wp;
+        checker += (float)tasks[i].rn*STARTR / (float)tasks[i].rp;
+        checker += __calc_gcu(&(tasks[i]),MINRC,0,0,0);
     }
-
-    float WRsum            = 0.0f;  // write + read
-    float utilsum          = 0.0f;  // write + read + gc + erase
-    float utilsum_noblock  = 0.0f;  // write + read + gc
-    float utilsum_nogc     = 0.0f;  // write + read + erase
-
-    // 3) 각 task 초기화 + 개별 utilization 계산
-    for (int i = 0; i < tasknum; i++) {
-        int wp  = wp_tbl[i];
-        int rp  = rp_tbl[i];
-        int wn  = wn_tbl[i];
-        int rn  = rn_tbl[i];
-
-        // generate_taskset2에서도 이렇게 했으니까 그대로
-        int gcp = __calc_gcmult(wp, wn, MINRC);
-
-        // 주소 범위 균등 분할
-        int lba = (addr / tasknum) * i;
-        int uba = (addr / tasknum) * (i + 1) - 1;
-
-        // 원래 함수가 하던 것처럼 task를 일단 구성
-        init_task(&(tasks[i]),
-                  i,
-                  wp, wn,
-                  rp, rn,
-                  gcp,
-                  lba, uba);
-
-        // ----- utilization 계산 -----
-        float wu  = (float)wn * STARTW / (float)wp;
-        float ru  = (float)rn * STARTR / (float)rp;
-        float gcu = __calc_gcu(&(tasks[i]), MINRC, 0, 0, 0);
-
-        WRsum           += (wu + ru);
-        utilsum_noblock += (wu + ru + gcu);
-        utilsum         += (wu + ru + gcu);
-
-        printf("task %d: wp=%d, wn=%d, rp=%d, rn=%d, gcp=%d | wu=%.6f ru=%.6f gcu=%.6f\n",
-               i, wp, wn, rp, rn, gcp, wu, ru, gcu);
-    }
-
-    // 4) erase blocking term 추가 (기존 generate_taskset2 패턴 유지)
-    int minP = _find_min_period(tasks, tasknum);
-    float erase_u = (float)STARTE / (float)minP;
-
-    utilsum      += erase_u;
-    utilsum_nogc  = WRsum + erase_u;
-
-    printf("WRsum : %f, utilsum(noblock): %f, utilsum(nogc): %f totutil : %f\n",
-           WRsum, utilsum_noblock, utilsum_nogc, utilsum);
-
-    *result_util = utilsum;
-    return tasks;
-}
-
-// 하드코딩된 task 파라미터 기반 버전
-// 입력 시그니처는 기존 generate_taskset2 와 동일하게 유지
-rttask* generate_taskset1(int tasknum, float tot_util, int addr, float* result_util, int cycle)
-{
-    // 1) 하드코딩된 파라미터들
-    //    필요하면 아래 배열만 바꿔서 실험하면 됨
-    const int MAX_FIXED = 4;  // 지금은 4개만 예시
-    const int wp_tbl[4] = {50000,50000,50000,50000};
-    const int rp_tbl[4] = {50000,50000,50000,50000};
-    const int wn_tbl[4] = {2,2,2,2};   // 예: 전부 30 page
-    const int rn_tbl[4] = {2,2,2,2};   // 예: 전부 50 page
-
-    // tasknum이 우리가 준비한 하드코딩 개수보다 크면 그냥 에러
-    if (tasknum > MAX_FIXED) {
-        fprintf(stderr, "generate_taskset2: tasknum(%d) > fixed table size(%d)\n",
-                tasknum, MAX_FIXED);
-        *result_util = -1.0f;
-        return NULL;
-    }
-
-    // 2) task array 할당
-    rttask* tasks = (rttask*)malloc(sizeof(rttask) * tasknum);
-    if (!tasks) {
-        fprintf(stderr, "generate_taskset2: malloc failed\n");
-        *result_util = -1.0f;
-        return NULL;
-    }
-
-    float WRsum            = 0.0f;  // write + read
-    float utilsum          = 0.0f;  // write + read + gc + erase
-    float utilsum_noblock  = 0.0f;  // write + read + gc
-    float utilsum_nogc     = 0.0f;  // write + read + erase
-
-    // 3) 각 task 초기화 + 개별 utilization 계산
-    for (int i = 0; i < tasknum; i++) {
-        int wp  = wp_tbl[i];
-        int rp  = rp_tbl[i];
-        int wn  = wn_tbl[i];
-        int rn  = rn_tbl[i];
-
-        // generate_taskset2에서도 이렇게 했으니까 그대로
-        int gcp = __calc_gcmult(wp, wn, MINRC);
-
-        // 주소 범위 균등 분할
-        int lba = (addr / tasknum) * i;
-        int uba = (addr / tasknum) * (i + 1) - 1;
-
-        // 원래 함수가 하던 것처럼 task를 일단 구성
-        init_task(&(tasks[i]),
-                  i,
-                  wp, wn,
-                  rp, rn,
-                  gcp,
-                  lba, uba);
-
-        // ----- utilization 계산 -----
-        float wu  = (float)wn * STARTW / (float)wp;
-        float ru  = (float)rn * STARTR / (float)rp;
-        float gcu = __calc_gcu(&(tasks[i]), MINRC, 0, 0, 0);
-
-        WRsum           += (wu + ru);
-        utilsum_noblock += (wu + ru + gcu);
-        utilsum         += (wu + ru + gcu);
-
-        printf("task %d: wp=%d, wn=%d, rp=%d, rn=%d, gcp=%d | wu=%.6f ru=%.6f gcu=%.6f\n",
-               i, wp, wn, rp, rn, gcp, wu, ru, gcu);
-    }
-
-    // 4) erase blocking term 추가 (기존 generate_taskset2 패턴 유지)
-    int minP = _find_min_period(tasks, tasknum);
-    float erase_u = (float)STARTE / (float)minP;
-
-    utilsum      += erase_u;
-    utilsum_nogc  = WRsum + erase_u;
-
-    printf("WRsum : %f, utilsum(noblock): %f, utilsum(nogc): %f totutil : %f\n",
-           WRsum, utilsum_noblock, utilsum_nogc, utilsum);
-
-    *result_util = utilsum;
+    checker += (float)STARTE/(float)_find_min_period(tasks,tasknum);
+    printf("checker : %f\n", checker);
+    *result_util = checker; 
+    fclose(taskfp);
     return tasks;
 }
 
@@ -458,7 +324,6 @@ rttask* generate_taskset_fixed(int addr, float* result_util){
 
 }
 
-
 void get_task_from_file(rttask* tasks, int tasknum, FILE* taskfile){
     rttask* rand_tasks = tasks;
     int wn, wp, rn, rp, gcp, lb, ub;
@@ -486,7 +351,6 @@ void get_loc_from_file(rttask* tasks, int tasknum, FILE* locfile){
         
     }
 }
-
 
 void get_task_from_file_recalc(rttask* tasks, int tasknum, FILE* taskfile, int max_valid_pg){
     //call this function instead of get_task_from_file, when OP changes.

@@ -7,8 +7,6 @@
 #include "emul_logger.h"
 
 extern int rrflag;
-extern bhead* glob_yb;
-extern bhead* glob_ob;
 
 void make_req_gc(meta* metadata, rttask* tasks, int taskidx, long cur_cp, block* vic, block* rsv, IOhead* gcq, bhead* full_head, bhead* write_head, bhead* fblist_head, GCblock* cur_GC){
     //a function which 1. makes gc request and 2. inserts request into gc request queue
@@ -116,14 +114,6 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     gettimeofday(&a,NULL);
     for(int i=0;i<tasks[taskidx].wn;i++){
         //make sure that no full block is in write block list during assign logic.
-        //allocate current block to full B.
-        // if(cur != NULL){
-        //     if(cur->fpnum == 0){
-        //         temp = ll_remove(write_head,cur->idx);
-        //         ll_append(full_head,temp);
-        //         cur = NULL;
-        //     }
-        // }
         if(wflag == 0){ // argv[2] == NO
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         } else if(wflag == 11){ // argv[2] == MOTIVALLY
@@ -257,13 +247,7 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
                   int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp, FILE* gc_detail){
-    if(gcq->reqnum != 0){
-        //printf("[%ld]queue not empty, dl miss detected. task %d GC\n",cur_cp,taskidx);
-        //sleep(3);
-        //abort();
-    }
-    
-    // 0. parameter initialization
+                    
     block* cur = full_head->head;
     block* vic = NULL;
     block* rsv;

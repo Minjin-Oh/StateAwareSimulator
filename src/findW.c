@@ -354,19 +354,9 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
     int** req_per_task = NULL;
     long** updateorders = NULL;
 
-    // overhead measurement values
-    struct timeval a;
-    struct timeval b;
-    long alloc_rank = 0;
-    long find_cor_blk = 0;
-    long find_new_blk =0;
-    long edge_case = 0;
-
 #ifdef MAXINVALID_RANK_DYN
     // active rank calculation-based method
-    gettimeofday(&a,NULL);
 
-    // prev-ver.
     // 1. if pre-assigned write is finished, re-assign ranks for future N writes.
     //    find jobs and their corresponding update timing within given interval (cur interval = 500ms)
     if(metadata->cur_rank_info.cur_left_write[taskidx] == 0){
@@ -426,6 +416,9 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
             }
         }
         // 1-(2)-1. save current bound info on metadata(note that metadata->rank_bound[0] = 0)
+        if(metadata->rank_bounds == NULL){
+            metadata->rank_bounds = (long*)malloc(sizeof(long)*(metadata->ranknum + 1));
+        }
         metadata->rank_bounds[0] = 0;
         for(int i=0;i<metadata->ranknum;i++){
             metadata->rank_bounds[i+1] = bounds[i];
@@ -466,9 +459,6 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         free(bounds);    
     }
 
-    gettimeofday(&b,NULL);
-    alloc_rank = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
-
     // get rank info from metadata & update left write
     int offset = metadata->cur_rank_info.tot_ranked_write[taskidx] - metadata->cur_rank_info.cur_left_write[taskidx];
     int cur_rank = metadata->cur_rank_info.ranks_for_write[taskidx][offset];
@@ -476,13 +466,10 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
 
     // 2. find corresponding block
     cur = write_head->head;
-    gettimeofday(&a, NULL);
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
         if(cur->wb_rank == cur_rank && _find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == 0){
-            gettimeofday(&b,NULL);
-            find_cor_blk = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
-            fprintf(w_assign_detail, "%ld, %ld, %ld, %ld \n", alloc_rank, find_cor_blk, find_new_blk, edge_case);
+
             return cur;
         }
 
@@ -495,13 +482,8 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
     int ret_b_state = __INT_MAX__;
     cur = fblist_head->head;
 
-    gettimeofday(&a, NULL);
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        // if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
-        //     cur = cur->next;
-        //     continue;
-        // }
         if(ret_b_state > metadata->state[cur->idx] && _find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == 0){
             ret_b_state = metadata->state[cur->idx];
             ret_b_idx = cur->idx;
@@ -514,15 +496,10 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         wb_new->wb_rank = cur_rank;
         ll_append(write_head,wb_new);
 
-        gettimeofday(&b,NULL);
-        find_new_blk = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
-        fprintf(w_assign_detail, "%ld, %ld, %ld, %ld \n", alloc_rank, find_cor_blk, find_new_blk, edge_case);
-
         return wb_new;
     }
     // 3-(3). if free block not found, find closest cluster in write block list.
     else{
-        gettimeofday(&a, NULL);
         cur = write_head->head;
         int offset = abs_int(cur->wb_rank - cur_rank);
         ret_b_idx = cur->idx;
@@ -561,10 +538,6 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         }
 
         if (final_idx != -1) {
-            gettimeofday(&b,NULL);
-            edge_case = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
-            fprintf(w_assign_detail, "%ld, %ld, %ld, %ld \n", alloc_rank, find_cor_blk, find_new_blk, edge_case);
-
             return cur;
         }
 
@@ -593,10 +566,6 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
             wb_new->wb_rank = cur_rank;
             ll_append(write_head,wb_new);
 
-            gettimeofday(&b,NULL);
-            edge_case = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
-            fprintf(w_assign_detail, "%ld, %ld, %ld, %ld \n", alloc_rank, find_cor_blk, find_new_blk, edge_case);
-
             return wb_new;
         }
     }
@@ -604,7 +573,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
 #endif
 
     // find out current lpa's update order 
-    gettimeofday(&a,NULL);
+
 #ifdef TIMING_ON_MEM   
     int cur_lpa_nextupdatenum = metadata->write_cnt_per_cycle[w_lpas[idx]]+1;
     if(cur_lpa_nextupdatenum >= update_cnt[w_lpas[idx]]){
@@ -623,9 +592,6 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
     fclose(cur_lpa_timing_file);
 #endif
 
-    gettimeofday(&b,NULL);
-    gettimeofday(&a,NULL);
-
 #ifdef TIMING_ON_MEM
     cnt = __calc_invorder_mem(max_valid_pg, metadata, cur_lpa_timing, workload_reset_time, curfp);
 #endif
@@ -637,7 +603,6 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         longlive = 1;
         tot_longlive_cnt++;
     }
-    gettimeofday(&b,NULL);
 
 #ifdef MAXINVALID_RANK_STAT
     int rank = __get_rank(cnt,metadata);
