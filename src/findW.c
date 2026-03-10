@@ -20,74 +20,75 @@ extern FILE **w_workloads;
 //assuming that locality is fixed, rank of lpa is determined statically.
 int _find_write_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util, int cur_b, int* w_lpas){
     //check if current I/O job does not violate util test along with recently released other jobs.
-    
+
     IO* cur;
     int read_b;
-    int valid_cnt = 0;
-    int* lpas;
     float total_u = 0.0;
     float wutils[tasknum];
     float rutils[tasknum];
     float gcutils[tasknum];
-    // float old_total_u;
-    //malloc variables
-    lpas = (int*)malloc(sizeof(int)*PPB);
-    for(int i=0;i<tasks[taskidx].wn;i++){
+
+    // Use stack allocation instead of heap (faster, no malloc/free overhead)
+    int lpas[PPB];
+    int wn = tasks[taskidx].wn;
+
+    // Copy write LPAs to local array
+    for(int i = 0; i < wn; i++){
         lpas[i] = w_lpas[i];
     }
 
-    //test code:: compare with old find_util_safe function
-    // old_total_u = find_cur_util(tasks,tasknum,metadata,old);
-    // if(type == WR){
-    //     old_total_u -= metadata->runutils[0][taskidx];
-    // } else if (type == RD){
-    //     old_total_u -= metadata->runutils[1][taskidx];
-    // } else if (type == GC){
-    //     old_total_u -= metadata->runutils[2][taskidx];
-    // }
-    // old_total_u += util;
-
-    //allocate current runtime utils on local variable
-    for(int i=0;i<tasknum;i++){
+    // Allocate current runtime utils on local variable
+    for(int i = 0; i < tasknum; i++){
         wutils[i] = metadata->runutils[0][i];
         rutils[i] = metadata->runutils[1][i];
         gcutils[i] = metadata->runutils[2][i];
     }
 
+    // Pre-compute values to avoid repeated calculations
+    int cur_b_state = metadata->state[cur_b];
+    float r_exec_cur_b = r_exec(cur_b_state);
+
     /*write a code which checks if current lpa collides with read.*/
     /*we do not check collision with GC, since worst case is when write happens after GC.*/
     /*when write happens after GC, GC reqs are not affected at all*/
-    for (int i=0;i<tasknum;i++){
+    for (int i = 0; i < tasknum; i++){
         cur = rq[i]->head;
         while(cur != NULL){
-           for(int j=0;j<tasks[taskidx].wn;j++){
-                if(cur->lpa == lpas[j]){ // read가 접근하는 LPA와 write LPA가 동일한 경우
-                    read_b = metadata->pagemap[lpas[j]]/PPB;
-                    if(metadata->state[read_b] < metadata->state[cur_b]){
-                        rutils[i] = r_exec(metadata->state[cur_b]) / (float)tasks[i].rp;
+            int cur_lpa = cur->lpa;
+            // Check if current read LPA collides with any write LPA
+            for(int j = 0; j < wn; j++){
+                if(cur_lpa == lpas[j]){ // read가 접근하는 LPA와 write LPA가 동일한 경우
+                    read_b = metadata->pagemap[cur_lpa]/PPB;
+                    int read_b_state = metadata->state[read_b];
+                    if(read_b_state < cur_b_state){
+                        rutils[i] -= r_exec(read_b_state) / (float)tasks[i].rp;
+                        rutils[i] += r_exec_cur_b / (float)tasks[i].rp;
                     }
+                    break; // Found collision, no need to check other write LPAs for this read 
                 }
             }
             cur = cur->next;
         }
     }
-    free(lpas);
 
-    //now calculate total utilization.
-    for (int j=0;j<tasknum;j++){
+    // Calculate total utilization
+    for (int j = 0; j < tasknum; j++){
         total_u += wutils[j];
         total_u += rutils[j];
         total_u += gcutils[j];
     }
-    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+
+    // Cache min_period to avoid repeated computation
+    static int cached_min_period = -1;
+    if (cached_min_period == -1) {
+        cached_min_period = _find_min_period(tasks, tasknum);
+    }
+
+    total_u += (float)e_exec(old) / (float)cached_min_period;
     total_u -= wutils[taskidx];
     total_u += util;
-    //printf("tot_u : %f\n",total_u);
-    if (total_u <= 1.0){
-        return 0;
-    } else {
-        return -1;
-    }
+
+    return (total_u <= 1.0) ? 0 : -1;
 }
 
 void _get_jobnum_interval(long curtime, long offset, rttask* task, int tasknum, int* jobnum_per_task){
@@ -478,7 +479,8 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
 
     // 3. if block not in wblist, try getting a new block
     // 3-(1). search through free block list
-    int ret_b_idx = -1;
+    block* ret_b = NULL;
+    // int ret_b_idx = -1;
     int ret_b_state = __INT_MAX__;
     cur = fblist_head->head;
 
@@ -486,13 +488,15 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         cur_state = metadata->state[cur->idx];
         if(ret_b_state > metadata->state[cur->idx] && _find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == 0){
             ret_b_state = metadata->state[cur->idx];
-            ret_b_idx = cur->idx;
+            ret_b = cur;
+            // ret_b_idx = cur->idx;
         }
 	    cur = cur->next;
     }
     // 3-(2). if free block found, append to write block and return index.
-    if(ret_b_idx != -1){
-        block* wb_new = ll_remove(fblist_head,ret_b_idx);
+    // if(ret_b_idx != -1){
+    if(ret_b != NULL){
+        block* wb_new = ll_remove(fblist_head,ret_b->idx);
         wb_new->wb_rank = cur_rank;
         ll_append(write_head,wb_new);
 
@@ -502,28 +506,37 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
     else{
         cur = write_head->head;
         int offset = abs_int(cur->wb_rank - cur_rank);
-        ret_b_idx = cur->idx;
+        // ret_b_idx = cur->idx;
+        ret_b = cur;
 
         while(cur != NULL){      
             cur_state = metadata->state[cur->idx];
-            if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
-                cur = cur->next;
-                continue;
-            }   
-            if(offset >= abs_int(cur->wb_rank - cur_rank)){
+            // if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+            //     cur = cur->next;
+            //     continue;
+            // }   
+            // if(offset >= abs_int(cur->wb_rank - cur_rank)){
+            //     offset = abs_int(cur->wb_rank - cur_rank);
+            //     // ret_b_idx = cur->idx;
+            //     ret_b = cur;
+            // }
+            if(offset >= abs_int(cur->wb_rank - cur_rank) && _find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == 0){
                 offset = abs_int(cur->wb_rank - cur_rank);
-                ret_b_idx = cur->idx;
+                ret_b = cur;
             }
+
             cur = cur->next;
         }
 
-        return cur;
+        return ret_b;
     }
 
     // 4. 적절한 블록을 찾지 못한 경우, write_head와 fblist_head 중에서 가장 lowest PEC 블록에 writing
-    if (ret_b_idx == -1){
+    // if (ret_b_idx == -1){
+    if (ret_b == NULL){
         // printf("[e] no schedulability block found: alloc to lowest block...\n");
-        int final_idx   = -1;
+        block* final_b = NULL;
+        // int final_idx   = -1;
         int final_state = __INT_MAX__;
 
         // 4-(1). write_head 전체 스캔
@@ -532,13 +545,14 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
             cur_state = metadata->state[cur->idx];
             if (cur_state < final_state) {
                 final_state = cur_state;
-                final_idx   = cur->idx;
+                final_b = cur;
+                // final_idx   = cur->idx;
             }
             cur = cur->next;
         }
 
-        if (final_idx != -1) {
-            return cur;
+        if (final_b != NULL) {
+            return final_b;
         }
 
         // 4-(2). free block 리스트도 같이 스캔
@@ -547,13 +561,15 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
             cur_state = metadata->state[cur->idx];
             if (cur_state < final_state) {
                 final_state = cur_state;
-                final_idx   = cur->idx;
+                final_b = cur;
+                // final_idx   = cur->idx;
             }
             cur = cur->next;
         }
 
         // 여기까지 오면 final_idx에 "PEC가 가장 낮은 블록의 idx"가 들어있어야 함
-        if (final_idx == -1) {
+        // if (final_idx == -1) {
+        if (final_b == NULL) {
             // 4-(3). 진짜로 아무것도 못 찾은 극단 케이스
             fprintf(stderr,
                     "\n[Critical Error] No block found even in fallback.");
@@ -562,7 +578,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         }
         // 4-(4). 이 final_idx가 free list에 있으면 빼서 write_head로 옮긴다
         else {
-            wb_new = ll_remove(fblist_head,final_idx);
+            wb_new = ll_remove(fblist_head,final_b->idx);
             wb_new->wb_rank = cur_rank;
             ll_append(write_head,wb_new);
 

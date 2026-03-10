@@ -247,7 +247,7 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
                   int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp, FILE* gc_detail){
-                    
+
     block* cur = full_head->head;
     block* vic = NULL;
     block* rsv;
@@ -257,7 +257,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     int cur_vic_invalid = -1;
     int vic_offset;
     int rsv_offset;
-    int gc_limit;
+    // int gc_limit;
     int vp_count, rtv_lpa;
     int old = get_blockstate_meta(metadata,OLD);
     int yng = get_blockstate_meta(metadata,YOUNG);
@@ -286,17 +286,20 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     // 1-(2). if not (UTILGC = 6)
     else if (gcflag == 6){
         // 1-(2)-1. find gc victim block index
-        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head, gc_detail);
+        // gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head, gc_detail);
 
-        // 1-(2)-2. choose a victim block from full_block list using index
-        while(cur != NULL){
-            if(cur->idx == gc_limit){
-                cur_vic_idx = cur->idx;
-                vic = cur;
-                break;
-            }
-            cur = cur->next;
-        }   
+        // // 1-(2)-2. choose a victim block from full_block list using index
+        // while(cur != NULL){
+        //     if(cur->idx == gc_limit){
+        //         cur_vic_idx = cur->idx;
+        //         vic = cur;
+        //         break;
+        //     }
+        //     cur = cur->next;
+        // }
+
+        vic = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head, gc_detail);
+
     }
 
     // 2. Edge Case

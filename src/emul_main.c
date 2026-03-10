@@ -348,20 +348,9 @@ int main(int argc, char* argv[]){
             }
         }
     }
-    for(int a=0;a<update_cnt[0];a++){
-        //printf("%ld\n",lpa_update_timing[0][a]);
-    }
-    for(int a=0;a<tasknum;a++){
-        for(int b=tasks[a].addr_lb;b<tasks[a].addr_ub;b++){
-            //printf("(%d)%d,%ld ",b,update_cnt[b],lpa_update_timing[b][0]);
-        }
-        //printf("\n");
-    }
+
     IO_close(tasknum,w_workloads,r_workloads);
 #endif
-
-    // (deprecated) run gradient tests for write in offline, and assign offset value for WGRAD policy.
-    offset = (int)((float)(tasks[0].addr_ub - tasks[0].addr_lb)*sploc/2.0);
 
     // init csv files
     const char* log_dir = "logs";
