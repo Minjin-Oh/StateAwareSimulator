@@ -277,15 +277,18 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     total_u_noblock = total_u;
     total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
     //print all infos (prof_{no, WLcomb, ours}_t%d.csv)
-    fprintf(fp,"%ld,%f,%f,%f,%f,%f, %d,%d, %f,%f,%f, %f, %lf\n",
-    cur_cp,
-    total_u, total_u_noblock,
-    metadata->runutils[0][taskidx],
-    metadata->runutils[1][taskidx],
-    metadata->runutils[2][taskidx],
-    metadata->state[cur_wb->idx], cur_gc_state,
-    total_w,total_r,total_gc,
-    state_avg, state_var); 
+    // NULL-guard: not all mode branches open a per-cycle profile file (u_check).
+    if(fp != NULL){
+        fprintf(fp,"%ld,%f,%f,%f,%f,%f, %d,%d, %f,%f,%f, %f, %lf\n",
+        cur_cp,
+        total_u, total_u_noblock,
+        metadata->runutils[0][taskidx],
+        metadata->runutils[1][taskidx],
+        metadata->runutils[2][taskidx],
+        metadata->state[cur_wb->idx], cur_gc_state,
+        total_w,total_r,total_gc,
+        state_avg, state_var);
+    }
     return total_u;
 }
 

@@ -6,6 +6,7 @@
 #define RRRE 6
 #define RRWR 7
 #define RRER 8
+#define BWR 9 // Background Write Relocation (aperiodic queue drain)
 
 // differentiate GCTHRESNOB and NOB
 // normally, GCTHRESNOB == NOB

@@ -613,8 +613,8 @@ int main(int argc, char* argv[]){
         oldest = get_blockstate_meta(newmeta,OLD);
         //flash state checker
         if(cur_cp % 1000000L == 0){
-            total_u = print_profile_timestamp(tasks,tasknum,newmeta,yngest,oldest,cur_cp);
-            //printf("cur_u:%f\n",total_u);
+	    total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
+	    //printf("cur_u:%f\n",total_u);
             //utilization overflow(exit code)
             if(total_u >= 1.0){                
                 printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
@@ -646,7 +646,7 @@ int main(int argc, char* argv[]){
         }
         for(int idx=0;idx<NOB;idx++){
             if(newmeta->state[idx] >= MAXPE){
-                total_u = print_profile_timestamp(tasks,tasknum,newmeta,yngest,oldest,cur_cp);
+                total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
                 printf("[%ld]a block reach maximum P/E, util : %d\n",total_u);
                 gettimeofday(&tot_end_time,NULL);                                                                     tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
                 tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
@@ -689,7 +689,7 @@ int main(int argc, char* argv[]){
                     // block_state is the P/E cycle *before* the erase increment in finish_GCER.
                     print_gc_valid(gc_valid_fp,cur_cp,cur_IO->taskidx,cur_IO->vic_idx,
                                    newmeta->state[cur_IO->vic_idx],cur_IO->gc_valid_count);
-                    total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,yngest,oldest,cur_cp,
+                    total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,u_check,yngest,oldest,cur_cp,
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
                                     newmeta->total_fp,cur_IO->gc_valid_count);
