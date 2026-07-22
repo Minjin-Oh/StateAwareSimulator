@@ -4,9 +4,11 @@
 #include "assignW.h"
 #include "rrsim_q.h"
 #include "IOgen.h"
-#include "emul_logger.h"
+#include "ovhd_stats.h"
 
 extern int rrflag;
+extern bhead* glob_yb;
+extern bhead* glob_ob;
 
 void make_req_gc(meta* metadata, rttask* tasks, int taskidx, long cur_cp, block* vic, block* rsv, IOhead* gcq, bhead* full_head, bhead* write_head, bhead* fblist_head, GCblock* cur_GC){
     //a function which 1. makes gc request and 2. inserts request into gc request queue
@@ -76,10 +78,10 @@ void make_req_gc(meta* metadata, rttask* tasks, int taskidx, long cur_cp, block*
 
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp, 
-                     FILE* fpovhd_w_release, FILE* fpovhd_w_assign, FILE* w_assign_detail){
+                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp){
 
     //makes write job according to workload and task parameter
+    //printf("[%d]write start, time : %d\n",taskidx,cur_cp);
     block *cur = NULL;
     block *temp = NULL;
     block *last_access_block = NULL;
@@ -90,42 +92,60 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
     int cur_offset;
     int bnum = 0;
     float exec_sum = 0.0, period = (float)tasks[taskidx].wp;
-
-    struct timeval a;
-    struct timeval b;
-    long get_lpa, alloc_blk, gen_IO;
     
-    gettimeofday(&a,NULL);
-    for(int i=0;i<tasks[taskidx].wn;i++){
-        lpas[i] = IOget(fp_w); // fp_w : wr_t%d.csv
-        if(lpas[i] == EOF){
-            //if returned value is EOF
-            //1. reset file & read first data.
-            rewind(fp_w);
-            fscanf(fp_w,"%ld,",&(lpas[i]));
-            //2. add offset to expected update timing.
-            add_offset_for_timing(metadata,taskidx,tasks[taskidx].addr_lb,tasks[taskidx].addr_ub,cur_cp);
-            reset_IO_update(metadata,tasks[taskidx].addr_lb,tasks[taskidx].addr_ub,cur_cp);
+    {
+        /* simulator infrastructure: workload trace reads. Recorded as
+         * OVHD_WSIM and excluded from the enclosing write-decision
+         * measurement via the pending-exclusion mechanism. */
+        long __ws_t0 = ovhd_now_us();
+        for(int i=0;i<tasks[taskidx].wn;i++){
+            lpas[i] = IOget(fp_w);
+            if(lpas[i] == EOF){
+                //if returned value is EOF
+                //1. reset file & read first data.
+                rewind(fp_w);
+                fscanf(fp_w,"%ld,",&(lpas[i]));
+                //2. add offset to expected update timing.
+                add_offset_for_timing(metadata,taskidx,tasks[taskidx].addr_lb,tasks[taskidx].addr_ub,cur_cp);
+                reset_IO_update(metadata,tasks[taskidx].addr_lb,tasks[taskidx].addr_ub,cur_cp);
+            }
         }
+        ovhd_record(OVHD_WSIM, ovhd_now_us() - __ws_t0, cur_cp);
     }
-    gettimeofday(&b,NULL);
-    get_lpa = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
     
-    gettimeofday(&a,NULL);
     for(int i=0;i<tasks[taskidx].wn;i++){
         //make sure that no full block is in write block list during assign logic.
-        if(wflag == 0){ // argv[2] == NO
-            cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        } else if(wflag == 11){ // argv[2] == MOTIVALLY
-            cur = assign_write_dynwl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        } else if(wflag == 14){ // argv[2] == INVW
-            cur = find_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,lpas,i,cur_cp, w_assign_detail);
+        //allocate current block to full B.
+        if(cur != NULL){
+            if(cur->fpnum == 0){
+                temp = ll_remove(write_head,cur->idx);
+                ll_append(full_head,temp);
+                cur = NULL;
+            } else {
+                //do nothing
+            }
         }
+        if(wflag == 0){
+            cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
+        } else if(wflag == 11){
+            cur = assign_write_dynwl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
+        } else if(wflag == 12 || wflag == 13){
+            cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
+        } else if(wflag == 14){
+            // cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,cur_cp);
+	    cur = find_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,lpas,i,cur_cp);
+        }
+        block* checktemp = fblist_head->head; 
         cur_offset = PPB - cur->fpnum;
         ppa_dest[i] = cur->idx*PPB + cur_offset;
         ppa_state[i] = metadata->state[cur->idx];
         cur->fpnum--;
-    
+        //update lifespan related metadata (!!!!ONLY WHEN lifespan metadata is required!!!!)
+        //if(wflag == 14){
+        //    metadata->left_rankwrite_num--;
+        //    metadata->data_lifespan[metadata->lifespan_record_num] = cur_cp - metadata->recent_update[lpas[i]];
+        //    metadata->lifespan_record_num++;
+        //}
         last_access_block = cur;
         //allocate current block to full B.
         if(cur != NULL){
@@ -133,18 +153,16 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
                 temp = ll_remove(write_head,cur->idx);                
                 ll_append(full_head,temp);
                 cur = NULL;
+            } else {
+                //do nothing
             }
         }
     }
-    gettimeofday(&b,NULL);
-    alloc_blk = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
     
     //assign page write destination
     //generate I/O requests.
     char name[30];
     FILE* timing_fp;
-
-    gettimeofday(&a, NULL);
     for (int i=0;i<tasks[taskidx].wn;i++){
         IO* req = (IO*)malloc(sizeof(IO));
         lpa = lpas[i];
@@ -167,13 +185,12 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
 #ifdef IOTIMING
         IO_timing_update(metadata,lpa,metadata->write_cnt_per_cycle[lpa],cur_cp);
 #endif
-        if(i != tasks[taskidx].wn-1){ // last request flag check
+        if(i != tasks[taskidx].wn-1){
             req->islastreq = 0;    
         } else {
             req->islastreq = 1;
         }                           
         ll_append_IO(wq,req);
-
         exec_sum += w_exec(ppa_state[i]);
         if(i==0){
             req->init = 1;
@@ -189,13 +206,12 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             req->init = 1;
             req->last = 1;
         }
+        //printf("tp:%d,lpa:%d,ppa:%d,dl:%ld,exec:%ld\n",req->type,req->lpa,req->ppa,req->deadline,req->exec);
     }
-    gettimeofday(&b,NULL);
-    gen_IO = (b.tv_sec - a.tv_sec)*1000000 + (b.tv_usec - a.tv_usec);
-
+        
     //update runtime utilization
     metadata->runutils[0][taskidx] = exec_sum / period;
-    fprintf(fpovhd_w_release, "%ld, %ld, %ld, \n", get_lpa, alloc_blk, gen_IO);
+    //sleep(1);
     return last_access_block;
 }
 
@@ -246,8 +262,13 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
 
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
-                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp, FILE* gc_detail){
-
+                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp){
+    if(gcq->reqnum != 0){
+        //printf("[%ld]queue not empty, dl miss detected. task %d GC\n",cur_cp,taskidx);
+        //sleep(3);
+        //abort();
+    }
+    //params
     block* cur = full_head->head;
     block* vic = NULL;
     block* rsv;
@@ -257,7 +278,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     int cur_vic_invalid = -1;
     int vic_offset;
     int rsv_offset;
-    // int gc_limit;
+    int gc_limit;
     int vp_count, rtv_lpa;
     int old = get_blockstate_meta(metadata,OLD);
     int yng = get_blockstate_meta(metadata,YOUNG);
@@ -266,9 +287,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     int others_vic_invalid = -1;
     int oldest_vic_idx;
     int others_vic_idx;
-   
-    // 1. victim block selection
-    // 1-(1). if GC is greedy, select most invalid block
+
     if (gcflag == 0){
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
@@ -282,33 +301,121 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             vic = full_head->head;
         }
     }
-    
+
     // 1-(2). if not (UTILGC = 6)
     else if (gcflag == 6){
-        // 1-(2)-1. find gc victim block index
-        // gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head, gc_detail);
-
-        // // 1-(2)-2. choose a victim block from full_block list using index
-        // while(cur != NULL){
-        //     if(cur->idx == gc_limit){
-        //         cur_vic_idx = cur->idx;
-        //         vic = cur;
-        //         break;
-        //     }
-        //     cur = cur->next;
-        // }
-
-        vic = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head, gc_detail);
-
+        vic = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head);
     }
+    
+    //     //find gc target
+//     if (gcflag == 1){
+//         gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);
+//     } else if (gcflag == 2){
+//         gc_limit = find_gcctrl_greedy(tasks,taskidx,tasknum,metadata,full_head);
+//     } else if (gcflag == 3){
+//         gc_limit = find_gcctrl_limit(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
+//     } else if (gcflag == 4){
+//         gc_limit = find_gcctrl_yng(tasks,taskidx,tasknum,metadata,full_head);
+//     } else if (gcflag == 5){
+//         gc_limit = find_gcweighted(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
+//     } else if (gcflag == 6){
+//         gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head);
+//     }
+//     print_blocklist_info(write_head,metadata);
+//     print_blocklist_info(full_head,metadata);
+//     //if gc baseline, select most invalid block
+//     if (gcflag == 0){
+//         /*
+//         while(cur != NULL){
+//             if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
+//                (metadata->state[cur->idx] >= write_limit)){
+//                 //only change when invnum for current target is high
+//                 if(metadata->invnum[cur_vic_idx] >= PPB/4*3){
+//                     cur_vic_idx = cur->idx;
+//                     vic = cur;
+//                 }
+//             }
+//             cur = cur->next;
+//         }
+//         if(vic==NULL){
+//             //printf("!!!no feasible GC. fall back to original!!!\n");
+//             cur = full_head->head;
+//             while(cur != NULL){
+//                 if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&
+//                 (metadata->state[cur->idx] >= write_limit)){
+//                     cur_vic_idx = cur->idx;
+//                     vic = cur;
+//                 }
+//                 cur = cur->next;
+//             }
+//         }*/
+//         while(cur != NULL){
+//             if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
+//                (metadata->state[cur->idx] >= write_limit)){
+//                 cur_vic_idx = cur->idx;
+//                 vic = cur;
+//             }
+//             cur = cur->next;
+//         }
+//         if(vic==NULL){
+//             vic = full_head->head;
+//         }
+//     }
+//     //if not, choose a victim block from full_block list using index
+//     else if (gcflag == 1 || gcflag == 2 || gcflag == 3 || gcflag == 4 || gcflag == 5 || gcflag == 6){
+//         //printf("target block : %d\n",gc_limit);
+//         while(cur != NULL){
+//             if(cur->idx == gc_limit){
+//                 cur_vic_idx = cur->idx;
+//                 vic = cur;
+//                 break;
+//             }
+//             cur = cur->next;
+//         }   
+//     } 
+//     else if (gcflag == 7){
+//         while(cur != NULL){
+//             //check if oldest
+//             if(metadata->state[cur->idx] == old){
+//             //if oldest, compare invnum among oldest
+//                 if(metadata->invnum[cur->idx] > oldest_vic_invalid){
+//                     oldest_vic_invalid = metadata->invnum[cur->idx];
+//                     oldest_vic_idx = cur->idx;
+//                     oldest_vic = cur;
+//                 }
+//             }
+//             else{
+//             //if not oldest, compare invnum among not oldest. choose the youngest+many inv
+//                 if(metadata->invnum[cur->idx] > others_vic_invalid){
+//                     others_vic_invalid = metadata->invnum[cur->idx];
+//                     others_vic_idx = cur->idx;
+//                     others_vic = cur;
+//                 }
+//             }
+//             cur=cur->next;
+//         }
+//         //compare two candidate. if invnum of b from oldest > invnum of b from not-oldest + X, choose former.
+//         if(oldest_vic == NULL){ //not possible, but if...
+//             vic = others_vic;
+//         }
+//         else if(others_vic == NULL){//if all block has same cyc
+//             vic = oldest_vic;
+//         }
+//         else{//if two group exists, choose the block from oldest only when following eq holds.
+//             printf("inv from oldest = %d, inv from others = %d, oldestP/E = %d\n",oldest_vic_invalid,others_vic_invalid,old);
+//             if(oldest_vic_invalid > others_vic_invalid + (int)GCGROUP_THRES){ 
+//                 vic = oldest_vic;
+//             }
+//             else{
+//                 vic = others_vic;
+//             }
+//         }
+//     }
 
-    // 2. Edge Case
-    // 2-(1). victim block이 없는 경우
     if(vic==NULL){
         printf("[GC]no feasible block\n");
         abort();
     }
-    // 2-(2). victim block에 invalid page가 존재하지 않는 경우. 즉, 회수할 수 있는 free page가 0인 경우.
     if(metadata->invnum[vic->idx]==0){
         printf("no fp block\n");
         return;
@@ -318,19 +425,14 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
 #ifdef GC_ON_WRITEBLOCK
     make_req_gc(metadata,tasks,taskidx,cur_cp,vic,rsv,gcq,full_head,write_head,fblist_head,cur_GC);
 #endif
-
 #ifndef GC_ON_WRITEBLOCK
-    // 3. victim block을 full block list에서 pop, copy block을 reserved block list에서 pop.
     ll_remove(full_head,vic->idx);
     rsv = ll_pop(rsvlist_head);
-    
-    // 3-(1). victim block과 copy block을 찾을 수 없는 경우, Error!
     if(rsv == NULL || vic == NULL){
         printf("[%ld]gc fucked up\n");
         abort();
     }
-
-    // 4. valid page copy 과정을 gcq에 enqueue
+    //make copyback requests
     vic_offset = PPB*(vic->idx);
     rsv_offset = PPB*(rsv->idx);
     vp_count = 0;
@@ -353,8 +455,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             gc_exec += req->exec;
         }
     }
-
-    // 5. victim block을 erase하는 작업을 gcq에 enqueue
+    //append erase operation at the end
     IO* er = (IO*)malloc(sizeof(IO));
     er->type = GCER;
     er->last = 1;
@@ -373,13 +474,12 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     cur_GC->cur_vic = vic;
     rsv->fpnum = PPB - vp_count;
     vic->fpnum = PPB;
-    metadata->runutils[2][taskidx] = gc_exec / gc_period;
+    metadata->runutils[2][taskidx] = gc_exec / gc_period;    
 #endif
-
 }
 
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
-                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, int skewnum){
+                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, long last_rr_cp){
     char reloc_w = 0;
     char reloc_r = 0;
     int vic1 = -1;
@@ -392,43 +492,24 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     block *vb1 = NULL, *vb2 = NULL, *cur;
     meta temp;
     
-    // 1. find relocation victim blocks
-    // 1-(1). Static WL
+    //find relocation victim blocks
     if(rrflag == 0){
         find_RR_dualpool(tasks, tasknum, metadata, full_head, hotlist, coldlist, &vic1, &vic2);
     }
-    // 1-(2). LaWL
-    else if (rrflag == 1){ 
-        if (skewnum >= 2){ // write-intensive
-            // write-based relocation 
-            find_WR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
-            if(vic1 == -1 || vic2 == -1){
-                // read-based relocation
-                find_RR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
-                if(vic1 != -1 || vic2 != -1){
-                    reloc_r = 1;
-                }
-            } 
-            else{
-                reloc_w = 1;
-            }
-        }
-        else{ // read-intensive
+    else if (rrflag == 1){
+        find_WR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
+        if(vic1 == -1 || vic2 == -1){
             find_RR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
-            if(vic1 == -1 || vic2 == -1){
-                // read-based relocation
-                find_WR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
-                if(vic1 != -1 || vic2 != -1){
-                    reloc_w = 1;
-                }
-            } 
-            else{
+            if(vic1 != -1 || vic2 != -1){
                 reloc_r = 1;
             }
-        }       
+        } 
+        else{
+            reloc_w = 1;
+        }
     } 
 
-    // 2. if victim block is not found, cancel WL and return.
+    //if victim block is not found, cancel WL and return.
     if(rrflag == 0 || rrflag == 1){
         if(vic1 == -1 || vic2 == -1){
             //printf("vic1 %d, vic2 %d, skiprr\n",vic1,vic2);
@@ -436,19 +517,16 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
     }
 
-    // 3. if victim is found, reset access window (or inv window) for future.
+    //if victim is found, reset access window (or inv window) for future.
     if(rrflag == 1){
         for(int i=0;i<NOB;i++){
-            // 왜 access window (아마 read access 아닐까?)는 전체 block에 대해서 초기화 시키고,
             metadata->access_window[i] = 0;
         }
-        // invalidation window는 victim block에 대해서만 초기화 하는거지?
         metadata->invalidation_window[vic1] = 0;
         metadata->invalidation_window[vic2] = 0;
     }
     
-    // 4. find vb1 and vb2
-    // 4-(1). full block list에서 확인
+    //find vb1 and vb2
     cur = full_head->head;
     while(cur != NULL){
         if(cur->idx == vic1){
@@ -459,7 +537,6 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
         cur=cur->next;
     }
-    // 4-(2). free block list에서 확인
     cur = fblist_head->head;
     while(cur != NULL){
         if(cur->idx == vic1){
@@ -470,34 +547,51 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
         cur=cur->next;
     }
-    //4-(3). victim block의 offset, state, cnt 정보 저장
     v1_offset = PPB*vic1;
     v2_offset = PPB*vic2;
     v1_state = metadata->state[vb1->idx];
     v2_state = metadata->state[vb2->idx];
     v1_cnt = PPB - metadata->invnum[vic1];
     v2_cnt = PPB - metadata->invnum[vic2];
+    // 5. slack-based scheduling check for LaWL
+    // U_relocation = C_relocation / T_relocation, where
+    // C_relocation : total exec of selected pair
+    // T_relocation : aperiodic period (= cur_cp - last relocation release time)
+    
+    // if (rrflag == 1){
+    //     long rr_exec = find_RR_period(vic1,vic2,v1_cnt,v2_cnt,1.0, metadata);
+    //     if(rr_exec <= 0){
+    //         return;
+    //     }
+    //     if(last_rr_cp < 0){
+    //         rrp = cur_cp > 0 ? cur_cp : 1;
+    //     } else {
+    //         rrp = cur_cp - last_rr_cp;
+    //     }
+    //     if(rrp <= 0){
+    //         return;
+    //     }
+    //     if(rrutil <= ((double)rr_exec / (double)rrp)){
+    //         return;
+    //     }
+    // }
 
-    // 5. find data relocation period (slack-based)
     rrp = find_RR_period(vic1,vic2,v1_cnt,v2_cnt,rrutil, metadata);
-
-    // !!! edge case : if read relocation util is lower than 0.0, assign longest possible deadline.
     if(rrutil <= 0.0){
         rrp = __LONG_MAX__ - cur_cp;
     }
-
     //copy the metadata into temp param and use temp
     //make sure that metadata update do NOT generate concurrency issue.
     memcpy(&temp,metadata,sizeof(meta));
 
-    // 6. generate relocation requests.
+    //generate relocation requests.
     execution_time += gen_read_rr(vic1,vic2,cur_cp,rrp,metadata,rrq);
     //make erase request.
     execution_time += gen_erase_rr(vic1,vic2,cur_cp,rrp,metadata,rrq);
     //make write request
     execution_time += gen_write_rr(vic1,vic2,cur_cp,rrp,metadata,rrq);
 
-    // 7. remove target block from blocklist
+    //remove target block from blocklist & update block info.
     if(is_idx_in_list(full_head,vic1)){
         vb1 = ll_remove(full_head,vic1);
     }
@@ -509,18 +603,40 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         abort();
     }
 
-    // 8. update block info & allocate pointer to tracker
+    //update block info & allocate pointer to tracker
     vb1->fpnum = PPB-v2_cnt;
     vb2->fpnum = PPB-v1_cnt;
     cur_RR->cur_vic1 = vb1;
     cur_RR->cur_vic2 = vb2;
     cur_RR->execution_time = execution_time;
     cur_RR->rrcheck = cur_cp + rrp;
-    if(rrutil <= 0.0){
-        cur_RR->rrcheck = cur_cp + find_RR_period(vic1,vic2,v1_cnt,v2_cnt,0.025,metadata);
-    }
+    // if(rrutil <= 0.0){
+    //     cur_RR->rrcheck = cur_cp + find_RR_period(vic1,vic2,v1_cnt,v2_cnt,0.025,metadata);
+    // }
     //printf("[RR_S]util : %f, exec : %ld, period : %ld, cur_cp : %ld, rrcheck : %ld\n",rrutil,execution_time,rrp,cur_cp,cur_cp+rrp);
     //printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
     //printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);
 
+}
+
+void BWR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* write_head,
+                  IOhead* bwrq, long cur_cp){
+    printf("[BWR]sched BWR, %ld\n",cur_cp);
+    int vic, tar;
+    long bwrp;
+    int execution_time;
+    
+    //background relocation logic
+    //find_BWR_victim_updatetiming(tasks, tasknum, metadata, fblist_head, full_head, &vic);
+    //find_BWR_target_updatetiming(tasks, tasknum, metadata, write_head, &tar);
+    vic = 0;
+    tar = 0;
+    //schedule simple relocation job, if possible.
+    if(vic == -1 || tar == -1){
+        return ;
+    }
+    bwrp = __LONG_MAX__ - cur_cp;
+    execution_time += gen_bwr_rr(vic, tar, cur_cp, bwrp, metadata, bwrq);
+    //reloc for write does not have to consider blocks.
+    return;
 }

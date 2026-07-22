@@ -173,6 +173,7 @@ typedef struct _currankinfo{
     int* tot_ranked_write;
     int** ranks_for_write;
     long** timings_for_write;
+    int* write_buf_capacity;
 }currankinfo;
 
 typedef struct _meta{

@@ -107,46 +107,34 @@ long find_closenum(long cur_cp, long period){
     return close_num;
 }
 
-long find_next_time(rttask* tasks, int tasknum, long cur_dl, long rr_check, long cur_cp, 
+long find_next_time(rttask* tasks, int tasknum, long cur_dl, long wl_next, long cur_cp,
                     long* next_w_release, long* next_r_release, long* next_gc_release){
-    // find 
-    double mult;
+    // wl_next is an *absolute* time at which the WL/relocation controller wants to be woken.
+    // Caller decides what it means (e.g., next_rr_release for LaWL fixed-period mode,
+    // or a periodic checkpoint via find_closenum() for legacy/background modes).
     long periods[tasknum];
-    long rp, wp, gcp, rrp, temp, temp2, wear_dl;
-    long res = -1, task_min = -1;
+    long rp, wp, gcp, temp, temp2;
+    long res = -1;
     int res_task = -1;
-    // find closest I/O release period (within task)
     for(int i=0;i<tasknum;i++){
         rp = next_r_release[i];
-        wp = next_w_release[i];  
+        wp = next_w_release[i];
         gcp = next_gc_release[i];
         temp = wp >= rp ? rp : wp;
         temp2 = temp >= gcp ? gcp : temp;
         periods[i] = temp2;
-        // printf("[FNT-task][%d] %ld, %ld %ld %ld\n",i,periods[i],rp,wp,gcp);
     }
-    // get closest wear leveling period
-    rrp = find_closenum(cur_cp+1,rr_check);
-    
-    // find closest I/O release period (within taskset)
     for(int i=0;i<tasknum;i++){
         if(res == -1){
             res = periods[i];
             res_task = i;
         }
-        else{
-            if(res > periods[i]){
-                res = periods[i];
-                res_task = i;
-            }
+        else if(res > periods[i]){
+            res = periods[i];
+            res_task = i;
         }
     }
-    task_min = res;
-    // printf("task_min : %ld, cur_dl:%ld,rrp:%ld\n",task_min,cur_dl,rrp);
-    // compare with I/O deadline and wear leveling release time
-
-    res = res >= rrp ? rrp : res;
-    res = res >= cur_dl ? cur_dl : res;
-    // printf("res : %ld\n",res);
+    res = res >= wl_next ? wl_next : res;
+    res = res >= cur_dl  ? cur_dl  : res;
     return res;
 }

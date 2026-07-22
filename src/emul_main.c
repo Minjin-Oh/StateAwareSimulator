@@ -4,96 +4,84 @@
 #include "findRR.h"         // contains block selection functions
 #include "IOgen.h"          // contains random workload generation functions
 #include "emul_logger.h"    // contains latency logger functions
-#include <sys/types.h>
-#include <sys/stat.h>
+#include "ovhd_stats.h"     // decision-overhead distribution instrumentation
+#include <unistd.h>         // sleep()
 
-#if defined(_WIN32)
-#include <direct.h>
-#endif
+/* LaWL-S invocation period (Sec. VI-B: "LaWL-S is invoked every T_reloc").
+ * Gates the WL admission evaluation so it is attempted once per T_reloc
+ * instead of after every write-job completion (do_rr polling artifact).
+ * 500 ms: same period as the clustering-boundary update. */
+#define TRELOC 500000L
 
-
-// globals
+//globals
 block* cur_fb = NULL;
 int rrflag = 0;
-int MINRC;                  // minimum reclaimable page, assigned by set_exec_flags in parse.c : 35
-double OP;                  // overprovisioning rate, assigned by set_exec_flags in parse.c : 0.32
-int THRES_COLD = 35;        // a global threshold for write-cold block determination, used in find_WR_target_simple() in findRR.c
+int MINRC;              //minimum reclaimable page, assigned by set_exec_flags in parse.c
+double OP;              //overprovisioning rate, assigned by set_exec_flags in parse.c
+int THRES_COLD = 35;    //a global threshold for write-cold block determination, used in find_WR_target_simple() in findRR.c
 int THRES_HOT = 300;
-int prev_erase = 0;         // a flag for interval specification of threshold update, used in find_WR_target_simple() in findRR.c
+int prev_erase = 0;       //a flag for interval specification of threshold update, used in find_WR_target_simple() in findRR.c
+int prev_mincyc = 0;      //a parameter for minimum cycle block comparison, used in find_WR_target_simple() in findRR.c
 int prev_cyc[NOB] = {0, };
 
 #ifdef EXECSTEP
     prof_exec exec_steps;
 #endif
 
-// FIXME::set these as global to expose to find_util_safe function
+//FIXME::set these as global to expose to find_util_safe function
 IOhead** wq;
 IOhead** rq;
 IOhead** gcq;
 
-// FIXME:: set these as global to expose to find_write_gradient function
+//FIXME:: set these as global to expose to find_write_gradient function
 float sploc;
 float tploc;
 int offset;
 
-// FIXME:: set these as global to expose workloads to find_write_invalid function
+//FIXME:: set these as global to expose proportion array to find_write_gradient function
+double* w_prop;
+double* r_prop;
+double* gc_prop;
+
+//FIXME:: set these as global to expose workloads to find_write_invalid function
 FILE** w_workloads;
 FILE** r_workloads;
 
-// FIXME:: set these as global to expose log file pointers and system parameters
+//FIXME:: set these as global to expose log file pointers and system parameters
 long cur_cp;
 int max_valid_pg;
+int tot_longlive_cnt = 0;
 FILE **fps;
 FILE *test_gc_writeblock[4];
 FILE *updaterate_fp;
+FILE *longliveratio_fp;
 FILE *updateorder_fp;
+FILE *getupdateorder_fp;
+FILE *u_check;
+FILE *gc_valid_fp;  // per-GC valid-copy log
 
-// a space to store lpa update timing (memory)
+//FIXME:: set these as global to expose global write block to assign_write_invalid function
+bhead* glob_yb;
+bhead* glob_ob;
+
+//a space to store lpa update timing (memory)
 long* lpa_update_timing[NOP];
 int update_cnt[NOP];
 int cur_length[NOP];
 int init_length = 10;
 
-// Helper function to create a directory if it doesn't exist
-static void create_log_directory(const char* path) {
-    struct stat st = {0};
-    if (stat(path, &st) == -1) {
-#if defined(_WIN32)
-        _mkdir(path);
-#else
-        mkdir(path, 0755); // Use 0755 for rwx for owner, and rx for others
-#endif
-    }
-}
-
-// Helper function to open a log file inside a specific directory
-static FILE* open_log_file(const char* dir, const char* filename, const char* mode) {
-    char filepath[512];
-    snprintf(filepath, sizeof(filepath), "%s/%s", dir, filename);
-    FILE* fp = fopen(filepath, mode);
-    if (fp == NULL) {
-        fprintf(stderr, "Error: Failed to open file %s\n", filepath);
-        perror("fopen");
-        // For a critical log file, you might want to exit
-        // exit(EXIT_FAILURE); 
-    }
-    return fp;
-}
-
 int main(int argc, char* argv[]){
-    int exit_code = 0;
-
-    // init params
+    //init params
     srand(time(NULL)); 
-    bhead* fblist_head = NULL;                      // heads for block list
+    bhead* fblist_head = NULL;                             //heads for block list
     bhead* rsvlist_head;
     bhead* full_head;
     bhead* write_head;
-    bhead* hotlist;                                 // (for WL) overlaps previous blocklist
+    bhead* hotlist;                                 //(for WL) overlaps previous blocklist
     bhead* coldlist;
-    meta* newmeta = (meta*)malloc(sizeof(meta));    // metadata structure
+    meta* newmeta = (meta*)malloc(sizeof(meta));    //metadata structure
     
-    // initialize flag variables
+    //initialize flag variables
     int gcflag = 0;
     int wflag = 0;
     int rrcond = 0; 
@@ -101,45 +89,44 @@ int main(int argc, char* argv[]){
     int genflag = 0;
     int taskflag = 0;
     int profflag = 0;
-    int skewness;                    // skew of utilization(-1 = noskew, 0 = read-skewed, 1 = write-skewed)
-    int skewnum;                     // number of skewed task
+    int skewness;                    //skew of utilization(-1 = noskew, 0 = read-skewed, 1 = write-skewed)
+    int skewnum;                     //number of skewed task
     int OPflag;
     int init_cyc = 0;
-    float totutil;                   // a total utilization of current system
-
-    // get flags
+    float totutil;                   //a total utilization of current system
+    //get flags
     set_scheme_flags(argv,
                      &gcflag, &wflag, &rrflag, &rrcond);
     set_exec_flags(argv, &tasknum, &totutil,
                    &genflag, &taskflag, &profflag,
                    &skewness, &sploc, &tploc, &skewnum,
                    &OPflag, &init_cyc, &OP, &MINRC);
-
 #ifdef EXECSTEP
     init_prof_exec(&(exec_steps));
 #endif
-
-    // initialize misc variables
-    char task_gen_success = 0;       // notify that task generation was successful.
-    int g_cur = 0;                   // pointer for current writing page @ dummy write phase
-    int wl_init = 0;                 // flag for wear-leveling initiation
+    //initialize misc variables
+    char IO_end_bwr_flag = 0;       //notify that cur_cp is end of I/O req
+    char qempty_bwr_flag = 1;       //notify that other queue is empty
+    char wr_end_bwr_flag = 0;       //notify that cur_cp is end of write job.
+    char task_gen_success = 0;      //notify that task generation was successful.
+    int g_cur = 0;                   //pointer for current writing page @ dummy write phase
+    int wl_init = 0;                 //flag for wear-leveling initiation
     int rr_finished = 1;
     int hot_cold_list = 0;
     int do_rr = 0;
-    long cur_IO_end = __LONG_MAX__;  // absolute time when current req finishes
-    float rrutil;                    // a utilization allowed to data relocation job
-    cur_cp = 0;                      // current checkpoint time
+    long next_rr_check = 0;          //next simulated time WL admission may be evaluated (T_reloc gate)
+    long cur_IO_end = __LONG_MAX__;  //absolute time when current req finishes
+    float WU;                        //worst-case utilization tracker.
+    float rrutil;                    //a utilization allowed to data relocation job
+    cur_cp = 0;                      //current checkpoint time
     
-    // log file pointers
+    //log file pointers
     FILE* rr_profile;
-    FILE *fplife;
-    FILE *fpovhd, *fpovhd_w, *fpovhd_gc, *fpovhd_rr, *fpovhd_w_release, *fpovhd_w_assign, *w_assign_detail, *gc_detail;
-    FILE* u_check = NULL;
+    FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
-
-    // IO file pointer init
+    //IO file pointer init
     w_workloads = (FILE**)malloc(sizeof(FILE*)*tasknum);
     r_workloads = (FILE**)malloc(sizeof(FILE*)*tasknum);
     
@@ -149,11 +136,15 @@ int main(int argc, char* argv[]){
 
     rttask* rand_tasks = NULL;
     rttask* tasks = NULL;
-
-    // simulate I/O (init related params)
+    w_prop = (double*)malloc(sizeof(double)*tasknum*2);
+    r_prop = (double*)malloc(sizeof(double)*tasknum*2);
+    gc_prop = (double*)malloc(sizeof(double)*tasknum*2);
+    
+    //simulate I/O (init related params)
     float total_u;
     int oldest;
     int yngest;
+    int over_avg = 0;
     long rr_check = (long)100000;
 
     IO* cur_IO = NULL;
@@ -161,6 +152,7 @@ int main(int argc, char* argv[]){
     rq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     gcq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
     IOhead* rr;
+    IOhead* bwr;
     
     long next_w_release[tasknum];
     long next_r_release[tasknum];
@@ -170,93 +162,101 @@ int main(int argc, char* argv[]){
     char gcjob_finished[tasknum];
     char wjob_deferred[tasknum];
     long releasetime_deferred[tasknum];
-    for(int i=0;i<tasknum;i++){         // 1 (yes), 0 (no)
+    for(int i=0;i<tasknum;i++){
         wq[i] = ll_init_IO();
         rq[i] = ll_init_IO();
         gcq[i]= ll_init_IO();
         next_w_release[i] = 0;
         next_r_release[i] = 0;
         next_gc_release[i] = 0;
-        wjob_finished[i] = 1;           // init job-finish as 1, since no job is scheduled at initial time.
+        wjob_finished[i] = 1;   //init job-finish as 1, since no job is scheduled at initial time.
         rjob_finished[i] = 1;
         gcjob_finished[i] = 1;
         wjob_deferred[i] = 0;
     }
     rr = ll_init_IO();
-
-    // overhead tracker params
-    struct timeval algo_start_time;
-    struct timeval algo_end_time;
+    bwr = ll_init_IO();
+    //overhead tracker params
+    //(decision timing now uses ovhd_now_us(); see ovhd_stats.h)
     struct timeval tot_start_time;
     struct timeval tot_end_time;
     long write_release_num = 0;
     long gc_release_num = 0;
     long rr_release_num = 0;
-    long write_ovhd = 0;
-    long gc_ovhd = 0;
-    long rr_ovhd = 0;
+    long last_rr_release_cp = -1L;
     long write_ovhd_sum = 0;
     long gc_ovhd_sum = 0;
     long rr_ovhd_sum = 0;
     long tot_runtime;
     double tot_runtime_readable;
     double write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg;
+    
+    //TEMPCODE::open file for invfull block check.
 
-    // add scheme flags for flexible write policy change
+    //enable following two lines in a case to check util per cycle.
+    //randtask_statechecker(tasknum,8000);
+    //return;
+
+    //add scheme flags for flexible write policy change
     printf("[ SCHEMES ] %d, %d, %d, %d\n",wflag,gcflag,rrflag,rrcond);
     printf("[EXEC-main] %d, %d\n",genflag,taskflag);
     printf("[EXEC-task] %d, %f\n",tasknum,totutil);
     printf("[EXEC-skew] %d, %f, %f, %d\n",skewness,sploc,tploc,skewnum);
     printf("[EXEC-OP  ] %d, %f, %d\n",OPflag, OP, MINRC);
     printf("[NOB MAXPE] : %d, %d\n",NOB,MAXPE);
-    // sleep(1);
+    //sleep(1);
    
-    // MINRC is now a configurable value, which can be adjusted like OP
-    // reference :: RTGC mechanism (2004, li pin chang et al.) 
+    //MINRC is now a configurable value, which can be adjusted like OP
+    //reference :: RTGC mechanism (2004, li pin chang et al.) 
     max_valid_pg = (int)((1.0-OP)*(float)(PPB*NOB));
     int expected_invalid = MINRC*(GCTHRESNOB-tasknum);
     int expected_fp = PPB*(NOB-tasknum) - max_valid_pg - expected_invalid;
     printf("expected_invalid : %d, expected_fp : %d, maxvalid : %d\n",expected_invalid,expected_fp,max_valid_pg);
     
-    // TASK GENERATOR CODE
-    if(taskflag == 1){                  // generate taskset and save
+    //TASK GENERATOR CODE
+    if(taskflag == 1){ //generate taskset and save
         float res = 1.0;
         task_gen_success = 0;
         while(task_gen_success == 0){
-            if(skewness == -1){         // UUNIFAST algorithm
-                rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0); 
+            if(skewness == -1){
+                rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
             }
-            else if (skewness == -2){   // manually assign value for taskset(hardcode). edit parameters for test. (using the taskparam.csv)
+            else if (skewness == -2){ //manually assign value for taskset(hardcode). edit parameters for test.
                 rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg,&res);
             }
-            else if(skewness == -3){    // motivation task generator codes
-                rand_tasks = generate_taskset_hardcode_motiv(tasknum,totutil,max_valid_pg,&res,0); 
+            else if(skewness >= 0){
+                rand_tasks = generate_taskset_skew2(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
             }
-            else if(skewness == -4){    // manually assign w/r utilization for each task. edit parameters for test.
+            else if(skewness == -3){ //manually assign w/r utilization for each task. edit parameters for test.
                 rand_tasks = generate_taskset_fixed(max_valid_pg,&res);
             }
-            else if(skewness >= 0){
-                rand_tasks = generate_taskset_skew(tasknum,totutil,max_valid_pg,&res,skewnum,skewness,0);
+	    else if(skewness == -4){
+		rand_tasks = generate_taskset_hardcode_motiv(tasknum,totutil,max_valid_pg,&res,0);
             }
-
-            task_gen_success = 1;       // mark flag as 1, and check edge cases.
-            if(res > 1.0){              // initial total utilization > 1.0
+            else if(skewness == -5){ //max-decision-rate stress config for controller-overhead measurement
+                rand_tasks = generate_taskset_maxrate(tasknum,totutil,max_valid_pg,&res);
+            }
+            task_gen_success = 1; //mark flag as 1, and check edge cases.
+            if(res > 1.0){//initial total utilization > 1.0
                 task_gen_success = 0;
             }
-            else{                       // period < 0 due to overflow
+            else{//period < 0 due to overflow
                 for(int i=0;i<tasknum;i++){
                     if(rand_tasks[i].wp <= 0 || rand_tasks[i].rp <= 0 || rand_tasks[i].gcp <= 0){
                         task_gen_success = 0;
                     }
                 }
             }
-
-            // if task gen fails, retry generation
+	    for(int i=0;i<tasknum;i++){
+		if(rand_tasks[i].wp <= 0 || rand_tasks[i].rp <= 0 || rand_tasks[i].gcp <= 0){
+		    task_gen_success = 0;
+		}
+	    }
+            //if task gen fails, retry generation
             if(task_gen_success == 0){
                 free(rand_tasks);
             }
         }
-
         FILE* taskparams = fopen("taskparam.csv","w");
         for(int i=0;i<tasknum;i++){
             printf("saving %d,%d,%d,%d,%d,%d,%d\n",rand_tasks[i].wn,rand_tasks[i].wp,rand_tasks[i].rn,rand_tasks[i].rp,rand_tasks[i].gcp,
@@ -278,12 +278,11 @@ int main(int argc, char* argv[]){
             fflush(init_cycs);
             fclose(init_cycs);
         }
-        exit_code = 0;
-        goto CLEANUP;
+        return 0;
     }
     
-    // WORKLOAD GENERATOR CODE  
-    if(genflag == 1){       // generate workload and save
+    //WORKLOAD GENERATOR CODE  
+    if(genflag == 1){//generate workload and save
         FILE* file_taskparam = fopen("taskparam.csv","r");
         rand_tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
         if(OPflag != 1){
@@ -295,25 +294,18 @@ int main(int argc, char* argv[]){
         IOgen(tasknum,rand_tasks,WORKLOAD_LENGTH,offset,sploc,tploc);
         printf("workload generated!\n");
         fclose(file_taskparam);
-        exit_code = 0;
-        goto CLEANUP;
+        return 0;
     }
 
-    // init task 
+    //init task 
     tasks = (rttask*)malloc(sizeof(rttask)*tasknum);
     FILE* main_taskparam = fopen("taskparam.csv","r");
     FILE* locfile = fopen("loc.csv","r");
-    if (locfile == NULL){
-        fprintf(stderr, "Error: Failed to open file %s\n", "loc.csv");
-	perror("fopen");
-	exit(EXIT_FAILURE);
-    }
     get_task_from_file(tasks,tasknum,main_taskparam);
     get_loc_from_file(tasks,tasknum,locfile);
     fclose(main_taskparam);
     fclose(locfile);    
 
-// save the update timing and frequency of LPA
 #ifdef TIMING_ON_MEM
     int prof_targ_lpa;
     int wn_count = 0;
@@ -327,11 +319,11 @@ int main(int argc, char* argv[]){
         cur_cp = 0;
         wn_count = 0;
         while(EOF != fscanf(w_workloads[a],"%d,",&prof_targ_lpa)){
-            // write on memory
+            //write on memory
             lpa_update_timing[prof_targ_lpa][update_cnt[prof_targ_lpa]] = cur_cp;
+            //printf("lpa_update_timing[%d][%d] = %ld",prof_targ_lpa,update_cnt[prof_targ_lpa],cur_cp);
             update_cnt[prof_targ_lpa]++;
-
-            // if malloc space is not enough, relocate the update timing records.
+            //if malloc space is not enough, relocate the update timing records.
             if(cur_length[prof_targ_lpa] <= update_cnt[prof_targ_lpa]){
                 long* temp_arr = (long*)malloc(sizeof(long)*(cur_length[prof_targ_lpa]+init_length));
                 for(int b=0;b<cur_length[prof_targ_lpa];b++){
@@ -348,105 +340,200 @@ int main(int argc, char* argv[]){
             }
         }
     }
-
+    for(int a=0;a<update_cnt[0];a++){
+        //printf("%ld\n",lpa_update_timing[0][a]);
+    }
+    for(int a=0;a<tasknum;a++){
+        for(int b=tasks[a].addr_lb;b<tasks[a].addr_ub;b++){
+            //printf("(%d)%d,%ld ",b,update_cnt[b],lpa_update_timing[b][0]);
+        }
+        //printf("\n");
+    }
     IO_close(tasknum,w_workloads,r_workloads);
 #endif
 
-    // init csv files
-    const char* log_dir = "logs";
-    create_log_directory(log_dir);
 
-    fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
+    //LPA PROFILE GENERATOR CODE
+    //profile LPA invalidation pattern(per each address)
+    if(profflag == 1){
+        int prof_targ_lpa;
+        int wn_count = 0;
+        char name[30];
+        FILE* write_targ_file;
+        IO_open(tasknum,w_workloads,r_workloads);
+        for(int a=0;a<tasknum;a++){
+            cur_cp = 0;
+            wn_count = 0;
+            while(EOF != fscanf(w_workloads[a],"%d,",&prof_targ_lpa)){
+                //write on file
+                sprintf(name,"./timing/%d.csv",prof_targ_lpa);
+                write_targ_file = fopen(name,"a");
+                fprintf(write_targ_file,"%ld,",cur_cp);
+                fclose(write_targ_file);
+                wn_count++;
+                if(wn_count == tasks[a].wn){
+                    cur_cp += tasks[a].wp;
+                    wn_count = 0;
+                }
+            }
+        }
+        return 0;
+    }
+    //LPA PROFILE GENERATOR CODE 2
+    //profile LPA invalidation pattern in one file for plotting + profile GC pattern for plotting
+    if(profflag == 2){
+        //main flag :: generate a scatter plot of LPA update vs timestamp
+        int wn_count[tasknum];
+        int wn_before_GC = 0;
+        long next_wp[tasknum];
+        long next_cp;
+        int next_task;
+        int invalidation_count;
+        long invalid_cumulative = 0;
+        long reclaim_cumulative = 0;
+        int fp_count;
+        char name[30];
+        char name2[30];
+        FILE* IO_scatter_file;
+        FILE* GC_scatter_file;
+        IO_open(tasknum,w_workloads,r_workloads);
+        sprintf(name,"scatter.csv");
+        sprintf(name2,"GC_timing.csv");
+        IO_scatter_file = fopen(name,"w");
+        GC_scatter_file = fopen(name2,"w");
+        for(int a=0;a<tasknum;a++){
+            next_wp[a] = tasks[a].wp;
+        }
 
-    fpovhd_w_release = open_log_file(log_dir, "overhead_w_release.csv", "w");
-    fpovhd_w_assign = open_log_file(log_dir, "overhead_w_assign.csv", "w");
-    w_assign_detail = open_log_file(log_dir, "w_assign_detail.csv", "w");
-    gc_detail = open_log_file(log_dir, "gc_detail.csv", "w");
+        //start profiling assuming that dummy write is all done.
+        cur_cp = 0;
+        invalidation_count = 0;
+        fp_count = PPB*NOB - max_valid_pg;
+        while(cur_cp <= WORKLOAD_LENGTH){
+            for(int a=0;a<tasknum;a++){
+                if(cur_cp % tasks[a].wp == 0){
+                    for(int b=0;b<tasks[a].wn;b++){
+                        wn_before_GC++;
+                        invalidation_count++;
+                        invalid_cumulative++;
+                        fp_count--;
+                        fprintf(IO_scatter_file,"%ld, %ld, %d, %ld\n",cur_cp,(long)IOget(w_workloads[a]),a,invalid_cumulative);
+                    }
+                }
+            }
+            for(int a=0;a<tasknum;a++){
+                if(cur_cp % tasks[a].gcp == 0){//GC timing reached
+                    if(invalidation_count >= expected_invalid){
+                    //if(1){
+                        reclaim_cumulative += PPB;
+                        fprintf(GC_scatter_file,"%ld, -1, %d, %d, %d, %d, %ld, %ld\n",cur_cp,wn_before_GC,invalidation_count,fp_count,a,invalid_cumulative,reclaim_cumulative);
+                        wn_before_GC = 0;
+                        invalidation_count -= PPB;
+                        fp_count += PPB;
+                    } else {
+                        //do nothing, which means we skip GC.
+                    }
+                }
+            }
+            //find next checkpoint.
+            next_cp = next_wp[0];
+            for(int a=1;a<tasknum;a++){
+                if(next_wp[a] < next_cp){
+                    next_cp = next_wp[a];
+                }
+            }//checkpoint found.
+            //update tasks' checkpoint if next_cp == next_wp[a].
 
-    if(wflag == 0 && gcflag == 0 && rrflag == -1){             // Baseline
-        rr_profile = open_log_file(log_dir, "Baseline_rr_prof.csv", "w");
-        updateorder_fp = open_log_file(log_dir, "Baseline_updateorder.csv", "w");
-        fplife = open_log_file(log_dir, "Baseline_lifetime.csv", "w");
-        fpovhd = open_log_file(log_dir, "Baseline_overhead_avg.csv", "w");
-        fpovhd_w = open_log_file(log_dir, "Baseline_overhead_write.csv", "w");
-        fpovhd_gc = open_log_file(log_dir, "Baseline_overhead_gc.csv", "w");  
-        fpovhd_rr = open_log_file(log_dir, "Baseline_overhead_reloc.csv", "w");
-        u_check = open_log_file(log_dir, "Baseline_rrchecker.csv", "w");
-        updaterate_fp = open_log_file(log_dir, "Baseline_updaterate.csv", "w");
-    }
-    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){       // Hybrid WL
-        rr_profile = open_log_file(log_dir, "Hyb_WL_rr_prof.csv", "w");
-        updateorder_fp = open_log_file(log_dir, "Hyb_WL_updateorder.csv", "w");
-        fplife = open_log_file(log_dir, "Hyb_WL_lifetime.csv", "w");
-        fpovhd = open_log_file(log_dir, "Hyb_WL_overhead_avg.csv", "w");
-        fpovhd_w = open_log_file(log_dir, "Hyb_WL_overhead_write.csv", "w");
-        fpovhd_gc = open_log_file(log_dir, "Hyb_WL_overhead_gc.csv", "w");
-        fpovhd_rr = open_log_file(log_dir, "Hyb_WL_overhead_reloc.csv", "w");
-        u_check = open_log_file(log_dir, "Hyb_WL_rrchecker.csv", "w");
-        updaterate_fp = open_log_file(log_dir, "Hyb_WL_updaterate.csv", "w");
-    }
-    else if(wflag == 14 && gcflag == 6 && rrflag == -1){       // LaWL-D
-        rr_profile = open_log_file(log_dir, "LaWL_D_rr_prof.csv", "w");
-        updateorder_fp = open_log_file(log_dir, "LaWL_D_updateorder.csv", "w");
-        fplife = open_log_file(log_dir, "LaWL_D_lifetime.csv", "w");
-        fpovhd = open_log_file(log_dir, "LaWL_D_overhead.csv", "w");
-        fpovhd_w = open_log_file(log_dir, "LaWL_D_overhead_write.csv", "w");
-        fpovhd_gc = open_log_file(log_dir, "LaWL_D_overhead_gc.csv", "w");
-        fpovhd_rr = open_log_file(log_dir, "LaWL_D_overhead_reloc.csv", "w");
-        u_check = open_log_file(log_dir, "LaWL_D_rrchecker.csv", "w");
-        updaterate_fp = open_log_file(log_dir, "LaWL_D_updaterate.csv", "w");
-    }
-    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){       // LaWL
-        rr_profile = open_log_file(log_dir, "LaWL_rr_prof.csv", "w");
-        updateorder_fp = open_log_file(log_dir, "LaWL_updateorder.csv", "w");
-        fplife = open_log_file(log_dir, "LaWL_lifetime.csv", "w");
-        fpovhd = open_log_file(log_dir, "LaWL_overhead_avg.csv", "w");
-        fpovhd_w = open_log_file(log_dir, "LaWL_overhead_write.csv", "w");
-        fpovhd_gc = open_log_file(log_dir, "LaWL_overhead_gc.csv", "w");
-        fpovhd_rr = open_log_file(log_dir, "LaWL_overhead_reloc.csv", "w");
-        u_check = open_log_file(log_dir, "LaWL_rrchecker.csv", "w");
-        updaterate_fp = open_log_file(log_dir, "LaWL_updaterate.csv", "w");
-    }
-    else{                                                      // Dynamic WL
-        rr_profile = open_log_file(log_dir, "Dyn_rr_prof.csv", "w");
-        updateorder_fp = open_log_file(log_dir, "Dyn_updateorder.csv", "w");
-        fplife = open_log_file(log_dir, "Dyn_lifetime.csv", "w");
-        fpovhd = open_log_file(log_dir, "Dyn_overhead_avg.csv", "w");
-        fpovhd_w = open_log_file(log_dir, "Dyn_overhead_write.csv", "w");
-        fpovhd_gc = open_log_file(log_dir, "Dyn_overhead_gc.csv", "w");
-        fpovhd_rr = open_log_file(log_dir, "Dyn_overhead_reloc.csv", "w");
-        u_check = open_log_file(log_dir, "Dyn_rrchecker.csv", "w");
-        updaterate_fp = open_log_file(log_dir, "Dyn_updaterate.csv", "w");
+            for(int a=0;a<tasknum;a++){
+                if(next_wp[a] == next_cp){
+                    next_wp[a] += tasks[a].wp;
+                }
+            }//checkpoint updated
+            cur_cp = next_cp;
+            printf("next checkpoint: %ld, cur_inv: %d, cur_fp: %d\n",cur_cp,invalidation_count,fp_count);
+        }
+        fclose(IO_scatter_file);
+        fclose(GC_scatter_file);
+        return 0;
     }
 
-    IO_open(tasknum, w_workloads, r_workloads);
-    lat_open(gcflag, wflag, rrflag, tasknum, lat_log_w, lat_log_r, lat_log_gc);
-    for(int i=0;i<tasknum;i++){
-        fprintf(fps[i],"%s\n","timestamp, taskidx, WU, new_WU, noblock, w_util, r_util, g_util, old, yng, bidx, state, vp, w_idx, w_state, fb, w");
+    //(deprecated)run gradient tests for write in offline, and assign offset value for WGRAD policy.
+    offset = (int)((float)(tasks[0].addr_ub - tasks[0].addr_lb)*sploc/2.0);
+
+    //init csv files
+    // fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
+    
+    if(wflag == 0 && gcflag == 0 && rrflag == -1){
+        u_check = fopen("Baseline_rrchecker.csv","w");
+	fplife = fopen("Baseline_lifetime.csv","a");
+        fpovhd = fopen("Baseline_overhead.csv","a");
+	updaterate_fp = fopen("Baseline_updaterate.csv","w");
+	gc_valid_fp = fopen("Baseline_gc_valid.csv","w");
     }
-    fprintf(rr_profile,"%s\n","timestamp, vic1, state, window, vic2, state, window");
+    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){
+	// u_check = fopen("Hyb_rrchecker.csv","w");
+        fplife = fopen("Hyb_lifetime.csv","a");
+        fpovhd = fopen("Hyb_overhead.csv","a");
+	updaterate_fp = fopen("Hyb_updaterate.csv","w");
+	gc_valid_fp = fopen("Hyb_gc_valid.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag == -1){
+	u_check = fopen("LaWL_D_rrchecker.csv","w");
+        fplife = fopen("LaWL_D_lifetime.csv","a");
+        fpovhd = fopen("LaWL_D_overhead.csv","a");
+	updaterate_fp = fopen("LaWL_D_updaterate.csv","w");
+	gc_valid_fp = fopen("LaWL_D_gc_valid.csv","w");
+    }
+    else if(wflag == 14 && gcflag == 6 && rrflag == 1){
+	// u_check = fopen("LaWL_rrchecker.csv","w");
+        fplife = fopen("LaWL_lifetime.csv","a");
+        fpovhd = fopen("LaWL_overhead.csv","a");
+	updaterate_fp = fopen("LaWL_updaterate.csv","w");
+	gc_valid_fp = fopen("LaWL_gc_valid.csv","w");
+    }
+    else{
+	u_check = fopen("Dyn_rrchecker.csv","w");
+        fplife = fopen("Dyn_lifetime.csv","a");
+        fpovhd = fopen("Dyn_overhead.csv","a");
+	updaterate_fp = fopen("Dyn_updaterate.csv","w");
+	gc_valid_fp = fopen("Dyn_gc_valid.csv","w");
+    }
+    if(gc_valid_fp != NULL){
+        fprintf(gc_valid_fp,"timestamp,taskidx,vic_idx,block_state,gc_valid_count\n");
+    }
+
+    IO_open(tasknum, w_workloads,r_workloads);
+    //lat_open(gcflag, wflag, rrflag, tasknum, lat_log_w, lat_log_r, lat_log_gc);
+
+    
+   //  for(int i=0;i<tasknum;i++){
+   //      fprintf(fps[i],"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp,w_idx,w_state,fb,w");
+   //  }
+    // fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
     if(gcflag == 1 && wflag == 1 && rrflag == 1){
         fprintf(fplife,"\n"); 
     }
     
-    // itialize blocklist for blockmanage.
+    //initialize blocklist for blockmanage.
     init_metadata(newmeta,tasknum, init_cyc);
 
-#ifdef GC_ON_WRITEBLOCK   // write 시점에 GC trigger (GC에 사용할 reserved block이 없음)
+#ifdef GC_ON_WRITEBLOCK
     fblist_head = init_blocklist(0,NOB-1);
     rsvlist_head = init_blocklist(0,-1);
 #endif
-#ifndef GC_ON_WRITEBLOCK  // classic GC scheduling 기반
-    fblist_head = init_blocklist(0, NOB-tasknum-1);     // free block list
-    rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);   // reserved block list : for using GC copy
+#ifndef GC_ON_WRITEBLOCK
+    fblist_head = init_blocklist(0, NOB-tasknum-1);
+    rsvlist_head = init_blocklist(NOB-tasknum,NOB-1);
 #endif
     
-    full_head = init_blocklist(0,-1);   // generate 0 component ll.
+    full_head = init_blocklist(0,-1);//generate 0 component ll.
     write_head = init_blocklist(0,-1);
+    glob_yb = init_blocklist(0,-1);
+    glob_ob = init_blocklist(0, -1);
     hotlist = init_blocklist(0,-1);
     coldlist = init_blocklist(0,-1);
     
-    // init data access & distribution tracker
+    //init data access & distribution tracker
     for(int i=0;i<tasknum;i++){
         cur_wb[i] = NULL;
         cur_GC[i].cur_vic = NULL;
@@ -456,12 +543,11 @@ int main(int argc, char* argv[]){
     cur_rr.cur_vic2 = NULL;
     cur_rr.rrcheck = -1L;
 
-    // do initial writing (validate all logical address)
+    //do initial writing (validate all logical address)
     printf("total fp before dummy : %d\n",newmeta->total_fp);
-
-    // !!!change logi value to increase/decrease dummy writes.
-    // note that addresses which are not accessed during dummy write has no mapping info
-    // int logi = (int)(NOP*(1-OP));
+    //!!!change logi value to increase/decrease dummy writes.
+    //note that addresses which are not accessed during dummy write has no mapping info
+    //int logi = (int)(NOP*(1-OP));
     int logi = 87040;
     cur_fb = ll_pop(fblist_head);
     for(int i=0;i<logi;i++){
@@ -482,16 +568,14 @@ int main(int argc, char* argv[]){
         g_cur++;
     }
     printf("total fp after dummy : %d\n",newmeta->total_fp);
-
-    // return dummy task's block into blocklist.
+    //return dummy task's block into blocklist.
     if(cur_fb->fpnum == 0){
         ll_append(full_head,cur_fb);
     } 
     else {
         ll_append(fblist_head,cur_fb);
     }
-
-    // !!finish initialization
+    //!!finish initialization
     printf("fblist sanity check :");
     block* test = fblist_head->head;
     while(test != NULL){ 
@@ -500,10 +584,7 @@ int main(int argc, char* argv[]){
     }
     printf("\n");
     sleep(5);
-
-
-    // Run simulation
-
+    //run simulation
 #ifdef utilsort_writecheck
     for(int i=0;i<4;i++){
         char testgcwriteblockname[20];
@@ -511,44 +592,19 @@ int main(int argc, char* argv[]){
         test_gc_writeblock[i] = fopen(testgcwriteblockname,"w");
     }
 #endif
-
-    updaterate_fp = fopen("updaterate.csv","w"); 
+    ovhd_init("ovhd_dist"); /* dumps automatically at every exit path via atexit() */
     gettimeofday(&(tot_start_time),NULL);
-
-    // !!! start of simulation !!!
+    //start of simulation
     while(cur_cp <= RUNTIME){
-        if(write_release_num != 0){
-            write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
-        } else {
-            write_ovhd_avg = 0;
-        }
-        if(gc_release_num != 0){
-            gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
-        } else {
-            gc_ovhd_avg = 0;
-        }
-        if(rr_release_num != 0){
-            rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
-        } else {
-            rr_ovhd_avg = 0;
-        }
-
-        fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-        fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
-
-        // 1. 한 바퀴 돌 때마다 전체 블록의 PEC를 profiling하고, lowest and highest PEC를 check
         yngest = get_blockstate_meta(newmeta,YOUNG);
         oldest = get_blockstate_meta(newmeta,OLD);
-
-        // 2. flash state checker
-        // 2-(1). 1000000us마다 profile 정보 저장
+        //flash state checker
         if(cur_cp % 1000000L == 0){
-            total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
+            total_u = print_profile_timestamp(tasks,tasknum,newmeta,yngest,oldest,cur_cp);
             //printf("cur_u:%f\n",total_u);
-
-            // utilization overflow 1 (exit code)
+            //utilization overflow(exit code)
             if(total_u >= 1.0){                
-                printf("[%ld]utilization overflow 1, util : %f\n",cur_cp, total_u);
+                printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                 gettimeofday(&tot_end_time,NULL);
                 tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
                 tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
@@ -572,40 +628,62 @@ int main(int argc, char* argv[]){
                 fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                 print_profile_updaterate(newmeta,updaterate_fp);
                 sleep(1);
-                exit_code = 1;
-                    goto CLEANUP;
+                return 1;
             }
         }
-
-        // 2-(2). max P/E cycle overflow (exit code)
         for(int idx=0;idx<NOB;idx++){
             if(newmeta->state[idx] >= MAXPE){
-                total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-                printf("[%ld]a block reach maximum P/E, util : %d\n", cur_cp, total_u);
+                total_u = print_profile_timestamp(tasks,tasknum,newmeta,yngest,oldest,cur_cp);
+                printf("[%ld]a block reach maximum P/E, util : %d\n",total_u);
+                gettimeofday(&tot_end_time,NULL);                                                                     tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
+                tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
+                if(write_release_num != 0){
+                    write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
+                } else {
+                    write_ovhd_avg = 0;
+                }
+                if(gc_release_num != 0){
+                    gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
+                } else {
+                    gc_ovhd_avg = 0;
+                }
+                if(rr_release_num != 0){
+                    rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
+                } else {
+                    rr_ovhd_avg = 0;
+                }
                 fprintf(fplife,"%ld,",cur_cp);
+                fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
+                fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                 sleep(1);
-                exit_code = 1;
-                goto CLEANUP;
+                return 1;
             } else {
                 /*do nothing*/
             }
         }
-
-        // execution order must be (req completion --> job release --> req pick)
+        //execution order must be (req completion --> job release --> req pick)
         
-        // 3. req completion logic
+        //req completion logic
         if(cur_IO_end == cur_cp){
             if(cur_IO != NULL){
-                // a logic to handle I/O to finish
+                //a logic to handle I/O to finish
                 if(cur_IO->type == GCER){
-                    total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fps[cur_IO->taskidx],yngest,oldest,cur_cp,
+                    //for(int i=0;i<4;i++){
+                    //    print_hotdist_profile(fps[tasknum+i],tasks,cur_cp, newmeta,-1,i);
+                    //}
+                    //print_freeblock_profile(fps[tasknum+4],cur_cp,newmeta,fblist_head,write_head);
+                    // log valid-copy count for this finished GC.
+                    // block_state is the P/E cycle *before* the erase increment in finish_GCER.
+                    print_gc_valid(gc_valid_fp,cur_cp,cur_IO->taskidx,cur_IO->vic_idx,
+                                   newmeta->state[cur_IO->vic_idx],cur_IO->gc_valid_count);
+                    total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,yngest,oldest,cur_cp,
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
                                     newmeta->total_fp,cur_IO->gc_valid_count);
-
-                    // utilization overflow 2 (exit code)
+                    //utilization overflow(exit code)
+                    
                     if(total_u > 1.0){
-                        printf("[%ld]utilization overflow 2, util : %f\n",cur_cp, total_u);
+                        printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
                         gettimeofday(&tot_end_time,NULL);
                         tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
                         tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
@@ -629,29 +707,24 @@ int main(int argc, char* argv[]){
                         fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                         print_profile_updaterate(newmeta,updaterate_fp);
                         sleep(1);
-                        exit_code = 1;
-                        goto CLEANUP;
+                        return 1;
+                        
                     }
                 }
                 
-                // if last req is finished, do the following
+                //if last req is finished, do the following
                 if(cur_IO->last == 1){
-
-                    // check I/O latency
-                    check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
-
-                    // deadline miss overflow (exit code)
-                    if(check_dl_violation(tasks,cur_IO,cur_cp)==1){
+                    //check I/O latency
+                    //check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
+                    if(check_dl_violation(tasks,cur_IO,cur_cp)==2){
                         fprintf(fplife,"%ld,",cur_cp);
                         fflush(fplife);
                         printf("dl miss detected,");
                         sleep(1);
-                        exit_code = 1;
-                        goto CLEANUP;
+                        return 1;
                     }
-
-                    // set finish flags for scheduler, 
-                    // and if current job is delayed, check if next release is possible.
+                    //set finish flags for scheduler, 
+                    //and if current job is delayed, check if next release is possible.
                     if(cur_IO->type == WR){
                         wjob_finished[cur_IO->taskidx] = 1;
                         if(cur_cp > cur_IO->deadline){
@@ -668,9 +741,9 @@ int main(int argc, char* argv[]){
                             next_gc_release[cur_IO->taskidx] = cur_cp;
                         }
                         for(int a=0;a<tasknum;a++){
-                            if(wjob_deferred[a] == 1){ // 지연된 write job이 있는지 확인
+                            if(wjob_deferred[a] == 1){
                                 wjob_deferred[a] = 0;
-                                // if current write is delayed, check if write release is possible
+                                //if current write is delayed, check if write release is possible
                                 if(cur_cp >= cur_IO->deadline){
                                     next_w_release[a] = cur_cp;
                                 } 
@@ -678,151 +751,185 @@ int main(int argc, char* argv[]){
                         }
                     }
                 }
-                // set finish flags of current rr to shedule new WL
+                //set finish flags of current rr to shedule new WL
                 if(rr->reqnum == 0){
                     rr_finished = 1;
                 }
-                // set start flags to schedule new WL
+                //set start flags to schedule new WL
                 if(cur_IO->type == WR && cur_IO->islastreq == 1){
                     do_rr = 1;
+                    wr_end_bwr_flag = 1;
                 }
-                // finish request
+                //finish request
                 finish_req(tasks, cur_IO, newmeta, 
                            fblist_head, rsvlist_head, full_head, 
                            &(cur_GC[cur_IO->taskidx]),&(cur_rr));
 
-                // reset I/O pointer and IO end time tracker
+
+                //reset I/O pointer and IO end time tracker
                 free(cur_IO);
                 cur_IO = NULL;
                 cur_IO_end = __LONG_MAX__;
+                IO_end_bwr_flag = 1; //notify that IO is ended
             }
         }
 
-        // 4. job release logic
-        // 4-(1). release I/O task jobs (실제 실행하는 것 X, release job을 request queue에 저장하는 과정)
+        //job release logic
+        //release I/O task jobs
         for(int j=0;j<tasknum;j++){
-
-            // 4-(1)-1. write job을 실행하기에 충분한 free page가 있는지 먼저 확인
-            //   (free page < write request page) 이면 write job을 release하는 걸 delay
-            if(newmeta->total_fp < newmeta->reserved_write + tasks[j].wn){  // free page < write request page
-                printf("%d task write deferred\n",j);  // delay the write request due to the GC for reclaiming the free page
+            if(newmeta->total_fp < newmeta->reserved_write + tasks[j].wn){
+                printf("%d task write deferred\n",j);
                 wjob_deferred[j] = 1;
             }
-
-            // 4-(1)-2. write job release (cur_cp == next_w_release[idx])
-            if(cur_cp == next_w_release[j]){
-                // 1-(1). previous write job finish, no delayed write job
-                if (wjob_finished[j] == 1 && wjob_deferred[j] == 0){
-                    gettimeofday(&(algo_start_time),NULL);
-                    cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
-                                                fblist_head, full_head, write_head,
-                                                w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp, 
-                                                fpovhd_w_release, fpovhd_w_assign, w_assign_detail); // return last access block
-                    write_release_num++;
-                    gettimeofday(&(algo_end_time),NULL);
-                    write_ovhd = algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-                    fprintf(fpovhd_w,"%ld, %ld, \n", write_release_num, write_ovhd);
-                    write_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-                    next_w_release[j] = cur_cp + (long)tasks[j].wp; // next write request는 write period 후에 release
-                    wjob_finished[j] = 0; // 수행 중인 write request가 있음을 나타내는 flag
+            if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){
+                long __wt0 = ovhd_now_us();
+                cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
+                                              fblist_head, full_head, write_head,
+                                              w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
+                write_release_num++;
+                {
+                    long __d = ovhd_now_us() - __wt0;
+                    int  __had_cl = 0;
+                    /* excluded time = clustering computation + simulator-
+                     * oracle trace reads recorded inside this decision */
+                    long __ex = ovhd_take_pending_excl(&__had_cl);
+                    long __pure = (__d > __ex ? __d - __ex : 0);
+                    write_ovhd_sum += __d;
+                    if(__had_cl){
+                        /* raw view (diagnostic): decision that included a
+                         * cluster-boundary update */
+                        ovhd_record(OVHD_WRITE_CL, __d, cur_cp);
+                    }
+                    /* pure per-request write decision cost */
+                    ovhd_record(OVHD_WRITE, __pure, cur_cp);
                 }
-                // 2-(2). previous write job is not finished (wjob_finished[idx] == 0)
-                // 2-(3). delayed write job remains (wjob_deferred[idx] == 1)
-                else if (wjob_finished[j] == 0 || wjob_deferred[j] == 1){
-                    next_w_release[j] = cur_cp + (long)tasks[j].wp;
-                }
+                next_w_release[j] = cur_cp + (long)tasks[j].wp;
+                wjob_finished[j] = 0;
             } 
-            
-            // 4-(1)-3. read job release (cur_cp == next_r_release[idx])
-            if(cur_cp == next_r_release[j]){
-                // 3-(1). previous read job finish and new read request release
-                if (rjob_finished[j] == 1){ 
-                //printf("next r : %ld, cur cp : %ld, rjob : %d\n",next_r_release[j],cur_cp,rjob_finished[j]);
-                    read_job_start_q(tasks,j,newmeta,
-                                    r_workloads[j],rq[j], cur_cp);
-                    next_r_release[j] = cur_cp + (long)tasks[j].rp;
-                    rjob_finished[j] = 0;
-                } 
-                // 3-(2). previous read job is not finished
-                else if (rjob_finished[j] == 0){
-                    next_r_release[j] = cur_cp + (long)tasks[j].rp;
-                }
+            else if (cur_cp == next_w_release[j] && wjob_finished[j] == 0){
+                next_w_release[j] = cur_cp + (long)tasks[j].wp;
+            } 
+            else if (cur_cp == next_w_release[j] && wjob_deferred[j] == 1){
+                next_w_release[j] = cur_cp + (long)tasks[j].wp;
             }
 
-            // 4-(1)-4. gc job release (cur_cp == next_gc_release[idx])
-            if(cur_cp == next_gc_release[j]){
-                // 4-(1). previous gc job finish
-                if(gcjob_finished[j] == 1){          
-                    if(newmeta->total_fp <= expected_fp){
-                        // GC release 시점의 시간 check
-                        gettimeofday(&(algo_start_time),NULL);
-                        gc_job_start_q(tasks, j, tasknum, newmeta,
-                                    fblist_head, full_head, rsvlist_head, write_head, 0,
-                                    gcq[j], &(cur_GC[j]), gcflag, cur_cp, gc_detail);
-                        gc_release_num++;
-                        gettimeofday(&(algo_end_time),NULL);
-                        gc_ovhd = algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-                        fprintf(fpovhd_gc,"%ld, %ld, \n", gc_release_num, gc_ovhd);
-                        gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-                        next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
-                        gcjob_finished[j] = 0;
-                    }
-                    else {
-                        next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
-                        gcjob_finished[j] = 1;
-                    }
-                }
-                // 4-(2). previous gc job is not finished
-                else if (gcjob_finished[j] == 0){
-                    next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
-                }
-            }  
-        }
+            if(cur_cp == next_r_release[j] && rjob_finished[j] == 1){
+                //printf("next r : %ld, cur cp : %ld, rjob : %d\n",next_r_release[j],cur_cp,rjob_finished[j]);
+                read_job_start_q(tasks,j,newmeta,
+                                 r_workloads[j],rq[j], cur_cp);
+                next_r_release[j] = cur_cp + (long)tasks[j].rp;
+                rjob_finished[j] = 0;
+            } 
+            else if (cur_cp == next_r_release[j] && rjob_finished[j] == 0){
+                next_r_release[j] = cur_cp + (long)tasks[j].rp;
+            }
 
-        // 4-(2). release WL jobs
-        // 4-(2)-1. relocation start 조건 확인 (PEC variation이 큰가?)
-        if(oldest-yngest >= THRESHOLD){     // WL start signal
+            if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){          
+                if(newmeta->total_fp <= expected_fp){
+                    //printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
+                    //printf("total_fp : %d, expected_fp : %d\n",newmeta->total_fp,expected_fp);
+                    //printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
+                    long __gt0 = ovhd_now_us();
+                    gc_job_start_q(tasks, j, tasknum, newmeta,
+                               fblist_head, full_head, rsvlist_head, write_head, 0,
+                               gcq[j], &(cur_GC[j]), gcflag, cur_cp);
+                    gc_release_num++;
+                    {
+                        long __d = ovhd_now_us() - __gt0;
+                        gc_ovhd_sum += __d;
+                        ovhd_record(OVHD_GC, __d, cur_cp);
+                    }
+                    gcjob_finished[j] = 0;
+                    next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
+                } 
+                else {
+                    next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
+                    gcjob_finished[j] = 1;
+                }
+            } 
+            else if (cur_cp == next_gc_release[j] && gcjob_finished[j] == 0){
+                next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
+            }
+        }
+        //release WL jobs
+        if(oldest-yngest >= THRESHOLD){//wl start signal
             wl_init = 1;
         }
-        // 4-(2)-2. relocation request 생성
-        if((do_rr == 1) && (rr_finished == 1) && (rr->head == NULL) && (rrflag != -1) && (wl_init == 1)){
+        if((do_rr == 1) && (cur_cp >= next_rr_check) && (rr_finished == 1) && (rr->head == NULL) && (rrflag != -1) && (wl_init == 1)){
             if(hot_cold_list == 0){
                 build_hot_cold(newmeta,hotlist,coldlist);
                 hot_cold_list = 1;
             }
-            // rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
-            rrutil = -1.0;                  // override util so that WL always run in background mode.
-            gettimeofday(&(algo_start_time),NULL);
+            //rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
+            rrutil = -1.0; //override util so that WL always run in background mode.
+
+            long __rt0 = ovhd_now_us();
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
-                            rr,&(cur_rr),(double)rrutil,cur_cp, skewnum);
-            rr_release_num++;
-            gettimeofday(&(algo_end_time),NULL);
-            rr_ovhd = algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-            fprintf(fpovhd_rr,"%ld, %ld, \n", rr_release_num, rr_ovhd);
-            rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+                            rr,&(cur_rr),(double)rrutil,cur_cp,last_rr_release_cp);
+	    if(rr->reqnum != 0){
+		rr_release_num++;
+		last_rr_release_cp = cur_cp;
+	    }
+            {
+                long __d = ovhd_now_us() - __rt0;
+                rr_ovhd_sum += __d;
+                ovhd_record(OVHD_RR, __d, cur_cp);
+            }
             if(rr->reqnum != 0){
                 rr_finished = 0;
             } 
             else {
                 rr_finished = 1;
             }
+            next_rr_check = cur_cp + TRELOC; //advance gate regardless of admit outcome (skip-counter semantics, Eq. 13)
             do_rr = 0;
         }
+        /*
+        //release BWR jobs if possible
+        //check if every queue is empty
+        qempty_bwr_flag = 1;
+        for(int k=0;k<tasknum;k++){
+            if(wq[k]->reqnum != 0 || rq[k]->reqnum != 0 || gcq[k]->reqnum != 0){
+                qempty_bwr_flag = 0;
+                break;
+            }
+        }
+        if(rr->reqnum != 0){
+            qempty_bwr_flag = 0;
+        }
         
-        // 5. req pick logic
+        if(qempty_bwr_flag == 1 && IO_end_bwr_flag == 1 && wr_end_bwr_flag == 1){
+            printf("[bwr]queuestat : %c, IO_end_bwr_flag : %c, wr_end_bwr_flag : %c\n",qempty_bwr_flag, IO_end_bwr_flag, wr_end_bwr_flag);
+            printf("[bwr]cur_cp : %ld\n",cur_cp);
+            //release BWR job
+
+            BWR_job_start_q(tasks,tasknum,newmeta,fblist_head,full_head,write_head,bwr,cur_cp);
+            //reset qempty flag and IO end flag
+            qempty_bwr_flag = 1;
+            IO_end_bwr_flag = 0;
+            wr_end_bwr_flag = 0;
+        }
+        */
+        //req pick logic
         if(cur_IO == NULL){
-            // 5-1. init params
+            //init params
             long cur_dl = __LONG_MAX__;
             int target_task = -1;
             int target_type = -1;
 
-            // 5-2. iterate through per-task queues and pick the I/O with earliest deadline.
-            // operation priority is RR < GC < W < R.
-            // note that deadline is updated when dl is "less than" cur_dl
+            //iterate through per-task queues and pick the I/O with earliest deadline.
+            //operation priority is RR < GC < W < R.
+            //note that deadline is updated when dl is "less than " cur_dl
             if(rr->head != NULL){
                 if(rr->head->deadline <= cur_dl){
                     target_type = RR;
                     cur_dl = rr->head->deadline;
+                }
+            }
+            if(bwr->head != NULL){
+                if(bwr->head->deadline <= cur_dl){
+                    target_type = BWR;
+                    cur_dl = bwr->head->deadline;
                 }
             }
             for(int k=0;k<tasknum;k++){
@@ -851,8 +958,8 @@ int main(int argc, char* argv[]){
                         cur_dl = rq[k]->head->deadline;
                     }
                 }
-        }
-            // 5-3. pop IO from target task's queue
+            }
+            //pop IO from target task's queue
             if(target_type == RD){
                 cur_IO = ll_pop_IO(rq[target_task]);  
             }
@@ -865,8 +972,12 @@ int main(int argc, char* argv[]){
             else if (target_type == RR){
                 cur_IO = ll_pop_IO(rr);
             }
+            else if (target_type == BWR){
+                cur_IO = ll_pop_IO(bwr);
+                printf("[BWR]pop BWR, %ld\n",cur_cp);
+            }
 
-            // 5-4. if something's popped out, update cur_IO_end
+            //if something's popped out, update cur_IO_end
             if(cur_IO != NULL){
                 cur_IO_end = cur_cp + cur_IO->exec;
             }
@@ -875,59 +986,14 @@ int main(int argc, char* argv[]){
             }
         }
         
-        // 6. go to the next checkpoint
-        // cur_cp는 앞에서 EDF scheduling에 따라 실행된 job이 끝난 지점으로 jump되어 있음
-        // jump한 시점보다 더 앞에 release되어야 할 job이 있다면, 해당 시점으로 cur_cp를 jump
+        //go to the next checkpoint
         cur_cp = find_next_time(tasks,tasknum,cur_IO_end,rr_check,cur_cp,
                                 next_w_release,next_r_release,next_gc_release);
-        // printf("[fnt res]next_time : %ld\n",cur_cp);
+        //printf("[fnt res]next_time : %ld\n",cur_cp);
     }
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
     fprintf(fplife,"%ld,",cur_cp);
     fflush(fplife);
     sleep(1);
-    
-    CLEANUP:
-    // 1) 진행 중 I/O 있으면 정리
-    // cur_IO는 finish_req에서 free하지만, 혹시 남아있으면 방어적으로 free
-    if (cur_IO) { free(cur_IO); cur_IO = NULL; }
-
-    // 2) 로그 파일 닫기 (열었던 것만)
-    //     if (fplife) fclose(fplife);
-    //     if (fpovhd) fclose(fpovhd);
-    //     for (int i = 0; i < tasknum; i++) if (fps && fps[i]) fclose(fps[i]);
-    //     lat_close(...) 유틸이 있다면 호출
-
-    // 3) I/O 큐들 free: per-task heads + 단일 head
-    if (wq) {
-        for (int i = 0; i < tasknum; i++) if (wq[i]) ll_free_IO(wq[i]);
-        free(wq);
-        wq = NULL;
-    }
-    if (rq) {
-        for (int i = 0; i < tasknum; i++) if (rq[i]) ll_free_IO(rq[i]);
-        free(rq);
-        rq = NULL;
-    }
-    if (gcq) {
-        for (int i = 0; i < tasknum; i++) if (gcq[i]) ll_free_IO(gcq[i]);
-        free(gcq);
-        gcq = NULL;
-    }
-    // 단일 큐 head
-    if (rr)  { ll_free_IO(rr);  rr  = NULL; }
-
-    // 5) task 메모리 free
-    if (rand_tasks) { free(rand_tasks); rand_tasks = NULL; }
-    if (tasks)      { free(tasks);      tasks = NULL; }
-
-    // 6) workload 파일 배열 free (IO_open/IO_close가 파일을 닫는다면, 여기서는 배열만 free)
-    if (w_workloads) { free(w_workloads); w_workloads = NULL; }
-    if (r_workloads) { free(r_workloads); r_workloads = NULL; }
-
-    // 7) metadata free (destroy 함수가 있으면 그걸 호출)
-    // if (newmeta) destroy_metadata(newmeta);
-    if (newmeta) { free(newmeta); newmeta = NULL; }
-
-    return exit_code;
+    return 0;
 }

@@ -338,3 +338,10 @@ void print_profile_updaterate(meta* metadata, FILE* updaterate_fp){
         fprintf(updaterate_fp,"%ld, %ld\n",metadata->avg_update[i],metadata->recent_update[i]);
     }
 }
+
+// per-GC valid-copy logger: one row per finished GC (GCER).
+// columns: timestamp, taskidx, vic_idx, block_state(P/E), gc_valid_count
+void print_gc_valid(FILE* fp, long cur_cp, int taskidx, int vic_idx, int block_state, int gc_valid_count){
+    if(fp == NULL) return;
+    fprintf(fp,"%ld,%d,%d,%d,%d\n",cur_cp,taskidx,vic_idx,block_state,gc_valid_count);
+}

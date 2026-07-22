@@ -62,13 +62,13 @@ int is_idx_in_list(bhead* head, int tar);
 void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOhead* rq, long cur_cp);
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp, 
-                     FILE* fpovhd_w_release, FILE* fpovhd_w_assign, FILE* w_assign_detail);
+                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp);
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
-                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp, FILE* gc_detail);
-void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
-                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, int skewnum);
+                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp);
+int RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
+                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, int skewnum,
+                  long T_reloc, double U_slack);
 
 //file open 
 // FILE* open_file_bycase(int gcflag, int wflag, int rrflag);
@@ -88,6 +88,7 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead* write_head, int getfp,int gcvalidcount);
 void print_profile_updaterate(meta* metadata, FILE* updaterate_fp);
 float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* fp, int yng, int old,long cur_cp);
+void print_gc_valid(FILE* fp, long cur_cp, int taskidx, int vic_idx, int block_state, int gc_valid_count);
 
 //gen_task
 rttask* generate_taskset(int tasknum, float util, int addr, float* result_util, int cycle);
