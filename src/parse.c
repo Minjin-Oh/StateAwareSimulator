@@ -106,12 +106,12 @@ void set_scheme_flags(char* argv[],
     }
 }
 
-void set_exec_flags(char* argv[], int *tasknum, float *totutil, 
+void set_exec_flags(char* argv[], int *tasknum, float *totutil,
                     int *genflag, int* taskflag, int* profflag,
                     int *skewness, float* sploc, float* tploc, int* skewnum,
-                    int *OPflag, int *cyc, double *OP, int *MINRC){
-    /* 
-    interprets 4th ~ 11th argv
+                    int *OPflag, int *cyc, double *OP, int *MINRC, int *lat_mode){
+    /*
+    interprets 4th ~ 12th argv
     4th : if WORKGEN, we generate workload pattern
           if TASKGEN, we generate randomnized taskset
     5th : gets a number of task in taskset
@@ -121,9 +121,17 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
     9th : gets a temporal locality of workload (for WORKGEN)
     10th: gets a number of skewed taskset (use this only when 7th is not -1)
     11th: gets a initial cycle count
+    // [FIXED-LATENCY] 12th argv added below --------------------------------
+    12th: latency mode used ONLY for LaWL decision-time criterion
+          - "STATE"   or omitted : dynamic (state-aware) latency (default)
+          - "FIXED_S"            : fixed latency using STARTW/STARTR/STARTE  (fresh-block criterion)
+          - "FIXED_E"            : fixed latency using ENDW/ENDR/ENDE        (worn-block criterion)
+          Ground-truth exec time, utilization-overflow check and MAXPE
+          termination stay state-aware regardless of this flag.
+    // ---------------------------------------------------------------------
     below param is DEPRICATED
-    12th: gets a OP value (0.0 ~ 1.0)
-    13th: gets a MINRC value (0 ~ PPB)
+    13th: gets a OP value (0.0 ~ 1.0)
+    14th: gets a MINRC value (0 ~ PPB)
     */
     if(strcmp(argv[4],"WORKGEN")==0){
         *genflag = 1;
@@ -153,6 +161,18 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
     else{
         *cyc = 0;
     }
+
+    // [FIXED-LATENCY] parse argv[12] into decision-time latency mode.
+    // Default (missing arg or "STATE") preserves prior behavior.
+    *lat_mode = 0; // 0 = STATE (dynamic)
+    if (argv[12] != NULL){
+        if (strcmp(argv[12], "FIXED_S") == 0){
+            *lat_mode = 1; // fresh-block criterion
+        } else if (strcmp(argv[12], "FIXED_E") == 0){
+            *lat_mode = 2; // worn-block criterion
+        }
+    }
+
     //!!!overprovisioning rate and minimum reclaimable page is hardcoded in set_exec_flags!!!
     *OP = 0.32;
     *MINRC = 35;

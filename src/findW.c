@@ -1,6 +1,11 @@
 #include "findW.h"
 #include "ovhd_stats.h"
 
+// [FIXED-LATENCY] All exec/util helpers in this file are decision-path (write
+// block selection incl. LaWL INVW). We rebind them to *_exec_dec / __calc_*_dec
+// / find_util_safe_dec / find_cur_util_dec / find_worst_util_dec. Under
+// latency_mode == 0 the _dec versions are bit-identical to the SA originals.
+
 extern double OP;
 extern int MINRC;
 
@@ -221,7 +226,7 @@ int _find_write_safe(rttask* tasks, int tasknum, meta* metadata, int old, int ta
     }
 
     int   cur_b_state  = metadata->state[cur_b];
-    float r_exec_cur_b = r_exec(cur_b_state);
+    float r_exec_cur_b = r_exec_dec(cur_b_state);
 
     for(int i = 0; i < tasknum; i++){
         cur = rq[i]->head;
@@ -231,7 +236,7 @@ int _find_write_safe(rttask* tasks, int tasknum, meta* metadata, int old, int ta
                 read_b = metadata->pagemap[cur_lpa] / PPB;
                 int read_b_state = metadata->state[read_b];
                 if(read_b_state < cur_b_state){
-		    rutils[i] -= r_exec(read_b_state) / (float)tasks[i].rp;
+		    rutils[i] -= r_exec_dec(read_b_state) / (float)tasks[i].rp;
                     rutils[i] += r_exec_cur_b         / (float)tasks[i].rp;
                 }
             }
@@ -244,7 +249,7 @@ int _find_write_safe(rttask* tasks, int tasknum, meta* metadata, int old, int ta
     }
 
     int min_p = _get_cached_min_period_w(tasks, tasknum);
-    total_u += (float)e_exec(old) / (float)min_p;
+    total_u += (float)e_exec_dec(old) / (float)min_p;
     total_u -= wutils[taskidx];
     total_u += util;
 
@@ -406,7 +411,7 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     float rw_util[NOB];
     yng = get_blockstate_meta(metadata,YOUNG);
     old = get_blockstate_meta(metadata,OLD);
-    cur_worst = find_worst_util(task,tasknum,metadata);
+    cur_worst = find_worst_util_dec(task,tasknum,metadata);
     iter = 0;
     //find a worst read block for task
     //FIXME:: we can add worst-block for task in metadata array.
@@ -426,10 +431,10 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     for(int i=yng;i<=old;i++){
         cyc[iter] = i;
         if(i<cur_read_worst){
-            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),cur_read_worst) + __calc_gcu(&task[taskidx],MINRC,yng,i,i);
+            rw_util[iter] = __calc_wu_dec(&(task[taskidx]),i) + __calc_ru_dec(&(task[taskidx]),cur_read_worst) + __calc_gcu_dec(&task[taskidx],MINRC,yng,i,i);
         }
         else if (i >= cur_read_worst){
-            rw_util[iter] = __calc_wu(&(task[taskidx]),i) + __calc_ru(&(task[taskidx]),i) + __calc_gcu(&task[taskidx],MINRC,yng,i,i);;
+            rw_util[iter] = __calc_wu_dec(&(task[taskidx]),i) + __calc_ru_dec(&(task[taskidx]),i) + __calc_gcu_dec(&task[taskidx],MINRC,yng,i,i);;
         }
         //printf("%d(%f) ",i,rw_util[iter]);
         iter++;   
@@ -444,7 +449,7 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     while(cur != NULL){
         //check if the block is OK for write
         cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) ) == -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) ) == -1){
             cur = cur->next;
             continue;
         }
@@ -462,7 +467,7 @@ int find_writectrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead
     while(cur != NULL){
         //check if the block is OK for write
         cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) ) == -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) ) == -1){
             cur = cur->next;
             continue;
         }
@@ -504,7 +509,7 @@ int find_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
         cur_state = metadata->state[cur->idx];
         
         //check if current block is OK for write operation w.r.t util restriction
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -518,7 +523,7 @@ int find_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
         ru = cur_read_lat * (float)task[taskidx].rn / (float)task[taskidx].rp;
         
         //calc expected gc util : assume that target block joined candidate pool with minimum invalids.
-        gcu = __calc_gcu(&(task[taskidx]),MINRC,0,cur_state,cur_state);
+        gcu = __calc_gcu_dec(&(task[taskidx]),MINRC,0,cur_state,cur_state);
         //printf("block %d, ru+gcu : %f\n",cur->idx,ru+gcu);
         //summate read util + GC util. compare with optimal block.
         if(cur_best_util >= ru+gcu){
@@ -537,7 +542,7 @@ int find_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
         cur_state = metadata->state[cur->idx];
         
         //check if current block is OK for write operation w.r.t util restriction
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -550,7 +555,7 @@ int find_writelimit(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
         ru = cur_read_lat * (float)task[taskidx].rn / (float)task[taskidx].rp;
         
         //calc expected gc util : assume that target block joined candidate pool with minimum invalids.
-        gcu = __calc_gcu(&(task[taskidx]),MINRC,0,cur_state,cur_state);
+        gcu = __calc_gcu_dec(&(task[taskidx]),MINRC,0,cur_state,cur_state);
         printf("block %d, ru+gcu : %f\n",cur->idx,ru+gcu);
         //summate read util + GC util. compare with optimal block.
         if(cur_best_util >= ru+gcu){
@@ -592,7 +597,7 @@ int find_writeweighted(rttask* task, int taskidx, int tasknum, meta* metadata, b
     cur = fblist_head->head;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -614,7 +619,7 @@ int find_writeweighted(rttask* task, int taskidx, int tasknum, meta* metadata, b
     cur = write_head->head;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -664,7 +669,7 @@ int find_write_taskfixed(rttask* task, int taskidx, int tasknum, meta* metadata,
     while(cur != NULL){
         /* select block */
         cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -691,7 +696,7 @@ int find_write_taskfixed(rttask* task, int taskidx, int tasknum, meta* metadata,
     }
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -751,8 +756,8 @@ int find_write_hotness(rttask* task, int taskidx, int tasknum, meta* metadata, b
     while(cur != NULL){
         /* select block */
         cur_state = metadata->state[cur->idx];
-        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state),cur->idx,w_lpas)==-1){
-        //if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state),cur->idx,w_lpas)==-1){
+        //if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             //printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -782,8 +787,8 @@ int find_write_hotness(rttask* task, int taskidx, int tasknum, meta* metadata, b
     while(cur != NULL){
         /* select block */
         cur_state = metadata->state[cur->idx];
-        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state),cur->idx,w_lpas)==-1){
-        //if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state),cur->idx,w_lpas)==-1){
+        //if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             //printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -845,7 +850,7 @@ int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metad
     while(cur != NULL){
         /* select block */
         cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             //printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -905,7 +910,7 @@ int find_write_hotness_motiv(rttask* task, int taskidx, int tasknum, meta* metad
     while(cur != NULL){
         /* select block */
         cur_state = metadata->state[cur->idx];
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]), cur_state) )== -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]), cur_state) )== -1){
             //printf("block: %d, util check fail\n",cur->idx);
             cur = cur->next;
             continue;
@@ -1008,7 +1013,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     cur = write_head->head;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
         //if(0){
             cur = cur->next;
             continue;
@@ -1026,7 +1031,7 @@ int find_write_gradient(rttask* task, int taskidx, int tasknum, meta* metadata, 
     cur = fblist_head->head;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
-        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+        if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
         //if(0){
             cur = cur->next;
             continue;
@@ -1631,7 +1636,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         cur_state = metadata->state[cur->idx];
         if(cur->wb_rank == cur_rank &&
            _find_write_safe(task, tasknum, metadata, old, taskidx, WR,
-                            __calc_wu(&task[taskidx], cur_state), cur->idx, w_lpas) == 0){
+                            __calc_wu_dec(&task[taskidx], cur_state), cur->idx, w_lpas) == 0){
             return cur;
         }
         cur = cur->next;
@@ -1644,7 +1649,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         cur_state = metadata->state[cur->idx];
         if(ret_b_state > cur_state &&
            _find_write_safe(task, tasknum, metadata, old, taskidx, WR,
-                            __calc_wu(&task[taskidx], cur_state), cur->idx, w_lpas) == 0){
+                            __calc_wu_dec(&task[taskidx], cur_state), cur->idx, w_lpas) == 0){
             ret_b_state = cur_state;
             ret_b       = cur;
         }
@@ -1682,7 +1687,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         int dist = abs_int(cur->wb_rank - cur_rank);
         if(dist_min >= dist &&
            _find_write_safe(task, tasknum, metadata, old, taskidx, WR,
-                            __calc_wu(&task[taskidx], cur_state), cur->idx, w_lpas) == 0){
+                            __calc_wu_dec(&task[taskidx], cur_state), cur->idx, w_lpas) == 0){
             dist_min = dist;
             ret_b    = cur;
         }
@@ -1909,7 +1914,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
     }
 
     // initiate findwritesafe() on current block, and see if allocation leads to utilization overflow.
-    if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[cur->idx]),cur->idx,w_lpas) == 0){
+    if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),metadata->state[cur->idx]),cur->idx,w_lpas) == 0){
         // printf("[3]%d\n",__calc_time_diff(a,b));
         return cur->idx;
     } else {
@@ -1918,7 +1923,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         right_ptr = cur->next;
         while((left_ptr != NULL) || (right_ptr != NULL)){
             if(left_ptr != NULL){
-                if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[left_ptr->idx]),cur->idx,w_lpas) == 0){
+                if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),metadata->state[left_ptr->idx]),cur->idx,w_lpas) == 0){
                     // printf("[3]%d\n",__calc_time_diff(a,b));
                     return left_ptr->idx;
                 } else{
@@ -1926,7 +1931,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
                 }
             }
             if(right_ptr != NULL){
-                if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[right_ptr->idx]),cur->idx,w_lpas) == 0){
+                if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),metadata->state[right_ptr->idx]),cur->idx,w_lpas) == 0){
                 return right_ptr->idx;
                 } else{
                     right_ptr = right_ptr->next;
@@ -2077,7 +2082,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
 //     cur = write_head->head;
 //     while(cur != NULL){
 //         cur_state = metadata->state[cur->idx];
-//         if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+//         if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
 //             cur = cur->next;
 //             continue;
 //         }
@@ -2094,7 +2099,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
 //     while(cur != NULL){
 //         
 //         cur_state = metadata->state[cur->idx];
-//         if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+//         if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
 //             cur = cur->next;
 //             continue;
 //         }
@@ -2118,7 +2123,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
 //         ret_b_idx = cur->idx;
 //         while(cur != NULL){
 //             cur_state = metadata->state[cur->idx];
-//             if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+//             if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
 //                 cur = cur->next;
 //                 continue;
 //             }   
@@ -2316,7 +2321,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
 //     }
 // 
 //     //initiate findwritesafe() on current block, and see if allocation leads to utilization overflow.
-//     if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[cur->idx]),cur->idx,w_lpas) == 0){
+//     if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),metadata->state[cur->idx]),cur->idx,w_lpas) == 0){
 //         gettimeofday(&b,NULL);
 //         //printf("[3]%d\n",__calc_time_diff(a,b));
 //         return cur->idx;
@@ -2326,7 +2331,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
 //         right_ptr = cur->next;
 //         while((left_ptr != NULL) || (right_ptr != NULL)){
 //             if(left_ptr != NULL){
-//                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[left_ptr->idx]),cur->idx,w_lpas) == 0){
+//                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),metadata->state[left_ptr->idx]),cur->idx,w_lpas) == 0){
 //                     gettimeofday(&b,NULL);
 //                     //printf("[3]%d\n",__calc_time_diff(a,b));
 //                     return left_ptr->idx;
@@ -2335,7 +2340,7 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
 //                 }
 //             }
 //             if(right_ptr != NULL){
-//                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),metadata->state[right_ptr->idx]),cur->idx,w_lpas) == 0){
+//                 if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),metadata->state[right_ptr->idx]),cur->idx,w_lpas) == 0){
 //                     gettimeofday(&b,NULL);
 //                     //printf("[3]%d\n",__calc_time_diff(a,b));
 //                     return right_ptr->idx;

@@ -20,13 +20,35 @@ float __calc_ru(rttask* task, int scale_r);
 float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e);
 int _gc_period(rttask* task,int _minrc);
 
+// [FIXED-LATENCY] --------------------------------------------------------------
+// Decision-time latency lens. Ground truth (req->exec, overflow, MAXPE) still uses
+// w_exec/r_exec/e_exec above. The _dec family below is what LaWL's allocation /
+// relocation framework consumes and is switchable at runtime via `latency_mode`.
+//   latency_mode == 0  ->  state-aware (identical to w_exec / r_exec / e_exec)
+//   latency_mode == 1  ->  fixed STARTW / STARTR / STARTE
+//   latency_mode == 2  ->  fixed ENDW  / ENDR  / ENDE
+extern int latency_mode;
+
+float w_exec_dec(int cycle);
+float r_exec_dec(int cycle);
+float e_exec_dec(int cycle);
+float __calc_wu_dec(rttask* task, int scale_w);
+float __calc_ru_dec(rttask* task, int scale_r);
+float __calc_gcu_dec(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e);
+float find_worst_util_dec(rttask* task, int tasknum, meta* metadata);
+float find_cur_util_dec(rttask* tasks, int tasknum, meta* metadata, int old);
+int   find_util_safe_dec(rttask* tasks, int tasknum, meta* metadata, int old,
+                         int taskidx, int type, float util);
+// ------------------------------------------------------------------------------
+
 //flag getting functions
-void set_scheme_flags(char* argv[], 
+void set_scheme_flags(char* argv[],
                       int *gcflag, int *wflag, int *rrflag, int *rrcond);
-void set_exec_flags(char* argv[], int *tasknum, float *totutil, 
-                    int *genflag, int* taskflag, int* profflag, 
+// [FIXED-LATENCY] added lat_mode out-param at tail (parses argv[12])
+void set_exec_flags(char* argv[], int *tasknum, float *totutil,
+                    int *genflag, int* taskflag, int* profflag,
                     int *skewness, float* sploc, float* tploc, int* skewnum,
-                    int *OPflag, int *cyc, double *OP, int *MINRC);
+                    int *OPflag, int *cyc, double *OP, int *MINRC, int *lat_mode);
 
 //utilization_calculate
 float find_worst_util(rttask* task, int tasknum, meta* metadata);

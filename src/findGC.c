@@ -1,6 +1,12 @@
 #include "findGC.h"
 #include <float.h>
 
+// [FIXED-LATENCY] All exec / util helpers in this file are on the *decision*
+// path (GC victim selection). They call *_exec_dec / __calc_*_dec /
+// find_util_safe_dec / find_cur_util_dec so that under latency_mode == 1|2
+// LaWL sees a fixed latency criterion. Under latency_mode == 0 the _dec
+// helpers transparently fall through to the original state-aware versions.
+
 extern double OP;
 extern int MINRC;
 
@@ -20,7 +26,7 @@ static void _build_gc_read_collision_delta(rttask* tasks, int tasknum, meta* met
     for(int i=0;i<NOB;i++){
         read_delta_by_victim[i] = 0.0f;
     }
-    const float r_exec_rsv_b = r_exec(rsv_b_state);
+    const float r_exec_rsv_b = r_exec_dec(rsv_b_state);
     for (int i=0;i<tasknum;i++){
         if(rq[i] == NULL){
             continue;
@@ -37,7 +43,7 @@ static void _build_gc_read_collision_delta(rttask* tasks, int tasknum, meta* met
                 int read_b_state = metadata->state[victim_b];
 
                 if (read_b_state < rsv_b_state){
-                    read_delta_by_victim[victim_b] += (r_exec_rsv_b - r_exec(read_b_state)) * inv_rp;
+                    read_delta_by_victim[victim_b] += (r_exec_rsv_b - r_exec_dec(read_b_state)) * inv_rp;
                 }
             }
 
@@ -78,7 +84,7 @@ int _find_gc_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taski
     }
 
     int rsv_b_state = metadata->state[rsv_b];
-    float r_exec_rsv_b = r_exec(rsv_b_state);
+    float r_exec_rsv_b = r_exec_dec(rsv_b_state);
 
     if(valid_cnt > 0){
         for (int i=0;i<tasknum;i++){
@@ -96,7 +102,7 @@ int _find_gc_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taski
                         int read_b_state = metadata->state[read_b];
                         if(read_b_state < rsv_b_state){
                             if(read_b_state_cached_exec < 0.0){
-                                read_b_state_cached_exec = (float)r_exec(read_b_state);
+                                read_b_state_cached_exec = (float)r_exec_dec(read_b_state);
                             }
                             rutils[i] -= read_b_state_cached_exec / (float)tasks[i].rp;
                             rutils[i] += r_exec_rsv_b / (float)tasks[i].rp;
@@ -121,7 +127,7 @@ int _find_gc_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taski
         cached_min_period = _find_min_period(tasks, tasknum);
     }
 
-    total_u += (float)e_exec(old) / (float)cached_min_period;
+    total_u += (float)e_exec_dec(old) / (float)cached_min_period;
     total_u -= gcutils[taskidx];
     total_u += util;
 
@@ -152,11 +158,11 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
     for(int i=0;i<MAXPE+1;i++){
         util_profile[i] = 0.0;
         if(i <= metadata->cur_read_worst[taskidx]){
-            util_profile[i] += __calc_ru(&(task[taskidx]),metadata->cur_read_worst[taskidx]);
+            util_profile[i] += __calc_ru_dec(&(task[taskidx]),metadata->cur_read_worst[taskidx]);
         } else {
-            util_profile[i] += __calc_ru(&(task[taskidx]),i);
+            util_profile[i] += __calc_ru_dec(&(task[taskidx]),i);
         }
-        util_profile[i] += __calc_wu(&(task[taskidx]),i);
+        util_profile[i] += __calc_wu_dec(&(task[taskidx]),i);
     }
 
     float gc_runutil = 0.0;
@@ -168,7 +174,7 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
             cur_state = metadata->state[cur->idx];
             new_rc = metadata->invnum[cur->idx];
             float profile_util = 0.0;
-            float gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(cur_state))+e_exec(cur_state);
+            float gc_exec = (PPB-new_rc)*(w_exec_dec(yng)+r_exec_dec(cur_state))+e_exec_dec(cur_state);
             float gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
             cur_gc = gc_exec/gc_period;
             profile_util = cur_gc + util_profile[cur_state+1];
@@ -191,7 +197,7 @@ int find_gcctrl(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* f
             if(metadata->invnum[cur->idx] >= cur_invalid){
                 expected_idx = cur->idx;
                 cur_invalid = metadata->invnum[cur->idx];
-                cur_minutil = __calc_gcu(&(task[taskidx]),MINRC,yng,metadata->state[cur->idx],metadata->state[cur->idx]);
+                cur_minutil = __calc_gcu_dec(&(task[taskidx]),MINRC,yng,metadata->state[cur->idx],metadata->state[cur->idx]);
             }
             cur = cur->next;
         }
@@ -215,7 +221,7 @@ int find_gcctrl_greedy(rttask* task, int taskidx, int tasknum, meta* metadata, b
         if(metadata->invnum[cur->idx] >= MINRC){
             cur_state = metadata->state[cur->idx];
             new_rc = metadata->invnum[cur->idx];
-            gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(cur_state))+e_exec(cur_state);
+            gc_exec = (PPB-new_rc)*(w_exec_dec(yng)+r_exec_dec(cur_state))+e_exec_dec(cur_state);
             gc_period = _gc_period(&(task[taskidx]),(int)(MINRC));
             profile_util = gc_exec/gc_period;
             if(profile_util <= cur_minutil){
@@ -238,14 +244,14 @@ int find_gcctrl_yng(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
     int cur_min_state = MAXPE;
     int new_rc = -1, cur_state = -1, cur_invalid = -1;
     float gc_exec, gc_period, gc_util;
-    float slack = 1.0 - find_cur_util(task,tasknum,metadata,get_blockstate_meta(metadata,OLD)) + metadata->runutils[2][taskidx];
-    //printf("slack : %f, gcutil : %f, curutil : %f\n",slack,metadata->runutils[2][taskidx],find_cur_util(task,tasknum,metadata,get_blockstate_meta(metadata,OLD)));
+    float slack = 1.0 - find_cur_util_dec(task,tasknum,metadata,get_blockstate_meta(metadata,OLD)) + metadata->runutils[2][taskidx];
+    //printf("slack : %f, gcutil : %f, curutil : %f\n",slack,metadata->runutils[2][taskidx],find_cur_util_dec(task,tasknum,metadata,get_blockstate_meta(metadata,OLD)));
     int expected_idx = -1;
     while(cur != NULL){
         if(metadata->invnum[cur->idx] >= MINRC){
             new_rc = metadata->invnum[cur->idx];
             cur_state = metadata->state[cur->idx];
-            gc_exec = (PPB-new_rc)*(w_exec(yng)+r_exec(cur_state))+e_exec(cur_state);
+            gc_exec = (PPB-new_rc)*(w_exec_dec(yng)+r_exec_dec(cur_state))+e_exec_dec(cur_state);
             gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
             gc_util = gc_exec/gc_period;
             slack = 1.0; //uncomment this to only consider block age
@@ -300,10 +306,10 @@ int find_gcctrl_limit(rttask* task, int taskidx, int tasknum, meta* metadata, bh
         cur_state = metadata->state[cur->idx];
         copyblock_state = metadata->state[rsvlist_head->head->idx];
         new_rc = metadata->invnum[cur->idx];
-        gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+        gc_exec = (PPB-new_rc)*(w_exec_dec(copyblock_state)+r_exec_dec(cur_state))+e_exec_dec(cur_state);
         gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
         gc_util = gc_exec/gc_period;
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,GC,gc_util ) == -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,GC,gc_util ) == -1){
             cur = cur->next;
             continue;
         }
@@ -325,7 +331,7 @@ int find_gcctrl_limit(rttask* task, int taskidx, int tasknum, meta* metadata, bh
         }
         ru = cur_read_lat * task[taskidx].rn / task[taskidx].rp;
         //calculate expected write util change
-        wu = __calc_wu(&(task[taskidx]),metadata->state[cur->idx]);
+        wu = __calc_wu_dec(&(task[taskidx]),metadata->state[cur->idx]);
         //check if current util value is optimal
         if (ru+wu <= cur_best_util){
             cur_best_util = ru+wu;
@@ -374,10 +380,10 @@ int find_gcweighted(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
         cur_state = metadata->state[cur->idx];
         copyblock_state = metadata->state[rsvlist_head->head->idx];
         new_rc = metadata->invnum[cur->idx];
-        gc_exec = (PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+        gc_exec = (PPB-new_rc)*(w_exec_dec(copyblock_state)+r_exec_dec(cur_state))+e_exec_dec(cur_state);
         gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
         gc_util = gc_exec/gc_period;
-        if(find_util_safe(task,tasknum,metadata,old,taskidx,GC,gc_util ) == -1){
+        if(find_util_safe_dec(task,tasknum,metadata,old,taskidx,GC,gc_util ) == -1){
             cur = cur->next;
             continue;
         }
@@ -404,7 +410,7 @@ int find_gcweighted(rttask* task, int taskidx, int tasknum, meta* metadata, bhea
         }
         ru = cur_read_lat * task[taskidx].rn / task[taskidx].rp;
         //calculate expected write util change
-        wu = __calc_wu(&(task[taskidx]),metadata->state[cur->idx]);
+        wu = __calc_wu_dec(&(task[taskidx]),metadata->state[cur->idx]);
         //calculate expected gc util, considering GC skip.
         //gcskipfactor = new_rc / task[taskidx].wn;
         gcskipfactor = 1;
@@ -438,9 +444,9 @@ block* find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, 
     
     int copyblock_state = metadata->state[rsvlist_head->head->idx];
     float gc_period = (float)_gc_period(&(task[taskidx]), (int)(MINRC));
-    const float blocking_old = e_exec(old) / (float)min_p;
-    const float blocking_old_next = e_exec(old+1) / (float)min_p;
-    float w_exec_copy = w_exec(copyblock_state);
+    const float blocking_old = e_exec_dec(old) / (float)min_p;
+    const float blocking_old_next = e_exec_dec(old+1) / (float)min_p;
+    float w_exec_copy = w_exec_dec(copyblock_state);
 
     block* best_in_bucket[PPB + 1];
     for (int i = 0; i <= PPB; i++) best_in_bucket[i] = NULL;
@@ -471,7 +477,7 @@ block* find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, 
             block* candidate = best_in_bucket[inv];
             int cur_state = metadata->state[candidate->idx];
 
-            float gc_exec = (float)(PPB - inv) * (w_exec_copy + r_exec(cur_state)) + e_exec(cur_state);
+            float gc_exec = (float)(PPB - inv) * (w_exec_copy + r_exec_dec(cur_state)) + e_exec_dec(cur_state);
             float gc_util = gc_exec / gc_period;
             gc_util += (cur_state == old) ? blocking_old_next : blocking_old;
 
@@ -510,7 +516,7 @@ int find_gc_test(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* 
         int cur_state = metadata->state[cur->idx];
         int copyblock_state = metadata->state[rsvlist_head->head->idx];
         int new_rc = metadata->invnum[cur->idx];
-        float gc_exec = (float)(PPB-new_rc)*(w_exec(copyblock_state)+r_exec(cur_state))+e_exec(cur_state);
+        float gc_exec = (float)(PPB-new_rc)*(w_exec_dec(copyblock_state)+r_exec_dec(cur_state))+e_exec_dec(cur_state);
         float gc_period = (float)_gc_period(&(task[taskidx]),(int)(MINRC));
         float gc_util = gc_exec/gc_period;
         if(_find_gc_safe(task,tasknum,metadata,old,taskidx,GC,gc_util,cur->idx,rsvlist_head->head->idx) == -1){

@@ -2,6 +2,11 @@
 
 extern double OP;
 extern int MINRC;
+
+// [FIXED-LATENCY] runtime-selectable latency lens for LaWL decisions.
+// 0 = STATE (dynamic, default). 1 = FIXED_S (START*). 2 = FIXED_E (END*).
+// Set once in emul_main from argv[12]; read from the _dec family below.
+int latency_mode = 0;
 #ifdef EXECSTEP
     extern prof_exec exec_steps;
     float w_exec(int cycle){
@@ -52,6 +57,28 @@ extern int MINRC;
         return egrad*cycle + econst;
     }
 #endif
+
+// [FIXED-LATENCY BEGIN] --------------------------------------------------------
+// Decision-time exec functions. LaWL's allocation/relocation framework
+// (findGC / findW / findRR / assignW) reads these instead of the ground-truth
+// w_exec/r_exec/e_exec. When latency_mode == 0 we fall through so behavior is
+// bit-identical to the original state-aware code path.
+float w_exec_dec(int cycle){
+    if (latency_mode == 1) return (float)STARTW;
+    if (latency_mode == 2) return (float)ENDW;
+    return w_exec(cycle);
+}
+float r_exec_dec(int cycle){
+    if (latency_mode == 1) return (float)STARTR;
+    if (latency_mode == 2) return (float)ENDR;
+    return r_exec(cycle);
+}
+float e_exec_dec(int cycle){
+    if (latency_mode == 1) return (float)STARTE;
+    if (latency_mode == 2) return (float)ENDE;
+    return e_exec(cycle);
+}
+// [FIXED-LATENCY END] ----------------------------------------------------------
 
 int myceil(float a){
     int b = (int)a;
@@ -114,6 +141,22 @@ float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e
     int max_valid = PPB - min_rc;
     float gc_exec, gc_period;
     gc_exec = (max_valid)*(w_exec(scale_w)+r_exec(scale_r))+e_exec(scale_e);
+    gc_period = _gc_period(task,min_rc);
+    return (float)gc_exec / (float)gc_period;
+}
+
+// [FIXED-LATENCY] decision-time utility helpers. Identical formulas to the
+// SA versions above but consult *_exec_dec so they honor latency_mode.
+float __calc_ru_dec(rttask* task, int scale_r){
+    return (float)(task->rn*r_exec_dec(scale_r))/(float)task->rp;
+}
+float __calc_wu_dec(rttask* task, int scale_w){
+    return (float)(task->wn*w_exec_dec(scale_w))/(float)task->wp;
+}
+float __calc_gcu_dec(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e){
+    int max_valid = PPB - min_rc;
+    float gc_exec, gc_period;
+    gc_exec = (max_valid)*(w_exec_dec(scale_w)+r_exec_dec(scale_r))+e_exec_dec(scale_e);
     gc_period = _gc_period(task,min_rc);
     return (float)gc_exec / (float)gc_period;
 }
@@ -244,9 +287,9 @@ float find_cur_util(rttask* tasks, int tasknum, meta* metadata, int old){
 
 int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util){
     // check if current I/O job does not violate util test along with recently released other jobs.
-    
+
     float total_u = 0.0;
-    
+
     total_u = find_cur_util(tasks,tasknum,metadata,old);
     if(type == WR){
         total_u -= metadata->runutils[0][taskidx];
@@ -267,6 +310,61 @@ int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int task
         abort();
     }
 }
+
+// [FIXED-LATENCY BEGIN] --------------------------------------------------------
+// Decision-time twins of find_worst_util / find_cur_util / find_util_safe.
+// The only difference is that per-state utility contributions and the blocking
+// term e_exec go through *_exec_dec so LaWL sees fixed latency under FIXED_S /
+// FIXED_E while ground-truth callers in logger.c stay unaffected.
+//
+// Note: metadata->runutils[] are still updated by the runtime with state-aware
+// values (that's ground truth of what was admitted). find_util_safe_dec uses
+// those as-is, and only the *marginal* term for the current decision + the
+// e_exec blocking term switch to fixed. This is intentional: the criterion
+// applied to *new* admission decisions is fixed; historical admitted work is
+// not retroactively re-scored.
+float find_worst_util_dec(rttask* task, int tasknum, meta* metadata){
+    int youngest, oldest;
+    youngest = metadata->state[0];
+    oldest = metadata->state[0];
+    for(int i=1;i<NOB;i++){
+        if (youngest >= metadata->state[i]) youngest = metadata->state[i];
+        if (oldest   <= metadata->state[i]) oldest   = metadata->state[i];
+    }
+    float total_u = 0.0;
+    for(int i=0;i<tasknum;i++){
+        total_u += __calc_wu_dec(&(task[i]),youngest);
+        total_u += __calc_ru_dec(&(task[i]),oldest);
+        total_u += __calc_gcu_dec(&(task[i]),MINRC,youngest,oldest,oldest);
+    }
+    total_u += (float)e_exec_dec(oldest) / (float)_find_min_period(task,tasknum);
+    return total_u;
+}
+
+float find_cur_util_dec(rttask* tasks, int tasknum, meta* metadata, int old){
+    float total_u = 0.0;
+    for(int j=0;j<tasknum;j++){
+        total_u += metadata->runutils[0][j];
+        total_u += metadata->runutils[1][j];
+        total_u += metadata->runutils[2][j];
+    }
+    total_u += (float)e_exec_dec(old) / (float)_find_min_period(tasks,tasknum);
+    return total_u;
+}
+
+int find_util_safe_dec(rttask* tasks, int tasknum, meta* metadata, int old,
+                       int taskidx, int type, float util){
+    float total_u = find_cur_util_dec(tasks,tasknum,metadata,old);
+    if(type == WR)       total_u -= metadata->runutils[0][taskidx];
+    else if(type == RD)  total_u -= metadata->runutils[1][taskidx];
+    else if(type == GC)  total_u -= metadata->runutils[2][taskidx];
+    total_u += util;
+    if (total_u <= 1.0)      return 0;
+    else if (total_u > 1.0)  return -1;
+    printf("util safety check failed\n");
+    abort();
+}
+// [FIXED-LATENCY END] ----------------------------------------------------------
 
 int util_check_main(){
     // exec function test

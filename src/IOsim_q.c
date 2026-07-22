@@ -553,31 +553,39 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     v2_state = metadata->state[vb2->idx];
     v1_cnt = PPB - metadata->invnum[vic1];
     v2_cnt = PPB - metadata->invnum[vic2];
-    // 5. slack-based scheduling check for LaWL
+    // [SLACK-BASED] 5. slack-based aperiodic admission check for LaWL.
     // U_relocation = C_relocation / T_relocation, where
-    // C_relocation : total exec of selected pair
-    // T_relocation : aperiodic period (= cur_cp - last relocation release time)
-    
-    // if (rrflag == 1){
-    //     long rr_exec = find_RR_period(vic1,vic2,v1_cnt,v2_cnt,1.0, metadata);
-    //     if(rr_exec <= 0){
-    //         return;
-    //     }
-    //     if(last_rr_cp < 0){
-    //         rrp = cur_cp > 0 ? cur_cp : 1;
-    //     } else {
-    //         rrp = cur_cp - last_rr_cp;
-    //     }
-    //     if(rrp <= 0){
-    //         return;
-    //     }
-    //     if(rrutil <= ((double)rr_exec / (double)rrp)){
-    //         return;
-    //     }
-    // }
+    //   C_relocation : total exec of the selected (vic1, vic2) pair
+    //   T_relocation : aperiodic period (= cur_cp - last relocation release cp)
+    // If actual C/T already exceeds the slack budget rrutil, skip this release.
+    //
+    // find_RR_period(...,1.0,...) returns ceil(C / 1.0) = C, so rr_exec is the
+    // pair's total execution time under the current LaWL latency lens
+    // (state-aware or fixed via latency_mode; see findRR.c edits).
+    if (rrflag == 1){
+        long rr_exec = find_RR_period(vic1, vic2, v1_cnt, v2_cnt, 1.0, metadata);
+        if (rr_exec <= 0){
+            return;
+        }
+        long t_reloc;
+        if (last_rr_cp < 0){
+            // first-ever release: use cur_cp as the elapsed proxy (>=1 to avoid /0).
+            t_reloc = (cur_cp > 0) ? cur_cp : 1;
+        } else {
+            t_reloc = cur_cp - last_rr_cp;
+        }
+        if (t_reloc <= 0){
+            return;
+        }
+        if (rrutil <= ((double)rr_exec / (double)t_reloc)){
+            // no slack left for this relocation right now -> skip, retry after TRELOC.
+            return;
+        }
+    }
 
     rrp = find_RR_period(vic1,vic2,v1_cnt,v2_cnt,rrutil, metadata);
     if(rrutil <= 0.0){
+        // foreground saturated -> keep RR effectively background.
         rrp = __LONG_MAX__ - cur_cp;
     }
     //copy the metadata into temp param and use temp

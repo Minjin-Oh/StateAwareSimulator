@@ -93,6 +93,7 @@ int main(int argc, char* argv[]){
     int skewnum;                     //number of skewed task
     int OPflag;
     int init_cyc = 0;
+    int lat_mode = 0;                // [FIXED-LATENCY] argv[12]: 0=STATE, 1=FIXED_S, 2=FIXED_E
     float totutil;                   //a total utilization of current system
     //get flags
     set_scheme_flags(argv,
@@ -100,7 +101,10 @@ int main(int argc, char* argv[]){
     set_exec_flags(argv, &tasknum, &totutil,
                    &genflag, &taskflag, &profflag,
                    &skewness, &sploc, &tploc, &skewnum,
-                   &OPflag, &init_cyc, &OP, &MINRC);
+                   &OPflag, &init_cyc, &OP, &MINRC, &lat_mode);
+    // [FIXED-LATENCY] publish parsed mode to the util.c global consulted by
+    // every _dec helper. Must happen before any decision-path call executes.
+    latency_mode = lat_mode;
 #ifdef EXECSTEP
     init_prof_exec(&(exec_steps));
 #endif
@@ -204,6 +208,9 @@ int main(int argc, char* argv[]){
     printf("[EXEC-skew] %d, %f, %f, %d\n",skewness,sploc,tploc,skewnum);
     printf("[EXEC-OP  ] %d, %f, %d\n",OPflag, OP, MINRC);
     printf("[NOB MAXPE] : %d, %d\n",NOB,MAXPE);
+    // [FIXED-LATENCY] echo which latency lens LaWL will use for decisions.
+    // Ground-truth exec / overflow / MAXPE are always state-aware regardless.
+    printf("[LAT MODE ] : %d (0=STATE, 1=FIXED_S, 2=FIXED_E)\n", latency_mode);
     //sleep(1);
    
     //MINRC is now a configurable value, which can be adjusted like OP
@@ -485,11 +492,17 @@ int main(int argc, char* argv[]){
 	gc_valid_fp = fopen("LaWL_D_gc_valid.csv","w");
     }
     else if(wflag == 14 && gcflag == 6 && rrflag == 1){
-	// u_check = fopen("LaWL_rrchecker.csv","w");
-        fplife = fopen("LaWL_lifetime.csv","a");
-        fpovhd = fopen("LaWL_overhead.csv","a");
-	updaterate_fp = fopen("LaWL_updaterate.csv","w");
-	gc_valid_fp = fopen("LaWL_gc_valid.csv","w");
+        // [FIXED-LATENCY] tag output files so STATE / FIXED_S / FIXED_E runs of
+        // the same LaWL (UTILGC INVW RR005) config don't overwrite each other.
+        const char* lat_suffix = "";
+        if(latency_mode == 1)      lat_suffix = "_fixedS";
+        else if(latency_mode == 2) lat_suffix = "_fixedE";
+        char nm[64];
+        // u_check = fopen("LaWL_rrchecker.csv","w");
+        sprintf(nm,"LaWL%s_lifetime.csv",   lat_suffix); fplife        = fopen(nm,"a");
+        sprintf(nm,"LaWL%s_overhead.csv",   lat_suffix); fpovhd        = fopen(nm,"a");
+        sprintf(nm,"LaWL%s_updaterate.csv", lat_suffix); updaterate_fp = fopen(nm,"w");
+        sprintf(nm,"LaWL%s_gc_valid.csv",   lat_suffix); gc_valid_fp   = fopen(nm,"w");
     }
     else{
 	u_check = fopen("Dyn_rrchecker.csv","w");
@@ -860,8 +873,14 @@ int main(int argc, char* argv[]){
                 build_hot_cold(newmeta,hotlist,coldlist);
                 hot_cold_list = 1;
             }
-            //rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
-            rrutil = -1.0; //override util so that WL always run in background mode.
+            // [SLACK-BASED + FIXED-LATENCY] LaWL relocation budget = foreground slack.
+            // find_worst_util_dec auto-dispatches on latency_mode (argv[12]):
+            //   STATE   -> state-aware WCU (identical to legacy find_worst_util)
+            //   FIXED_S -> WCU under fresh-block criterion (STARTW/STARTR/STARTE)
+            //   FIXED_E -> WCU under worn-block criterion  (ENDW /ENDR /ENDE)
+            // If foreground alone already saturates the CPU, rrutil <= 0 and
+            // find_RR_period falls back to LONG_MAX -> RR effectively background.
+            rrutil = 1.0 - find_worst_util_dec(tasks,tasknum,newmeta);
 
             long __rt0 = ovhd_now_us();
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
