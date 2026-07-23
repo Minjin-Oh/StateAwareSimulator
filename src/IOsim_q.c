@@ -260,13 +260,28 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
     metadata->runutils[1][taskidx] = exec_sum / period;
 }
 
-void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
+void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
                   int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp){
     if(gcq->reqnum != 0){
         //printf("[%ld]queue not empty, dl miss detected. task %d GC\n",cur_cp,taskidx);
         //sleep(3);
         //abort();
+    }
+    /* GC starvation guard: with heavy invalidation-shortage traces (e.g.
+     * UTILGC + INVW + RR005 driven past the invnum-fallback threshold), the
+     * full_head list can drain completely while callers still enter this
+     * function. The subsequent `cur->idx` deref previously SIGSEGV'd. Skip
+     * this GC release instead — the outer loop will detect the impending
+     * utilization overflow on its next cur_cp%1M tick and exit cleanly. */
+    if(full_head == NULL || full_head->head == NULL){
+        static int __gc_starved_reported = 0;
+        if(!__gc_starved_reported){
+            printf("[GC] full_head empty at cur_cp=%ld task=%d — GC starvation, skipping\n",
+                   cur_cp, taskidx);
+            __gc_starved_reported = 1;
+        }
+        return;
     }
     //params
     block* cur = full_head->head;

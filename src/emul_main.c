@@ -507,7 +507,10 @@ int main(int argc, char* argv[]){
         if(latency_mode == 1)      lat_suffix = "_fixedS";
         else if(latency_mode == 2) lat_suffix = "_fixedE";
         char nm[64];
-        // u_check = fopen("LaWL_rrchecker.csv","w");
+        /* u_check must be opened — print_profile_timestamp fprintf's into it
+         * unconditionally on the cur_cp%1M tick, and prior versions of this
+         * branch left it NULL, causing SIGSEGV in __vfprintf_internal. */
+        sprintf(nm,"LaWL%s_rrchecker.csv",  lat_suffix); u_check       = fopen(nm,"w");
         sprintf(nm,"LaWL%s_lifetime.csv",   lat_suffix); fplife        = fopen(nm,"a");
         sprintf(nm,"LaWL%s_overhead.csv",   lat_suffix); fpovhd        = fopen(nm,"a");
         sprintf(nm,"LaWL%s_updaterate.csv", lat_suffix); updaterate_fp = fopen(nm,"w");
