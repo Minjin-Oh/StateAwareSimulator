@@ -224,7 +224,18 @@ int main(int argc, char* argv[]){
     if(taskflag == 1){ //generate taskset and save
         float res = 1.0;
         task_gen_success = 0;
+        // [SCHED-SWEEP] retry cap: at high totutil the generator can spin
+        // indefinitely if no feasible taskset exists. Bail with a distinct
+        // exit code so the sweep script can skip this (util, seed) tuple.
+        const int TASKGEN_MAX_RETRIES = 200;
+        int taskgen_attempts = 0;
         while(task_gen_success == 0){
+            if(++taskgen_attempts > TASKGEN_MAX_RETRIES){
+                fprintf(stderr,
+                    "[TASKGEN] gave up after %d retries at totutil=%.3f skew=%d\n",
+                    TASKGEN_MAX_RETRIES, totutil, skewness);
+                return EXIT_TASKGEN_FAIL;
+            }
             if(skewness == -1){
                 rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
             }
@@ -651,7 +662,8 @@ int main(int argc, char* argv[]){
                 fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                 print_profile_updaterate(newmeta,updaterate_fp);
                 sleep(1);
-                return 1;
+                // [SCHED-SWEEP] periodic util-overflow exit
+                return EXIT_UTIL_OVERFLOW;
             }
         }
         for(int idx=0;idx<NOB;idx++){
@@ -679,7 +691,10 @@ int main(int argc, char* argv[]){
                 fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
                 fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                 sleep(1);
-                return 1;
+                // [SCHED-SWEEP] MAXPE reach is an endurance limit; the sweep
+                // classifier treats it as SUCCESS because schedulability was
+                // preserved up to that point (no deadline miss, no overflow).
+                return EXIT_MAXPE;
             } else {
                 /*do nothing*/
             }
@@ -730,8 +745,9 @@ int main(int argc, char* argv[]){
                         fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                         print_profile_updaterate(newmeta,updaterate_fp);
                         sleep(1);
-                        return 1;
-                        
+                        // [SCHED-SWEEP] post-GCER util-overflow exit
+                        return EXIT_UTIL_OVERFLOW;
+
                     }
                 }
                 
@@ -744,7 +760,8 @@ int main(int argc, char* argv[]){
                         fflush(fplife);
                         printf("dl miss detected,");
                         sleep(1);
-                        return 1;
+                        // [SCHED-SWEEP] real-time deadline miss -> unschedulable
+                        return EXIT_DL_MISS;
                     }
                     //set finish flags for scheduler, 
                     //and if current job is delayed, check if next release is possible.
@@ -1033,5 +1050,6 @@ int main(int argc, char* argv[]){
     fprintf(fplife,"%ld,",cur_cp);
     fflush(fplife);
     sleep(1);
-    return 0;
+    // [SCHED-SWEEP] main loop reached RUNTIME with no failure
+    return EXIT_SUCCESS_RUNTIME;
 }

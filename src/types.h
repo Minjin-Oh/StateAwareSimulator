@@ -8,6 +8,21 @@
 #define RRER 8
 #define BWR 9 // Background Write Relocation (aperiodic queue drain)
 
+// [SCHED-SWEEP] Distinct process exit codes for the four termination modes.
+// Sweep scripts read $? to classify each run without parsing stdout / csv.
+//   SUCCESS_RUNTIME : main loop reached RUNTIME with no failure
+//   MAXPE           : a block reached MAXPE P/E cycles (endurance limit,
+//                     but schedulability was preserved up to that point;
+//                     treated as SUCCESS by the sweep classifier)
+//   UTIL_OVERFLOW   : find_worst_util / print_profile returned total_u > 1.0
+//   DL_MISS         : check_dl_violation flagged a real-time deadline miss
+//   TASKGEN_FAIL    : task-generator retry cap exceeded (sweep should skip)
+#define EXIT_SUCCESS_RUNTIME 0
+#define EXIT_MAXPE           2
+#define EXIT_UTIL_OVERFLOW   1
+#define EXIT_DL_MISS         3
+#define EXIT_TASKGEN_FAIL    10
+
 // differentiate GCTHRESNOB and NOB
 // normally, GCTHRESNOB == NOB
 // to trigger GC earlier, GCTHRESNOB < NOB
