@@ -17,6 +17,12 @@ void set_scheme_flags(char* argv[],
         *gcflag = 6;
     } else if (strcmp(argv[1],"TESTGC")==0){
         *gcflag = 7;
+    } else if (strcmp(argv[1],"WAOGC")==0){
+        // [WAO-GC] Zhang et al. 2015 — greedy victim (least valid pages)
+        // with P/E-cycle wear-leveling tiebreaker + maximally postponed
+        // trigger (fire only when 1 free block is left). See find_gc_waogc
+        // in findGC.c and the GC-release check in emul_main.c.
+        *gcflag = 8;
     } else {
         *gcflag = 0;
     }

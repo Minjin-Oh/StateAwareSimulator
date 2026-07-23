@@ -663,3 +663,36 @@ block* find_gc_destination(meta* metadata, int lpa, long workload_reset_time, bh
     }
     return cur;
 }
+
+// [WAO-GC] Zhang et al. 2015, "Optimizing Deterministic Garbage Collection in
+// NAND Flash Storage Systems", DATE '15.
+//
+// Victim selection rule (Sec. IV-C, wear-leveler paragraph):
+//   1) Pick the block with the *fewest valid pages* (greedy). Combined with
+//      OP-based over-provisioning this guarantees valid_count <= U(lambda) =
+//      ceil(sigma * pi), which upper-bounds the copy work per GC.
+//   2) When multiple blocks tie on valid_count, prefer the one with the
+//      *lowest P/E cycle*. This is the embedded wear-leveler -- it distributes
+//      erases toward less-worn blocks without a separate WL job.
+//
+// No latency-based scoring here on purpose: the paper reduces GC to a
+// combinatorial victim pick + partial-step interleaving. Partial-step
+// interleaving is already provided by this simulator's per-page GC request
+// queue, so the only thing this function has to do is pick the victim.
+block* find_gc_waogc(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head){
+    (void)task; (void)taskidx; (void)tasknum;
+    block* best = NULL;
+    int best_valid = PPB + 1;   // sentinel: any real block beats this
+    int best_state = MAXPE + 1;
+    for(block* cur = full_head->head; cur != NULL; cur = cur->next){
+        int valid = PPB - metadata->invnum[cur->idx];
+        int st    = metadata->state[cur->idx];
+        if(valid < best_valid ||
+          (valid == best_valid && st < best_state)){
+            best       = cur;
+            best_valid = valid;
+            best_state = st;
+        }
+    }
+    return best;
+}

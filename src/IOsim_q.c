@@ -306,7 +306,13 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     else if (gcflag == 6){
         vic = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head);
     }
-    
+    // [WAO-GC] gcflag == 8 -> greedy victim (least valid) with P/E-cycle
+    // wear-leveling tiebreak. Trigger side (postponement) is handled in
+    // emul_main.c GC-release check.
+    else if (gcflag == 8){
+        vic = find_gc_waogc(tasks,taskidx,tasknum,metadata,full_head);
+    }
+
     //     //find gc target
 //     if (gcflag == 1){
 //         gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);

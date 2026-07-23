@@ -504,6 +504,16 @@ int main(int argc, char* argv[]){
         sprintf(nm,"LaWL%s_updaterate.csv", lat_suffix); updaterate_fp = fopen(nm,"w");
         sprintf(nm,"LaWL%s_gc_valid.csv",   lat_suffix); gc_valid_fp   = fopen(nm,"w");
     }
+    // [WAO-GC] Zhang et al. 2015 standalone run: greedy+WL GC, no clustering
+    // write policy, no RR. Kept separate so its lifetime / GC-valid traces
+    // don't collide with LaWL or the else-bucket "Dyn_*.csv".
+    else if(wflag == 0 && gcflag == 8 && rrflag == -1){
+        u_check        = fopen("WAOGC_rrchecker.csv","w");
+        fplife         = fopen("WAOGC_lifetime.csv","a");
+        fpovhd         = fopen("WAOGC_overhead.csv","a");
+        updaterate_fp  = fopen("WAOGC_updaterate.csv","w");
+        gc_valid_fp    = fopen("WAOGC_gc_valid.csv","w");
+    }
     else{
 	u_check = fopen("Dyn_rrchecker.csv","w");
         fplife = fopen("Dyn_lifetime.csv","a");
@@ -837,8 +847,17 @@ int main(int argc, char* argv[]){
                 next_r_release[j] = cur_cp + (long)tasks[j].rp;
             }
 
-            if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){          
-                if(newmeta->total_fp <= expected_fp){
+            if(cur_cp == next_gc_release[j] && gcjob_finished[j] == 1){
+                // [WAO-GC] Zhang et al. 2015: postpone GC to the latest stage.
+                // Fire only when a single free block remains; the k+lambda<=pi
+                // invariant (guaranteed by OP) ensures the last free block can
+                // absorb both incoming writes and copied valid pages while the
+                // partial-GC steps run interleaved. Other gcflags keep the
+                // legacy heuristic expected_fp check.
+                int wao_should_gc = (gcflag == 8)
+                                    ? (fblist_head->blocknum <= 1)
+                                    : (newmeta->total_fp <= expected_fp);
+                if(wao_should_gc){
                     //printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
                     //printf("total_fp : %d, expected_fp : %d\n",newmeta->total_fp,expected_fp);
                     //printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
