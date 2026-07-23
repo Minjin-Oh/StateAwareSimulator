@@ -7,8 +7,12 @@
 #include "ovhd_stats.h"
 
 extern int rrflag;
+extern int rrcond;   /* BGRR "force background" mode uses rrcond==7 */
 extern bhead* glob_yb;
 extern bhead* glob_ob;
+
+/* rrcond value set by parse.c for BGRR. See src/parse.c and emul_main.c. */
+#define RRCOND_BGRR 7
 
 void make_req_gc(meta* metadata, rttask* tasks, int taskidx, long cur_cp, block* vic, block* rsv, IOhead* gcq, bhead* full_head, bhead* write_head, bhead* fblist_head, GCblock* cur_GC){
     //a function which 1. makes gc request and 2. inserts request into gc request queue
@@ -577,7 +581,10 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     // find_RR_period(...,1.0,...) returns ceil(C / 1.0) = C, so rr_exec is the
     // pair's total execution time under the current LaWL latency lens
     // (state-aware or fixed via latency_mode; see findRR.c edits).
-    if (rrflag == 1){
+    // BGRR (rrcond==RRCOND_BGRR): admit unconditionally and force LONG_MAX
+    // period so the request-pick logic only serves this RR when no
+    // foreground (W/R/GC) job is pending.
+    if (rrflag == 1 && rrcond != RRCOND_BGRR){
         long rr_exec = find_RR_period(vic1, vic2, v1_cnt, v2_cnt, 1.0, metadata);
         if (rr_exec <= 0){
             return;
@@ -598,10 +605,16 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
         }
     }
 
-    rrp = find_RR_period(vic1,vic2,v1_cnt,v2_cnt,rrutil, metadata);
-    if(rrutil <= 0.0){
-        // foreground saturated -> keep RR effectively background.
+    if (rrflag == 1 && rrcond == RRCOND_BGRR){
+        // Aperiodic background: infinite nominal period → deadline in the
+        // far future → outranked by any W/R/GC in request pick.
         rrp = __LONG_MAX__ - cur_cp;
+    } else {
+        rrp = find_RR_period(vic1,vic2,v1_cnt,v2_cnt,rrutil, metadata);
+        if(rrutil <= 0.0){
+            // foreground saturated -> keep RR effectively background.
+            rrp = __LONG_MAX__ - cur_cp;
+        }
     }
     //copy the metadata into temp param and use temp
     //make sure that metadata update do NOT generate concurrency issue.

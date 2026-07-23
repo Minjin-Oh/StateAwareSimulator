@@ -104,6 +104,15 @@ void set_scheme_flags(char* argv[],
     else if (strcmp(argv[3],"BESTR")==0){//always SKIP RR
         *rrflag = 2;
     }
+    /* Background-only relocation: same victim selection as RR005/DORR/etc.
+     * (rrflag=1), but IOsim_q.c's RR_job_start_q honors rrcond==RRCOND_BGRR
+     * by (a) skipping the slack-based admission check and (b) forcing the
+     * relocation period to LONG_MAX so the request pick logic only serves
+     * RR when no fg job is pending. */
+    else if (strcmp(argv[3],"BGRR")==0){
+        *rrflag = 1;
+        *rrcond = 7;
+    }
 }
 
 void set_exec_flags(char* argv[], int *tasknum, float *totutil,

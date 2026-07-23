@@ -16,6 +16,9 @@
 //globals
 block* cur_fb = NULL;
 int rrflag = 0;
+/* Promoted from main-local so IOsim_q.c's RR_job_start_q can gate on it
+ * (see RRCOND_BGRR = 7 = BGRR "force background" mode from parse.c). */
+int rrcond = 0;
 /* Cached extrema of metadata->state[] across all NOB blocks.
  * state[] is mutated only at emul.c:finish_GCER (state[vicidx]++), so the
  * cache is valid until the next GC erase completes. Cleared by finish_GCER
@@ -94,7 +97,7 @@ int main(int argc, char* argv[]){
     //initialize flag variables
     int gcflag = 0;
     int wflag = 0;
-    int rrcond = 0; 
+    /* rrcond is a file-scope global (set by set_scheme_flags below). */
     int tasknum;
     int genflag = 0;
     int taskflag = 0;
@@ -506,15 +509,18 @@ int main(int argc, char* argv[]){
         const char* lat_suffix = "";
         if(latency_mode == 1)      lat_suffix = "_fixedS";
         else if(latency_mode == 2) lat_suffix = "_fixedE";
-        char nm[64];
+        /* BGRR variant tags outputs so a paired foreground-slack run and a
+         * background-only run don't clobber each other. */
+        const char* rr_suffix = (rrcond == 7) ? "_bgrr" : "";
+        char nm[80];
         /* u_check must be opened — print_profile_timestamp fprintf's into it
          * unconditionally on the cur_cp%1M tick, and prior versions of this
          * branch left it NULL, causing SIGSEGV in __vfprintf_internal. */
-        sprintf(nm,"LaWL%s_rrchecker.csv",  lat_suffix); u_check       = fopen(nm,"w");
-        sprintf(nm,"LaWL%s_lifetime.csv",   lat_suffix); fplife        = fopen(nm,"a");
-        sprintf(nm,"LaWL%s_overhead.csv",   lat_suffix); fpovhd        = fopen(nm,"a");
-        sprintf(nm,"LaWL%s_updaterate.csv", lat_suffix); updaterate_fp = fopen(nm,"w");
-        sprintf(nm,"LaWL%s_gc_valid.csv",   lat_suffix); gc_valid_fp   = fopen(nm,"w");
+        sprintf(nm,"LaWL%s%s_rrchecker.csv",  lat_suffix, rr_suffix); u_check       = fopen(nm,"w");
+        sprintf(nm,"LaWL%s%s_lifetime.csv",   lat_suffix, rr_suffix); fplife        = fopen(nm,"a");
+        sprintf(nm,"LaWL%s%s_overhead.csv",   lat_suffix, rr_suffix); fpovhd        = fopen(nm,"a");
+        sprintf(nm,"LaWL%s%s_updaterate.csv", lat_suffix, rr_suffix); updaterate_fp = fopen(nm,"w");
+        sprintf(nm,"LaWL%s%s_gc_valid.csv",   lat_suffix, rr_suffix); gc_valid_fp   = fopen(nm,"w");
     }
     else{
 	u_check = fopen("Dyn_rrchecker.csv","w");
