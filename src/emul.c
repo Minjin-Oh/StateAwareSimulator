@@ -2,6 +2,7 @@
 #include "emul.h"
 
 extern long cur_cp;
+extern int state_cache_dirty;  /* emul_main.c: state[] extrema/MAXPE cache */
 
 void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     int lpa, ppa, old_ppa, old_block;
@@ -53,6 +54,7 @@ void finish_GCER(rttask* task, IO* cur_IO, meta* metadata, bhead* fblist_head, b
     metadata->invnum[vicidx] = 0;
     metadata->access_window[vicidx] = 0;
     metadata->state[vicidx]++;
+    state_cache_dirty = 1;  /* extrema/MAXPE cache in emul_main.c must be refreshed next tick */
     metadata->EEC[vicidx]++;
     metadata->total_invalid -= PPB - cur_IO->gc_valid_count;
 
@@ -134,7 +136,12 @@ long find_next_time(rttask* tasks, int tasknum, long cur_dl, long wl_next, long 
             res_task = i;
         }
     }
-    res = res >= wl_next ? wl_next : res;
+    /* wl_next is an absolute wake-up time; only honor it when it lies in the
+     * future. A wake-up in the past has already been handled by its guard
+     * (or is disabled, in which case the caller passes a sentinel <= cur_cp)
+     * and must not pull cur_cp backward — that previously deadlocked the
+     * simulator at cur_cp=100000 once rr_check (fixed 100000) was overtaken. */
+    if (wl_next > cur_cp && wl_next < res) res = wl_next;
     res = res >= cur_dl  ? cur_dl  : res;
     return res;
 }

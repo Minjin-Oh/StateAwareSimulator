@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -W 
+CFLAGS = -g -W -DOVHD_NO_RAW
 LDFLAGS = -lm -ldl
 
 #source directory

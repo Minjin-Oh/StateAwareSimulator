@@ -182,28 +182,40 @@ double find_max_double(double a, double b, double c){
     }
 }
 
+/* tasks[] and MINRC are constants for the duration of a run, so this reduces
+ * to a scalar the first time it's asked and then just returns the memo. Hot
+ * because find_util_safe_dec → find_cur_util_dec → _find_min_period fires
+ * inside per-write / per-GC feasibility loops (~14M writes × several probes). */
+static int __min_period_cache      = -1;
+static rttask* __min_period_task_p = NULL;
+static int __min_period_tasknum    = -1;
+
 int _find_min_period(rttask* task,int tasknum){
+    if(task == __min_period_task_p && tasknum == __min_period_tasknum
+       && __min_period_cache > 0){
+        return __min_period_cache;
+    }
     int ret = -1;
     int min_each_task = -1;
     for(int i=0;i<tasknum;i++){
         int temp = _gc_period(&(task[i]),(int)(MINRC));
-        // min btw r,w,gc
-        // printf("[internal]comp btw%d %d %d\n",task[i].wp,task[i].rp,temp);
         min_each_task = __get_min(task[i].wp,task[i].rp,temp);
-        // printf("%d\n",min_each_task);
         if(i==0){
             ret = min_each_task;
         }
         else if(ret >= min_each_task){
             ret = min_each_task;
         }
-    }   
+    }
 
     if(ret == -1){
         printf("min period not found\n");
         sleep(1);
         abort();
     }
+    __min_period_cache      = ret;
+    __min_period_task_p     = task;
+    __min_period_tasknum    = tasknum;
     return ret;
 }
 

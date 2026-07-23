@@ -16,6 +16,16 @@
 //globals
 block* cur_fb = NULL;
 int rrflag = 0;
+/* Cached extrema of metadata->state[] across all NOB blocks.
+ * state[] is mutated only at emul.c:finish_GCER (state[vicidx]++), so the
+ * cache is valid until the next GC erase completes. Cleared by finish_GCER
+ * via state_cache_dirty and recomputed once per outer-loop iteration when
+ * dirty. Replaces two per-iteration get_blockstate_meta() calls plus the
+ * inline MAXPE scan (previously 3 * NOB=1000 int compares every tick). */
+int state_cache_dirty = 1;
+int cached_yngest = 0;
+int cached_oldest = 0;
+int cached_maxpe_idx = -1;   /* first idx observed at state[]>=MAXPE, else -1 */
 int MINRC;              //minimum reclaimable page, assigned by set_exec_flags in parse.c
 double OP;              //overprovisioning rate, assigned by set_exec_flags in parse.c
 int THRES_COLD = 35;    //a global threshold for write-cold block determination, used in find_WR_target_simple() in findRR.c
@@ -149,7 +159,6 @@ int main(int argc, char* argv[]){
     int oldest;
     int yngest;
     int over_avg = 0;
-    long rr_check = (long)100000;
 
     IO* cur_IO = NULL;
     wq = (IOhead**)malloc(sizeof(IOhead*)*tasknum);
@@ -609,8 +618,26 @@ int main(int argc, char* argv[]){
     gettimeofday(&(tot_start_time),NULL);
     //start of simulation
     while(cur_cp <= RUNTIME){
-        yngest = get_blockstate_meta(newmeta,YOUNG);
-        oldest = get_blockstate_meta(newmeta,OLD);
+        /* Refresh state[] extrema cache only when GC completion has bumped a
+         * P/E cycle. Single pass computes yngest, oldest, and MAXPE hit in
+         * one sweep of NOB entries. */
+        if(state_cache_dirty){
+            int __y = newmeta->state[0];
+            int __o = newmeta->state[0];
+            int __mp = -1;
+            for(int __i=0; __i<NOB; __i++){
+                int __s = newmeta->state[__i];
+                if(__s < __y) __y = __s;
+                if(__s > __o) __o = __s;
+                if(__mp == -1 && __s >= MAXPE) __mp = __i;
+            }
+            cached_yngest = __y;
+            cached_oldest = __o;
+            cached_maxpe_idx = __mp;
+            state_cache_dirty = 0;
+        }
+        yngest = cached_yngest;
+        oldest = cached_oldest;
         //flash state checker
         if(cur_cp % 1000000L == 0){
 	    total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
@@ -644,10 +671,11 @@ int main(int argc, char* argv[]){
                 return 1;
             }
         }
-        for(int idx=0;idx<NOB;idx++){
-            if(newmeta->state[idx] >= MAXPE){
+        if(cached_maxpe_idx >= 0){
+            int idx = cached_maxpe_idx;
+            {
                 total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-                printf("[%ld]a block reach maximum P/E, util : %d\n",total_u);
+                printf("[%ld]a block(idx=%d) reached maximum P/E, util : %f\n",cur_cp, idx, total_u);
                 gettimeofday(&tot_end_time,NULL);                                                                     tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
                 tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
                 if(write_release_num != 0){
@@ -670,8 +698,6 @@ int main(int argc, char* argv[]){
                 fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                 sleep(1);
                 return 1;
-            } else {
-                /*do nothing*/
             }
         }
         //execution order must be (req completion --> job release --> req pick)
@@ -1006,7 +1032,10 @@ int main(int argc, char* argv[]){
         }
         
         //go to the next checkpoint
-        cur_cp = find_next_time(tasks,tasknum,cur_IO_end,rr_check,cur_cp,
+        /* Pass the actual RR admission wake-up gate as wl_next. In SKIPRR
+         * (rrflag==-1) the RR block never runs and next_rr_check stays at 0,
+         * so find_next_time's past-time guard drops it → no clamp. */
+        cur_cp = find_next_time(tasks,tasknum,cur_IO_end,next_rr_check,cur_cp,
                                 next_w_release,next_r_release,next_gc_release);
         //printf("[fnt res]next_time : %ld\n",cur_cp);
     }

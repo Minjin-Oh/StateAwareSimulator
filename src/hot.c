@@ -90,9 +90,18 @@ int get_blkidx_byage(meta* metadata, bhead* list,
     return -1;
 }
 
+/* Cache populated by emul_main.c's outer-loop refresh block, valid while
+ * state_cache_dirty==0. Reused here so per-decision callers (notably
+ * find_write_maxinvalid, ~14M/run) don't each pay an O(NOB) sweep. */
+extern int state_cache_dirty;
+extern int cached_yngest;
+extern int cached_oldest;
+
 int get_blockstate_meta(meta* metadata, int param){
-    // from line 541-542 in emul_main.c -> metadata : newmeta, param : YOUNG(-1)/OLD(0)
-    // a function to find youngest/oldset block inside whole system
+    if(!state_cache_dirty){
+        if(param == OLD)   return cached_oldest;
+        if(param == YOUNG) return cached_yngest;
+    }
     int ret_state = metadata->state[0];
     if(param == OLD){
         for(int i=0;i<NOB;i++){

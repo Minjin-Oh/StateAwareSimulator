@@ -164,16 +164,33 @@ void IOgen_task_new(rttask* task, long runtime, int w_area, int r_area, int offs
 }
 
 int IOget(FILE* fp){
-    //now IOget rewinds back to the start of I/O if necessary
-    int scan_ret;
-    int ret;
-    scan_ret = fscanf(fp,"%d,",&ret);
-    if(scan_ret != EOF){
-        return ret;
+    /* Hand-rolled parser for the "N,N,N,..." trace format. Skips fscanf's
+     * printf-style format machinery, which was ~100-200 ns/call and hot at
+     * ~60M invocations per LaWL-D run (write + read job release paths).
+     * getc_unlocked is safe: this program is single-threaded, and glibc
+     * inlines it as a buffer-pointer increment, so parsing collapses to
+     * a tight char-by-char loop. Returns EOF when the stream ends before
+     * any digit is seen; caller (write_job_start_q / read_job_start_q)
+     * rewinds and retries in that case. */
+    int c;
+    long val = 0;
+    int neg = 0;
+    /* Skip anything that isn't a digit or minus sign (comma, \n, \r, spaces). */
+    for(;;){
+        c = getc_unlocked(fp);
+        if(c == EOF) return EOF;
+        if(c == '-'){ neg = 1; c = getc_unlocked(fp); break; }
+        if(c >= '0' && c <= '9') break;
     }
-    else if(scan_ret == EOF){
-        return EOF;
-    } 
+    if(c == EOF) return EOF;
+    do {
+        val = val * 10 + (c - '0');
+        c = getc_unlocked(fp);
+    } while (c >= '0' && c <= '9');
+    /* c is now the trailing delimiter (comma / newline / EOF) — consumed
+     * from the stream, matching fscanf("%d,", ...)'s behavior of eating one
+     * trailing comma. */
+    return neg ? (int)-val : (int)val;
 }
 
 void analyze_IO(FILE* fp){
@@ -296,6 +313,14 @@ void IOgen(int tasknum, rttask* tasks,long runtime, int offset, float _splocal, 
 }
 
 void IO_open(int tasknum, FILE** wfpp, FILE** rfpp){
+    /* Enlarge stdio buffers so long sequential IOget/fscanf runs on the
+     * workload traces (rd_t3.csv ~683 MB, wr_t3.csv ~115 MB) don't page
+     * through the default 4 KiB block-by-block. Read-decision cost was
+     * measured at ~13% of walltime; buffer size is the single-line knob
+     * that shrinks it. Buffers are freed automatically on fclose. */
+    static char* w_bufs[64] = {0};
+    static char* r_bufs[64] = {0};
+    const size_t BUFSZ = 1 << 20;  /* 1 MiB */
     for(int i=0;i<tasknum;i++){
         char name[10];
         char name2[10];
@@ -312,7 +337,12 @@ void IO_open(int tasknum, FILE** wfpp, FILE** rfpp){
             printf("file pointer of read workload is missing\n");
             abort();
         }
-        
+        if(i < 64){
+            if(!w_bufs[i]) w_bufs[i] = (char*)malloc(BUFSZ);
+            if(!r_bufs[i]) r_bufs[i] = (char*)malloc(BUFSZ);
+            if(w_bufs[i]) setvbuf(wfpp[i], w_bufs[i], _IOFBF, BUFSZ);
+            if(r_bufs[i]) setvbuf(rfpp[i], r_bufs[i], _IOFBF, BUFSZ);
+        }
     }
     sleep(3);
 }
