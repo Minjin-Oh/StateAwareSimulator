@@ -112,7 +112,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
 // call site in emul_main.c (the earlier declaration listed skewnum/T_reloc/
 // U_slack params that no longer exist in the implementation).
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
-                    IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, long last_rr_cp);
+                    IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp);
 
 //file open 
 // FILE* open_file_bycase(int gcflag, int wflag, int rrflag);

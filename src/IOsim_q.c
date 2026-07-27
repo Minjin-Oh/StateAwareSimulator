@@ -498,7 +498,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
 }
 
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
-                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, long last_rr_cp){
+                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp){
     char reloc_w = 0;
     char reloc_r = 0;
     int vic1 = -1;
@@ -572,50 +572,15 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     v2_state = metadata->state[vb2->idx];
     v1_cnt = PPB - metadata->invnum[vic1];
     v2_cnt = PPB - metadata->invnum[vic2];
-    // [SLACK-BASED] 5. slack-based aperiodic admission check for LaWL.
-    // U_relocation = C_relocation / T_relocation, where
-    //   C_relocation : total exec of the selected (vic1, vic2) pair
-    //   T_relocation : aperiodic period (= cur_cp - last relocation release cp)
-    // If actual C/T already exceeds the slack budget rrutil, skip this release.
-    //
-    // find_RR_period(...,1.0,...) returns ceil(C / 1.0) = C, so rr_exec is the
-    // pair's total execution time under the current LaWL latency lens
-    // (state-aware or fixed via latency_mode; see findRR.c edits).
-    // BGRR (rrcond==RRCOND_BGRR): admit unconditionally and force LONG_MAX
-    // period so the request-pick logic only serves this RR when no
-    // foreground (W/R/GC) job is pending.
-    if (rrflag == 1 && rrcond != RRCOND_BGRR){
-        long rr_exec = find_RR_period(vic1, vic2, v1_cnt, v2_cnt, 1.0, metadata);
-        if (rr_exec <= 0){
-            return;
-        }
-        long t_reloc;
-        if (last_rr_cp < 0){
-            // first-ever release: use cur_cp as the elapsed proxy (>=1 to avoid /0).
-            t_reloc = (cur_cp > 0) ? cur_cp : 1;
-        } else {
-            t_reloc = cur_cp - last_rr_cp;
-        }
-        if (t_reloc <= 0){
-            return;
-        }
-        if (rrutil <= ((double)rr_exec / (double)t_reloc)){
-            // no slack left for this relocation right now -> skip, retry after TRELOC.
-            return;
-        }
+
+    // find data relocation period
+
+    rrp = find_RR_period(vic1,vic2,v1_cnt,v2_cnt,rrutil, metadata);
+    if(rrutil <= 0.0){
+        // foreground saturated -> keep RR effectively background.
+        rrp = __LONG_MAX__ - cur_cp;
     }
 
-    if (rrflag == 1 && rrcond == RRCOND_BGRR){
-        // Aperiodic background: infinite nominal period → deadline in the
-        // far future → outranked by any W/R/GC in request pick.
-        rrp = __LONG_MAX__ - cur_cp;
-    } else {
-        rrp = find_RR_period(vic1,vic2,v1_cnt,v2_cnt,rrutil, metadata);
-        if(rrutil <= 0.0){
-            // foreground saturated -> keep RR effectively background.
-            rrp = __LONG_MAX__ - cur_cp;
-        }
-    }
     //copy the metadata into temp param and use temp
     //make sure that metadata update do NOT generate concurrency issue.
     memcpy(&temp,metadata,sizeof(meta));
@@ -646,9 +611,9 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     cur_RR->cur_vic2 = vb2;
     cur_RR->execution_time = execution_time;
     cur_RR->rrcheck = cur_cp + rrp;
-    // if(rrutil <= 0.0){
-    //     cur_RR->rrcheck = cur_cp + find_RR_period(vic1,vic2,v1_cnt,v2_cnt,0.025,metadata);
-    // }
+    if(rrutil <= 0.0){
+        cur_RR->rrcheck = cur_cp + find_RR_period(vic1,vic2,v1_cnt,v2_cnt,0.025,metadata);
+    }
     //printf("[RR_S]util : %f, exec : %ld, period : %ld, cur_cp : %ld, rrcheck : %ld\n",rrutil,execution_time,rrp,cur_cp,cur_cp+rrp);
     //printf("[RR_S]swap %d and %d,v1_cnt + v2_cnt = %d\n",cur_RR->cur_vic1->idx,cur_RR->cur_vic2->idx,v1_cnt+v2_cnt);
     //printf("[RR_S]%d + %d, %d + %d\n",v1_cnt, cur_RR->cur_vic1->fpnum, v2_cnt,cur_RR->cur_vic2->fpnum);

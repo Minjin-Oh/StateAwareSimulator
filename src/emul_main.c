@@ -199,7 +199,6 @@ int main(int argc, char* argv[]){
     long write_release_num = 0;
     long gc_release_num = 0;
     long rr_release_num = 0;
-    long last_rr_release_cp = -1L;
     long write_ovhd_sum = 0;
     long gc_ovhd_sum = 0;
     long rr_ovhd_sum = 0;
@@ -936,14 +935,15 @@ int main(int argc, char* argv[]){
             //   FIXED_E -> WCU under worn-block criterion  (ENDW /ENDR /ENDE)
             // If foreground alone already saturates the CPU, rrutil <= 0 and
             // find_RR_period falls back to LONG_MAX -> RR effectively background.
+
+            // rrutil = -1.0; //override util so that WL always run in background mode.
             rrutil = 1.0 - find_worst_util_assumed(tasks,tasknum,newmeta);
 
             long __rt0 = ovhd_now_us();
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
-                            rr,&(cur_rr),(double)rrutil,cur_cp,last_rr_release_cp);
+                            rr,&(cur_rr),(double)rrutil,cur_cp);
 	    if(rr->reqnum != 0){
 		rr_release_num++;
-		last_rr_release_cp = cur_cp;
 	    }
             {
                 long __d = ovhd_now_us() - __rt0;
@@ -956,7 +956,7 @@ int main(int argc, char* argv[]){
             else {
                 rr_finished = 1;
             }
-            next_rr_check = cur_cp + TRELOC; //advance gate regardless of admit outcome (skip-counter semantics, Eq. 13)
+            // next_rr_check = cur_cp + TRELOC; //advance gate regardless of admit outcome (skip-counter semantics, Eq. 13)
             do_rr = 0;
         }
         /*
