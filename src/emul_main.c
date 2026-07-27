@@ -481,12 +481,22 @@ int main(int argc, char* argv[]){
     //init csv files
     // fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
     
+    /* Ablation sweeps (run_ablation.sh) accumulate lifetime/overhead across
+     * many tasksets via fopen("a"). Writing directly into ablation/<mode>/
+     * lets the natural append mode do the work — no per-iteration bash cat/mv
+     * needed. Fallback to CWD preserves standalone use of this binary when
+     * the ablation/ directory tree isn't present. */
     if(wflag == 0 && gcflag == 0 && rrflag == -1){
-        u_check = fopen("Baseline_rrchecker.csv","w");
-	fplife = fopen("Baseline_lifetime.csv","a");
-        fpovhd = fopen("Baseline_overhead.csv","a");
-	updaterate_fp = fopen("Baseline_updaterate.csv","w");
-	gc_valid_fp = fopen("Baseline_gc_valid.csv","w");
+        // u_check = fopen("Baseline_rrchecker.csv","w");                 // disabled: ablation sweep doesn't need per-cycle profile
+        u_check = NULL;
+        fplife = fopen("ablation/baseline/Baseline_lifetime.csv","a");
+        if(!fplife) fplife = fopen("Baseline_lifetime.csv","a");
+        fpovhd = fopen("ablation/baseline/Baseline_overhead.csv","a");
+        if(!fpovhd) fpovhd = fopen("Baseline_overhead.csv","a");
+        // updaterate_fp = fopen("Baseline_updaterate.csv","w");           // disabled
+        updaterate_fp = NULL;
+        // gc_valid_fp = fopen("Baseline_gc_valid.csv","w");               // disabled
+        gc_valid_fp = NULL;
     }
     else if(wflag == 11 && gcflag == 0 && rrflag ==  0){
 	// u_check = fopen("Hyb_rrchecker.csv","w");
@@ -496,30 +506,42 @@ int main(int argc, char* argv[]){
 	gc_valid_fp = fopen("Hyb_gc_valid.csv","w");
     }
     else if(wflag == 14 && gcflag == 6 && rrflag == -1){
-	u_check = fopen("LaWL_D_rrchecker.csv","w");
-        fplife = fopen("LaWL_D_lifetime.csv","a");
-        fpovhd = fopen("LaWL_D_overhead.csv","a");
-	updaterate_fp = fopen("LaWL_D_updaterate.csv","w");
-	gc_valid_fp = fopen("LaWL_D_gc_valid.csv","w");
+        // u_check = fopen("LaWL_D_rrchecker.csv","w");                    // disabled
+        u_check = NULL;
+        fplife = fopen("ablation/LaWL-D/LaWL_D_lifetime.csv","a");
+        if(!fplife) fplife = fopen("LaWL_D_lifetime.csv","a");
+        fpovhd = fopen("ablation/LaWL-D/LaWL_D_overhead.csv","a");
+        if(!fpovhd) fpovhd = fopen("LaWL_D_overhead.csv","a");
+        // updaterate_fp = fopen("LaWL_D_updaterate.csv","w");             // disabled
+        updaterate_fp = NULL;
+        // gc_valid_fp = fopen("LaWL_D_gc_valid.csv","w");                 // disabled
+        gc_valid_fp = NULL;
     }
     else if(wflag == 14 && gcflag == 6 && rrflag == 1){
         // [FIXED-LATENCY] tag output files so STATE / FIXED_S / FIXED_E runs of
         // the same LaWL (UTILGC INVW RR005) config don't overwrite each other.
         const char* lat_suffix = "";
-        if(latency_mode == 1)      lat_suffix = "_fixedS";
-        else if(latency_mode == 2) lat_suffix = "_fixedE";
+        const char* ablation_dir = "LaWL";
+        if(latency_mode == 1){      lat_suffix = "_fixedS"; ablation_dir = "fixed-S"; }
+        else if(latency_mode == 2){ lat_suffix = "_fixedE"; ablation_dir = "fixed-E"; }
         /* BGRR variant tags outputs so a paired foreground-slack run and a
          * background-only run don't clobber each other. */
         const char* rr_suffix = (rrcond == 7) ? "_bgrr" : "";
-        char nm[80];
-        /* u_check must be opened — print_profile_timestamp fprintf's into it
-         * unconditionally on the cur_cp%1M tick, and prior versions of this
-         * branch left it NULL, causing SIGSEGV in __vfprintf_internal. */
-        sprintf(nm,"LaWL%s%s_rrchecker.csv",  lat_suffix, rr_suffix); u_check       = fopen(nm,"w");
-        sprintf(nm,"LaWL%s%s_lifetime.csv",   lat_suffix, rr_suffix); fplife        = fopen(nm,"a");
-        sprintf(nm,"LaWL%s%s_overhead.csv",   lat_suffix, rr_suffix); fpovhd        = fopen(nm,"a");
-        sprintf(nm,"LaWL%s%s_updaterate.csv", lat_suffix, rr_suffix); updaterate_fp = fopen(nm,"w");
-        sprintf(nm,"LaWL%s%s_gc_valid.csv",   lat_suffix, rr_suffix); gc_valid_fp   = fopen(nm,"w");
+        char nm[80], path[160];
+        // sprintf(nm,"LaWL%s%s_rrchecker.csv",  lat_suffix, rr_suffix); u_check       = fopen(nm,"w");   // disabled
+        u_check = NULL;
+        sprintf(nm,"LaWL%s%s_lifetime.csv", lat_suffix, rr_suffix);
+        snprintf(path, sizeof(path), "ablation/%s/%s", ablation_dir, nm);
+        fplife = fopen(path,"a");
+        if(!fplife) fplife = fopen(nm,"a");
+        sprintf(nm,"LaWL%s%s_overhead.csv", lat_suffix, rr_suffix);
+        snprintf(path, sizeof(path), "ablation/%s/%s", ablation_dir, nm);
+        fpovhd = fopen(path,"a");
+        if(!fpovhd) fpovhd = fopen(nm,"a");
+        // sprintf(nm,"LaWL%s%s_updaterate.csv", lat_suffix, rr_suffix); updaterate_fp = fopen(nm,"w");   // disabled
+        updaterate_fp = NULL;
+        // sprintf(nm,"LaWL%s%s_gc_valid.csv",   lat_suffix, rr_suffix); gc_valid_fp   = fopen(nm,"w");   // disabled
+        gc_valid_fp = NULL;
     }
     else{
 	u_check = fopen("Dyn_rrchecker.csv","w");
@@ -622,28 +644,29 @@ int main(int argc, char* argv[]){
         test_gc_writeblock[i] = fopen(testgcwriteblockname,"w");
     }
 #endif
-    /* Mode-specific overhead-profile basename. Mirrors the per-branch CSV
-     * naming above so parallel ablation runs (baseline / LaWL_D / LaWL /
-     * LaWL_fixedS / LaWL_fixedE / …) don't clobber each other's
-     * ovhd_dist_summary.csv on atexit. */
-    {
-        char ovhd_base[80];
-        if (wflag == 0 && gcflag == 0 && rrflag == -1){
-            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Baseline");
-        } else if (wflag == 11 && gcflag == 0 && rrflag == 0){
-            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Hyb");
-        } else if (wflag == 14 && gcflag == 6 && rrflag == -1){
-            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_LaWL_D");
-        } else if (wflag == 14 && gcflag == 6 && rrflag == 1){
-            const char* lat = (latency_mode == LATENCY_MODE_FIXED_BOL) ? "_fixedS"
-                            : (latency_mode == LATENCY_MODE_FIXED_EOL) ? "_fixedE" : "";
-            const char* rr  = (rrcond == 7) ? "_bgrr" : "";
-            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_LaWL%s%s", lat, rr);
-        } else {
-            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Dyn");
-        }
-        ovhd_init(ovhd_base); /* atexit dumps <base>_summary.csv */
-    }
+    /* Mode-specific overhead-profile basename (disabled — ablation sweep
+     * only needs lifetime/overhead CSVs). ovhd_record() calls elsewhere
+     * still accumulate in-memory stats; file I/O is disabled at the
+     * ovhd_stats.c level (no raw dump, no atexit summary).
+     * {
+     *     char ovhd_base[80];
+     *     if (wflag == 0 && gcflag == 0 && rrflag == -1){
+     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Baseline");
+     *     } else if (wflag == 11 && gcflag == 0 && rrflag == 0){
+     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Hyb");
+     *     } else if (wflag == 14 && gcflag == 6 && rrflag == -1){
+     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_LaWL_D");
+     *     } else if (wflag == 14 && gcflag == 6 && rrflag == 1){
+     *         const char* lat = (latency_mode == LATENCY_MODE_FIXED_BOL) ? "_fixedS"
+     *                         : (latency_mode == LATENCY_MODE_FIXED_EOL) ? "_fixedE" : "";
+     *         const char* rr  = (rrcond == 7) ? "_bgrr" : "";
+     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_LaWL%s%s", lat, rr);
+     *     } else {
+     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Dyn");
+     *     }
+     *     ovhd_init(ovhd_base);
+     * }
+     */
     gettimeofday(&(tot_start_time),NULL);
     //start of simulation
     while(cur_cp <= RUNTIME){
@@ -936,8 +959,8 @@ int main(int argc, char* argv[]){
             // If foreground alone already saturates the CPU, rrutil <= 0 and
             // find_RR_period falls back to LONG_MAX -> RR effectively background.
 
-            // rrutil = -1.0; //override util so that WL always run in background mode.
-            rrutil = 1.0 - find_worst_util_assumed(tasks,tasknum,newmeta);
+            rrutil = -1.0; //override util so that WL always run in background mode.
+            // rrutil = 1.0 - find_worst_util_assumed(tasks,tasknum,newmeta);
 
             long __rt0 = ovhd_now_us();
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,

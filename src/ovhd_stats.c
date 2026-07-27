@@ -61,6 +61,10 @@ void ovhd_init(const char* basename){
         g_st[i].min_v = -1;
         g_st[i].first_sim = -1;
     }
+    /* ovhd file I/O disabled — ablation sweep only needs lifetime/overhead
+     * CSVs. In-memory recording still runs (ovhd_record accumulates stats)
+     * but no raw file is created and no summary is dumped on exit. */
+#if 0
 #ifndef OVHD_NO_RAW
     {
         char fn[300];
@@ -70,6 +74,7 @@ void ovhd_init(const char* basename){
     }
 #endif
     atexit(ovhd_dump_all);
+#endif
 }
 
 void ovhd_record(ovhd_cat_t cat, long usec, long sim_time){

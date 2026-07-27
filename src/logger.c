@@ -330,12 +330,17 @@ float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* 
     state_var = state_var / NOB;
     state_var = sqrt(state_var);
     //print all infos (rrchecker.csv)
-    fprintf(fp,"%ld,%f,%d,%d,%lf,%lf\n",
-    cur_cp,total_u,old,yng,state_avg,state_var); 
+    // NULL-guard: ablation mode branches disable u_check (fp is NULL).
+    if(fp != NULL){
+        fprintf(fp,"%ld,%f,%d,%d,%lf,%lf\n",
+        cur_cp,total_u,old,yng,state_avg,state_var);
+    }
     return total_u;
 }
 
 void print_profile_updaterate(meta* metadata, FILE* updaterate_fp){
+    // NULL-guard: ablation mode branches disable updaterate logging.
+    if(updaterate_fp == NULL) return;
     for (int i=0;i<NOP;i++){
         //printf("wtf? %ld %ld\n",metadata->avg_update[i],metadata->recent_update[i]);
         fprintf(updaterate_fp,"%ld, %ld\n",metadata->avg_update[i],metadata->recent_update[i]);
