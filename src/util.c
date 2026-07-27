@@ -3,13 +3,45 @@
 extern double OP;
 extern int MINRC;
 
-// [FIXED-LATENCY] runtime-selectable latency lens for LaWL decisions.
-// 0 = STATE (dynamic, default). 1 = FIXED_S (START*). 2 = FIXED_E (END*).
-// Set once in emul_main from argv[12]; read from the _dec family below.
-int latency_mode = 0;
+/* ============================================================================
+ * Latency model layer separation
+ * ============================================================================
+ *
+ * The simulator distinguishes two latency models, mirroring the physical
+ * device and the controller's perception of it:
+ *
+ *   PhysicalLatencyModel   — { w_exec_phys, r_exec_phys, e_exec_phys }
+ *     Ground truth. PEC-dependent per Fig. 2. Consumed by the simulation
+ *     engine to set req->exec, to accumulate metadata->runutils[] (which
+ *     records real admitted cost), and to drive the state-aware utilization
+ *     overflow check in print_profile_timestamp. Never call from
+ *     controller decision code — doing so leaks physics into the model
+ *     the controller is supposed to *not* know.
+ *
+ *   AssumedLatencyModel    — { w_exec_assumed, r_exec_assumed, e_exec_assumed }
+ *     What each technique's admission / GC / relocation decision path sees.
+ *     Dispatches on latency_mode:
+ *       LATENCY_MODE_STATE      : identical to physical (LaWL, our proposal)
+ *       LATENCY_MODE_FIXED_BOL  : t_op(cycle) collapsed to t_op(0)   (fresh-block)
+ *       LATENCY_MODE_FIXED_EOL  : t_op(cycle) collapsed to t_op(MAXPE) (worn-block)
+ *     Never call from sim engine paths that model actual completion time.
+ *
+ * Ablation intent: run the same taskset and physics through the three modes,
+ * varying only what the controller sees. Divergence in resulting lifetime /
+ * deadline misses / wear pattern quantifies the value of state-aware
+ * schedulability testing. "Analysis is fixed, physics drifts" is enforced
+ * at the interface level rather than by convention.
+ */
+
+#define LATENCY_MODE_STATE      0  /* PECAware — assumed == physical */
+#define LATENCY_MODE_FIXED_BOL  1  /* fresh-block assumption (STARTW/STARTR/STARTE) */
+#define LATENCY_MODE_FIXED_EOL  2  /* worn-block assumption  (ENDW /ENDR /ENDE ) */
+
+/* Set once in emul_main from argv[12]. Read by the *_assumed family only. */
+int latency_mode = LATENCY_MODE_STATE;
 #ifdef EXECSTEP
     extern prof_exec exec_steps;
-    float w_exec(int cycle){
+    float w_exec_phys(int cycle){
         for(int i=0;i<exec_steps.pe_steps[0];i++){
             if(cycle < exec_steps.pe_thres[0][i]){
                 return (float)exec_steps.pe_values[0][i];
@@ -17,7 +49,7 @@ int latency_mode = 0;
         }
         return (float)exec_steps.pe_values[0][exec_steps.pe_steps[0]];
     }
-    float r_exec(int cycle){
+    float r_exec_phys(int cycle){
         for(int i=0;i<exec_steps.pe_steps[1];i++){
             if(cycle < exec_steps.pe_thres[1][i]){
                 return (float)exec_steps.pe_values[1][i];
@@ -25,7 +57,7 @@ int latency_mode = 0;
         }
         return (float)exec_steps.pe_values[1][exec_steps.pe_steps[1]];
     }
-    float e_exec(int cycle){
+    float e_exec_phys(int cycle){
         for(int i=0;i<exec_steps.pe_steps[2];i++){
             if(cycle < exec_steps.pe_thres[2][i]){
                 return (float)exec_steps.pe_values[2][i];
@@ -36,21 +68,21 @@ int latency_mode = 0;
    
 #endif
 #ifndef EXECSTEP
-    float w_exec(int cycle){
+    float w_exec_phys(int cycle){
         // !!!write exec tends to decrease, so be aware of that!!!
         float wgrad = (float)(ENDW-STARTW)/(float)MAXPE;
         float wconst = STARTW;
         return wgrad*cycle + wconst;
     }
 
-    float r_exec(int cycle){
+    float r_exec_phys(int cycle){
         // !!!read exec tends to increase, so be aware of that!!!
         float rgrad = (float)(ENDR-STARTR)/(float)MAXPE;
         float rconst = STARTR;
         return rgrad*cycle + rconst;
     }
 
-    float e_exec(int cycle){
+    float e_exec_phys(int cycle){
         // !!!read exec tends to increase, so be aware of that!!!
         float egrad = (float)(ENDE-STARTE)/(float)MAXPE;
         float econst = STARTE;
@@ -58,27 +90,28 @@ int latency_mode = 0;
     }
 #endif
 
-// [FIXED-LATENCY BEGIN] --------------------------------------------------------
-// Decision-time exec functions. LaWL's allocation/relocation framework
-// (findGC / findW / findRR / assignW) reads these instead of the ground-truth
-// w_exec/r_exec/e_exec. When latency_mode == 0 we fall through so behavior is
-// bit-identical to the original state-aware code path.
-float w_exec_dec(int cycle){
-    if (latency_mode == 1) return (float)STARTW;
-    if (latency_mode == 2) return (float)ENDW;
-    return w_exec(cycle);
+/* AssumedLatencyModel: controller-facing exec times.
+ * All allocation / GC / relocation admission decisions in findGC.c, findW.c,
+ * findRR.c, and assignW.c route through these. Physical fallthrough happens
+ * when latency_mode == LATENCY_MODE_STATE, keeping LaWL bit-identical to
+ * the ground-truth path. FIXED_BOL/EOL collapse the PEC-dependent curve to
+ * a single lens so an ablation can quantify the cost of *not* knowing the
+ * actual latency at decision time. */
+float w_exec_assumed(int cycle){
+    if (latency_mode == LATENCY_MODE_FIXED_BOL) return (float)STARTW;
+    if (latency_mode == LATENCY_MODE_FIXED_EOL) return (float)ENDW;
+    return w_exec_phys(cycle);
 }
-float r_exec_dec(int cycle){
-    if (latency_mode == 1) return (float)STARTR;
-    if (latency_mode == 2) return (float)ENDR;
-    return r_exec(cycle);
+float r_exec_assumed(int cycle){
+    if (latency_mode == LATENCY_MODE_FIXED_BOL) return (float)STARTR;
+    if (latency_mode == LATENCY_MODE_FIXED_EOL) return (float)ENDR;
+    return r_exec_phys(cycle);
 }
-float e_exec_dec(int cycle){
-    if (latency_mode == 1) return (float)STARTE;
-    if (latency_mode == 2) return (float)ENDE;
-    return e_exec(cycle);
+float e_exec_assumed(int cycle){
+    if (latency_mode == LATENCY_MODE_FIXED_BOL) return (float)STARTE;
+    if (latency_mode == LATENCY_MODE_FIXED_EOL) return (float)ENDE;
+    return e_exec_phys(cycle);
 }
-// [FIXED-LATENCY END] ----------------------------------------------------------
 
 int myceil(float a){
     int b = (int)a;
@@ -131,32 +164,32 @@ int __calc_gcmult(int wp, int wn, int _minrc){
 
 
 float __calc_ru(rttask* task, int scale_r){
-    return (float)(task->rn*r_exec(scale_r))/(float)task->rp;
+    return (float)(task->rn*r_exec_phys(scale_r))/(float)task->rp;
 }
 float __calc_wu(rttask* task, int scale_w){
-    return (float)(task->wn*w_exec(scale_w))/(float)task->wp;
+    return (float)(task->wn*w_exec_phys(scale_w))/(float)task->wp;
 }
 
 float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e){
     int max_valid = PPB - min_rc;
     float gc_exec, gc_period;
-    gc_exec = (max_valid)*(w_exec(scale_w)+r_exec(scale_r))+e_exec(scale_e);
+    gc_exec = (max_valid)*(w_exec_phys(scale_w)+r_exec_phys(scale_r))+e_exec_phys(scale_e);
     gc_period = _gc_period(task,min_rc);
     return (float)gc_exec / (float)gc_period;
 }
 
 // [FIXED-LATENCY] decision-time utility helpers. Identical formulas to the
 // SA versions above but consult *_exec_dec so they honor latency_mode.
-float __calc_ru_dec(rttask* task, int scale_r){
-    return (float)(task->rn*r_exec_dec(scale_r))/(float)task->rp;
+float __calc_ru_assumed(rttask* task, int scale_r){
+    return (float)(task->rn*r_exec_assumed(scale_r))/(float)task->rp;
 }
-float __calc_wu_dec(rttask* task, int scale_w){
-    return (float)(task->wn*w_exec_dec(scale_w))/(float)task->wp;
+float __calc_wu_assumed(rttask* task, int scale_w){
+    return (float)(task->wn*w_exec_assumed(scale_w))/(float)task->wp;
 }
-float __calc_gcu_dec(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e){
+float __calc_gcu_assumed(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e){
     int max_valid = PPB - min_rc;
     float gc_exec, gc_period;
-    gc_exec = (max_valid)*(w_exec_dec(scale_w)+r_exec_dec(scale_r))+e_exec_dec(scale_e);
+    gc_exec = (max_valid)*(w_exec_assumed(scale_w)+r_exec_assumed(scale_r))+e_exec_assumed(scale_e);
     gc_period = _gc_period(task,min_rc);
     return (float)gc_exec / (float)gc_period;
 }
@@ -279,8 +312,8 @@ float find_worst_util(rttask* task, int tasknum, meta* metadata){
         // printf("[WC]cur_util:%f\n",total_u);
     }
     // add blocking factor
-    total_u += (float)e_exec(oldest) / (float)_find_min_period(task,tasknum);
-    // printf("[WC]exec : %f, min_p :%d\n",e_exec(oldest),_find_min_period(task,tasknum,OP));
+    total_u += (float)e_exec_phys(oldest) / (float)_find_min_period(task,tasknum);
+    // printf("[WC]exec : %f, min_p :%d\n",e_exec_phys(oldest),_find_min_period(task,tasknum,OP));
     // printf("[WC]worst case util is %f\n",total_u);
     return total_u;
 }
@@ -293,7 +326,7 @@ float find_cur_util(rttask* tasks, int tasknum, meta* metadata, int old){
         total_u += metadata->runutils[2][j];
         // printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
     }
-    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    total_u += (float)e_exec_phys(old) / (float)_find_min_period(tasks,tasknum);
     return total_u;
 }
 
@@ -335,7 +368,7 @@ int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int task
 // e_exec blocking term switch to fixed. This is intentional: the criterion
 // applied to *new* admission decisions is fixed; historical admitted work is
 // not retroactively re-scored.
-float find_worst_util_dec(rttask* task, int tasknum, meta* metadata){
+float find_worst_util_assumed(rttask* task, int tasknum, meta* metadata){
     int youngest, oldest;
     youngest = metadata->state[0];
     oldest = metadata->state[0];
@@ -345,28 +378,28 @@ float find_worst_util_dec(rttask* task, int tasknum, meta* metadata){
     }
     float total_u = 0.0;
     for(int i=0;i<tasknum;i++){
-        total_u += __calc_wu_dec(&(task[i]),youngest);
-        total_u += __calc_ru_dec(&(task[i]),oldest);
-        total_u += __calc_gcu_dec(&(task[i]),MINRC,youngest,oldest,oldest);
+        total_u += __calc_wu_assumed(&(task[i]),youngest);
+        total_u += __calc_ru_assumed(&(task[i]),oldest);
+        total_u += __calc_gcu_assumed(&(task[i]),MINRC,youngest,oldest,oldest);
     }
-    total_u += (float)e_exec_dec(oldest) / (float)_find_min_period(task,tasknum);
+    total_u += (float)e_exec_assumed(oldest) / (float)_find_min_period(task,tasknum);
     return total_u;
 }
 
-float find_cur_util_dec(rttask* tasks, int tasknum, meta* metadata, int old){
+float find_cur_util_assumed(rttask* tasks, int tasknum, meta* metadata, int old){
     float total_u = 0.0;
     for(int j=0;j<tasknum;j++){
         total_u += metadata->runutils[0][j];
         total_u += metadata->runutils[1][j];
         total_u += metadata->runutils[2][j];
     }
-    total_u += (float)e_exec_dec(old) / (float)_find_min_period(tasks,tasknum);
+    total_u += (float)e_exec_assumed(old) / (float)_find_min_period(tasks,tasknum);
     return total_u;
 }
 
-int find_util_safe_dec(rttask* tasks, int tasknum, meta* metadata, int old,
+int find_util_safe_assumed(rttask* tasks, int tasknum, meta* metadata, int old,
                        int taskidx, int type, float util){
-    float total_u = find_cur_util_dec(tasks,tasknum,metadata,old);
+    float total_u = find_cur_util_assumed(tasks,tasknum,metadata,old);
     if(type == WR)       total_u -= metadata->runutils[0][taskidx];
     else if(type == RD)  total_u -= metadata->runutils[1][taskidx];
     else if(type == GC)  total_u -= metadata->runutils[2][taskidx];
@@ -381,15 +414,15 @@ int find_util_safe_dec(rttask* tasks, int tasknum, meta* metadata, int old,
 int util_check_main(){
     // exec function test
     printf("[exec time scaling]\n");
-    printf("20 cycle %f %f %f\n",w_exec(20),r_exec(20),e_exec(20));
-    printf("10 cycle %f %f %f\n",w_exec(10),r_exec(10),e_exec(10));
-    printf("00 cycle %f %f %f\n",w_exec(0),r_exec(0),e_exec(0));
+    printf("20 cycle %f %f %f\n",w_exec_phys(20),r_exec_phys(20),e_exec_phys(20));
+    printf("10 cycle %f %f %f\n",w_exec_phys(10),r_exec_phys(10),e_exec_phys(10));
+    printf("00 cycle %f %f %f\n",w_exec_phys(0),r_exec_phys(0),e_exec_phys(0));
     rttask* tasks = (rttask*)malloc(sizeof(rttask)*3);
     init_task(&(tasks[0]),1,STARTW*50,65,STARTR*10,10,__calc_gcmult(STARTW*50,65,(int)(PPB*OP)),0,PPB*OP);
     printf("[util calc check]\n");
     printf("rd util e:%d p:%d u:%f\n",tasks[0].rn*STARTR, tasks[0].rp,__calc_ru(&(tasks[0]),0));
     printf("wt util e:%d p:%d u:%f\n",tasks[0].wn*STARTW, tasks[0].wp,__calc_wu(&(tasks[0]),0));
-    int gc_exec = (PPB-(int)(PPB*OP))*(w_exec(0)+r_exec(0))+e_exec(0);
+    int gc_exec = (PPB-(int)(PPB*OP))*(w_exec_phys(0)+r_exec_phys(0))+e_exec_phys(0);
     int gc_period = _gc_period(&(tasks[0]),(int)(PPB*OP));
     printf("gc util e:%d p:%d u:%f\n",gc_exec,gc_period,__calc_gcu(&(tasks[0]),(int)(PPB*OP),0,20,20));
 }

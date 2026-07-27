@@ -1,9 +1,9 @@
 /*FIXME:: assign function MUST give integer array pointer "lpas"*/
 
-// [FIXED-LATENCY] Write-block assignment is a decision path. The __calc_wu
-// arguments passed into _find_write_safe are rerouted to __calc_wu_dec so the
-// admission criterion honors latency_mode. _find_write_safe itself is defined
-// in findW.c and its internal exec calls were rebound there.
+/* Controller path (write-block assignment). Utility arguments passed into
+ * _find_write_safe are computed via __calc_wu_assumed so admission honors
+ * latency_mode. _find_write_safe itself lives in findW.c. Physical (_phys)
+ * latency belongs to the sim engine only. */
 
 #include "assignW.h"
 #include "findW.h"
@@ -428,7 +428,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
         cur = glob_yb->head;
         while(cur != NULL){
             cur_state = metadata->state[cur->idx];
-            if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),cur_state),cur->idx,w_lpas) == 0){
+            if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_assumed(&(task[taskidx]),cur_state),cur->idx,w_lpas) == 0){
                 ret = cur;
                 return ret;
             }
@@ -439,7 +439,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
         cur = glob_ob->head;
         while(cur != NULL){
             cur_state = metadata->state[cur->idx];
-            if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),cur_state),cur->idx,w_lpas) == 0){
+            if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_assumed(&(task[taskidx]),cur_state),cur->idx,w_lpas) == 0){
                 ret = cur;
                 return ret;
             }
@@ -454,7 +454,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
             while(cur != NULL){
                 //skip check if current block is not suitable
                 cur_state = metadata->state[cur->idx];
-                if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+                if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_assumed(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
                     cur = cur->next;
                     continue;
                 }
@@ -477,7 +477,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
             while(cur != NULL){
                 //skip check if current block is not suitable
                 cur_state = metadata->state[cur->idx];
-                if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_dec(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
+                if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu_assumed(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){
                     cur = cur->next;
                     continue;
                 }

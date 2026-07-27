@@ -1,9 +1,10 @@
 #include "stateaware.h"
 #include <stdint.h>
 
-// [FIXED-LATENCY] Read-relocation (RR005) decision path. All exec/util helpers
-// route through the _dec family so LaWL's admission and RR period computation
-// honor latency_mode (0 = STATE, 1 = FIXED_S, 2 = FIXED_E).
+/* Controller path (read-relocation admission and RR period). All exec/util
+ * helpers MUST route through the AssumedLatencyModel — *_exec_assumed /
+ * __calc_*_assumed. Physical (_phys) latency belongs to the sim engine
+ * only. See util.c header. latency_mode selects STATE / FIXED_BOL / FIXED_EOL. */
 
 extern int THRES_COLD;
 extern int THRES_HOT;
@@ -153,7 +154,7 @@ void find_RR_target(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     //specify a read-intensive task
     highest = 0.0;
     for(int i=0;i<tasknum;i++){
-        temp = __calc_ru_dec(&(tasks[i]),0);
+        temp = __calc_ru_assumed(&(tasks[i]),0);
         if(temp >= highest){
             highest = temp;
             hightask_idx = i;
@@ -323,11 +324,11 @@ void find_RR_target_util(rttask* tasks, int tasknum, meta* metadata, bhead* fbli
             for(int k=0;k<tasknum;k++){
                 //calc benefit
                 if(block_vmap[k][high_idx] == 1){
-                    benefit += __calc_ru_dec(&(tasks[k]),high_cyc) - __calc_ru_dec(&(tasks[k]),low_cyc);
+                    benefit += __calc_ru_assumed(&(tasks[k]),high_cyc) - __calc_ru_assumed(&(tasks[k]),low_cyc);
                 }
                 //calc loss
                 if(block_vmap[k][low_idx] == 1){
-                    loss += __calc_ru_dec(&(tasks[k]),high_cyc) - __calc_ru_dec(&(tasks[k]),low_cyc);
+                    loss += __calc_ru_assumed(&(tasks[k]),high_cyc) - __calc_ru_assumed(&(tasks[k]),low_cyc);
                 }
             }
             //if benefit is better than current best, update best.
@@ -693,12 +694,12 @@ long find_RR_period(int v1, int v2, int vp1_cnt, int vp2_cnt, double rrutil, met
         period = __LONG_MAX__;
         return period;
     } else{ 
-        rexec = (long)(floor((double)r_exec_dec(metadata->state[v1])));
-        rexec2 = (long)(floor((double)r_exec_dec(metadata->state[v2])));
-        wexec = (long)(floor((double)w_exec_dec(metadata->state[v1])));
-        wexec2 = (long)(floor((double)w_exec_dec(metadata->state[v2])));
-        eexec = (long)(floor((double)e_exec_dec(metadata->state[v1])));
-        eexec2 = (long)(floor((double)e_exec_dec(metadata->state[v2])));
+        rexec = (long)(floor((double)r_exec_assumed(metadata->state[v1])));
+        rexec2 = (long)(floor((double)r_exec_assumed(metadata->state[v2])));
+        wexec = (long)(floor((double)w_exec_assumed(metadata->state[v1])));
+        wexec2 = (long)(floor((double)w_exec_assumed(metadata->state[v2])));
+        eexec = (long)(floor((double)e_exec_assumed(metadata->state[v1])));
+        eexec2 = (long)(floor((double)e_exec_assumed(metadata->state[v2])));
         tot_exec = (long)vp2_cnt*(rexec2+wexec) + (long)vp1_cnt*(rexec+wexec2)+eexec+eexec2;
         period = (long)ceil((double)tot_exec / (double)rrutil);
     }

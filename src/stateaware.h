@@ -10,36 +10,56 @@
 
 int util_check_main(); //test function for debugging(not used in simulation)
 
-//expose internal functions in util.c for other files
-float w_exec(int cycle);
-float r_exec(int cycle);
-float e_exec(int cycle);
+/* ============================================================================
+ * PhysicalLatencyModel — ground truth latency, PEC-dependent per Fig. 2.
+ * ============================================================================
+ * Callers: simulation engine only (IOsim_q.c, rrsim_q.c setting req->exec;
+ * runutils[] accumulation of admitted cost; state-aware overflow check in
+ * logger.c). NEVER call these from controller decision paths — that would
+ * leak physics into the model the controller is not supposed to see.
+ */
+float w_exec_phys(int cycle);
+float r_exec_phys(int cycle);
+float e_exec_phys(int cycle);
+
 int __calc_gcmult(int wp, int wn, int _minrc);
+int _gc_period(rttask* task,int _minrc);
+
+/* Legacy state-aware helpers: __calc_wu/ru/gcu use PhysicalLatencyModel
+ * directly. Retained for (a) find_worst_util diagnostic snapshot in
+ * logger.c and (b) gen_task.c task-generation planning at cycle 0.
+ * Do NOT wire into controller decision code — use *_assumed variants. */
 float __calc_wu(rttask* task, int scale_w);
 float __calc_ru(rttask* task, int scale_r);
 float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e);
-int _gc_period(rttask* task,int _minrc);
 
-// [FIXED-LATENCY] --------------------------------------------------------------
-// Decision-time latency lens. Ground truth (req->exec, overflow, MAXPE) still uses
-// w_exec/r_exec/e_exec above. The _dec family below is what LaWL's allocation /
-// relocation framework consumes and is switchable at runtime via `latency_mode`.
-//   latency_mode == 0  ->  state-aware (identical to w_exec / r_exec / e_exec)
-//   latency_mode == 1  ->  fixed STARTW / STARTR / STARTE
-//   latency_mode == 2  ->  fixed ENDW  / ENDR  / ENDE
+/* ============================================================================
+ * AssumedLatencyModel — controller-facing exec times.
+ * ============================================================================
+ * Dispatches on latency_mode:
+ *   LATENCY_MODE_STATE      : identical to PhysicalLatencyModel  (LaWL)
+ *   LATENCY_MODE_FIXED_BOL  : t_op(cycle) collapsed to t_op(0)   (fresh-block)
+ *   LATENCY_MODE_FIXED_EOL  : t_op(cycle) collapsed to t_op(MAXPE) (worn-block)
+ * Callers: controller / admission logic ONLY (findGC.c, findW.c, findRR.c,
+ * assignW.c). NEVER call these from sim engine paths that model actual
+ * completion time.
+ */
+#define LATENCY_MODE_STATE      0
+#define LATENCY_MODE_FIXED_BOL  1
+#define LATENCY_MODE_FIXED_EOL  2
 extern int latency_mode;
 
-float w_exec_dec(int cycle);
-float r_exec_dec(int cycle);
-float e_exec_dec(int cycle);
-float __calc_wu_dec(rttask* task, int scale_w);
-float __calc_ru_dec(rttask* task, int scale_r);
-float __calc_gcu_dec(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e);
-float find_worst_util_dec(rttask* task, int tasknum, meta* metadata);
-float find_cur_util_dec(rttask* tasks, int tasknum, meta* metadata, int old);
-int   find_util_safe_dec(rttask* tasks, int tasknum, meta* metadata, int old,
-                         int taskidx, int type, float util);
-// ------------------------------------------------------------------------------
+float w_exec_assumed(int cycle);
+float r_exec_assumed(int cycle);
+float e_exec_assumed(int cycle);
+float __calc_wu_assumed(rttask* task, int scale_w);
+float __calc_ru_assumed(rttask* task, int scale_r);
+float __calc_gcu_assumed(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e);
+float find_worst_util_assumed(rttask* task, int tasknum, meta* metadata);
+float find_cur_util_assumed(rttask* tasks, int tasknum, meta* metadata, int old);
+int   find_util_safe_assumed(rttask* tasks, int tasknum, meta* metadata, int old,
+                             int taskidx, int type, float util);
+/* ============================================================================ */
 
 //flag getting functions
 void set_scheme_flags(char* argv[],

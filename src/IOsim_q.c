@@ -53,8 +53,8 @@ void make_req_gc(meta* metadata, rttask* tasks, int taskidx, long cur_cp, block*
             req->gc_vic_ppa = vic_offset+i;
             req->IO_start_time = cur_cp;
             req->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
-            req->exec = (long)floor((double)r_exec(metadata->state[vic->idx])) + 
-                        (long)floor((double)w_exec(metadata->state[req->gc_tar_ppa / PPB]));
+            req->exec = (long)floor((double)r_exec_phys(metadata->state[vic->idx])) + 
+                        (long)floor((double)w_exec_phys(metadata->state[req->gc_tar_ppa / PPB]));
             ll_append_IO(gcq,req);
             vp_count++;
             gc_exec += req->exec;
@@ -69,7 +69,7 @@ void make_req_gc(meta* metadata, rttask* tasks, int taskidx, long cur_cp, block*
     er->vic_idx = vic->idx;
     er->IO_start_time = cur_cp;
     er->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
-    er->exec = (long)floor((double)e_exec(metadata->state[vic->idx]));
+    er->exec = (long)floor((double)e_exec_phys(metadata->state[vic->idx]));
     er->gc_valid_count = vp_count;
     gc_exec += er->exec;
     ll_append_IO(gcq,er);
@@ -184,7 +184,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         req->ppa = ppa_dest[i];
         req->IO_start_time = cur_cp;
         req->deadline = (long)cur_cp + (long)tasks[taskidx].wp;
-        req->exec = (long)floor((double)w_exec(ppa_state[i]));
+        req->exec = (long)floor((double)w_exec_phys(ppa_state[i]));
         
 #ifdef IOTIMING
         IO_timing_update(metadata,lpa,metadata->write_cnt_per_cycle[lpa],cur_cp);
@@ -195,7 +195,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             req->islastreq = 1;
         }                           
         ll_append_IO(wq,req);
-        exec_sum += w_exec(ppa_state[i]);
+        exec_sum += w_exec_phys(ppa_state[i]);
         if(i==0){
             req->init = 1;
             req->last = 0;    
@@ -240,8 +240,8 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
         target_block[i] = req->ppa/PPB;
         
         req->deadline = (long)cur_cp + (long)task[taskidx].rp;
-        req->exec = (long)floor((double)r_exec(metadata->state[target_block[i]]));
-        exec_sum += (long)floor((double)r_exec(metadata->state[target_block[i]]));
+        req->exec = (long)floor((double)r_exec_phys(metadata->state[target_block[i]]));
+        exec_sum += (long)floor((double)r_exec_phys(metadata->state[target_block[i]]));
         ll_append_IO(rq,req);
         if(i==0){
             req->init = 1;
@@ -467,8 +467,8 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
             req->gc_vic_ppa = vic_offset+i;
             req->IO_start_time = cur_cp;
             req->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
-            req->exec = (long)floor((double)r_exec(metadata->state[vic->idx])) + 
-                        (long)floor((double)w_exec(metadata->state[rsv->idx]));
+            req->exec = (long)floor((double)r_exec_phys(metadata->state[vic->idx])) + 
+                        (long)floor((double)w_exec_phys(metadata->state[rsv->idx]));
             ll_append_IO(gcq,req);
             vp_count++;
             gc_exec += req->exec;
@@ -483,7 +483,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     er->rsv_idx = rsv->idx;
     er->IO_start_time = cur_cp;
     er->deadline = (long)cur_cp + (long)(tasks[taskidx].gcp);
-    er->exec = (long)floor((double)e_exec(metadata->state[vic->idx]));
+    er->exec = (long)floor((double)e_exec_phys(metadata->state[vic->idx]));
     er->gc_valid_count = vp_count;
     gc_exec += er->exec;
     ll_append_IO(gcq,er);

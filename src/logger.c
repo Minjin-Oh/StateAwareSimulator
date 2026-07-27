@@ -275,7 +275,7 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
     state_var = state_var / NOB;
     state_var = sqrt(state_var);
     total_u_noblock = total_u;
-    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    total_u += (float)e_exec_phys(old) / (float)_find_min_period(tasks,tasknum);
     //print all infos (prof_{no, WLcomb, ours}_t%d.csv)
     // NULL-guard: not all mode branches open a per-cycle profile file (u_check).
     if(fp != NULL){
@@ -318,7 +318,7 @@ float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* 
         total_gc += metadata->runutils[2][j];
         //printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
     }
-    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+    total_u += (float)e_exec_phys(old) / (float)_find_min_period(tasks,tasknum);
     //block state profiling
     for(int i=0;i<NOB;i++){
         state_tot += metadata->state[i];

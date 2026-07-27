@@ -14,7 +14,7 @@ long gen_read_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhe
             lpa=metadata->rmap[v1_offset+i];
             req->type = RRRE;
             req->deadline = (long)cur_cp + (long)(rrp);
-            req->exec = (long)floor((double)r_exec(metadata->state[vic1]));
+            req->exec = (long)floor((double)r_exec_phys(metadata->state[vic1]));
             ll_append_IO(rrq,req);
             v1_cnt++;
             tot_exec += req->exec;
@@ -27,7 +27,7 @@ long gen_read_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOhe
             lpa=metadata->rmap[v2_offset+i];
             req2->type = RRRE;
             req2->deadline = (long)cur_cp + (long)(rrp);
-            req2->exec = (long)floor((double)r_exec(metadata->state[vic2]));
+            req2->exec = (long)floor((double)r_exec_phys(metadata->state[vic2]));
             ll_append_IO(rrq,req2);
             v2_cnt++;
             tot_exec += req2->exec;
@@ -63,7 +63,7 @@ long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
             req->deadline = (long)cur_cp + (long)(rrp);
             req->islastreq=0;
             req->isrrfinish=0;
-            req->exec = (long)floor((double)w_exec(metadata->state[vic1]));
+            req->exec = (long)floor((double)w_exec_phys(metadata->state[vic1]));
             ll_append_IO(rrq,req);
             v1_cnt++;
             req->order = v1_cnt;
@@ -95,7 +95,7 @@ long gen_write_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
             req2->deadline = (long)cur_cp + (long)(rrp);
             req2->islastreq=0;
             req2->isrrfinish=0;
-            req2->exec = (long)floor((double)w_exec(metadata->state[vic2]));
+            req2->exec = (long)floor((double)w_exec_phys(metadata->state[vic2]));
             ll_append_IO(rrq,req2);
             v2_cnt++;
             req2->order = v2_cnt;
@@ -134,7 +134,7 @@ long gen_erase_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
     er->type = RRER;
     er->vic_idx = vic1;
     er->deadline = (long)cur_cp + (long)(rrp);
-    er->exec = (long)floor((double)e_exec(metadata->state[vic1]));
+    er->exec = (long)floor((double)e_exec_phys(metadata->state[vic1]));
     tot_exec += er->exec;
     ll_append_IO(rrq,er);
     
@@ -143,7 +143,7 @@ long gen_erase_rr(int vic1, int vic2, long cur_cp, long rrp, meta* metadata, IOh
     er2->type = RRER;
     er2->vic_idx = vic2;
     er2->deadline = (long)cur_cp + (long)(rrp);
-    er2->exec = (long)floor((double)e_exec(metadata->state[vic2]));
+    er2->exec = (long)floor((double)e_exec_phys(metadata->state[vic2]));
     tot_exec += er2->exec;
     ll_append_IO(rrq,er2);
     //printf("[RR_e]%ld\n",tot_exec);

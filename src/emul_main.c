@@ -915,7 +915,7 @@ int main(int argc, char* argv[]){
             //   FIXED_E -> WCU under worn-block criterion  (ENDW /ENDR /ENDE)
             // If foreground alone already saturates the CPU, rrutil <= 0 and
             // find_RR_period falls back to LONG_MAX -> RR effectively background.
-            rrutil = 1.0 - find_worst_util_dec(tasks,tasknum,newmeta);
+            rrutil = 1.0 - find_worst_util_assumed(tasks,tasknum,newmeta);
 
             long __rt0 = ovhd_now_us();
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
