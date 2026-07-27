@@ -623,7 +623,28 @@ int main(int argc, char* argv[]){
         test_gc_writeblock[i] = fopen(testgcwriteblockname,"w");
     }
 #endif
-    ovhd_init("ovhd_dist"); /* dumps automatically at every exit path via atexit() */
+    /* Mode-specific overhead-profile basename. Mirrors the per-branch CSV
+     * naming above so parallel ablation runs (baseline / LaWL_D / LaWL /
+     * LaWL_fixedS / LaWL_fixedE / …) don't clobber each other's
+     * ovhd_dist_summary.csv on atexit. */
+    {
+        char ovhd_base[80];
+        if (wflag == 0 && gcflag == 0 && rrflag == -1){
+            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Baseline");
+        } else if (wflag == 11 && gcflag == 0 && rrflag == 0){
+            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Hyb");
+        } else if (wflag == 14 && gcflag == 6 && rrflag == -1){
+            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_LaWL_D");
+        } else if (wflag == 14 && gcflag == 6 && rrflag == 1){
+            const char* lat = (latency_mode == LATENCY_MODE_FIXED_BOL) ? "_fixedS"
+                            : (latency_mode == LATENCY_MODE_FIXED_EOL) ? "_fixedE" : "";
+            const char* rr  = (rrcond == 7) ? "_bgrr" : "";
+            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_LaWL%s%s", lat, rr);
+        } else {
+            snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Dyn");
+        }
+        ovhd_init(ovhd_base); /* atexit dumps <base>_summary.csv */
+    }
     gettimeofday(&(tot_start_time),NULL);
     //start of simulation
     while(cur_cp <= RUNTIME){
