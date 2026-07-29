@@ -4,6 +4,7 @@ set -e
 
 BASE_DIR=./ablation
 NUM_TASKSETS=${1:-100}
+INIT_CYC=${INIT_CYC:-1500}   # 스크립트 상단에 추가
 
 mkdir -p "$BASE_DIR"/{baseline,fixed-S,fixed-E,LaWL-D,LaWL}
 
@@ -33,10 +34,13 @@ else
         CORE_ARR=(0 0 0 0 0)
     fi
 fi
+# Probe each requested core with `taskset -c <c> true`. This works correctly
+# under Docker `--cpuset-cpus=63-67` where nproc=5 but valid IDs are 63..67 —
+# comparing IDs against nproc would falsely reject them.
 if [ "$HAVE_TASKSET" = "1" ]; then
     for c in "${CORE_ARR[@]}"; do
-        if [ "$c" -ge "$NCPU" ] || [ "$c" -lt 0 ]; then
-            echo "[WARN] core $c out of range [0,$((NCPU-1))] — disabling pinning"
+        if ! taskset -c "$c" true 2>/dev/null; then
+            echo "[WARN] taskset -c $c failed — disabling pinning"
             HAVE_TASKSET=0
             break
         fi
@@ -83,23 +87,23 @@ for i in $(seq 1 "$NUM_TASKSETS"); do
 
     echo "[INFO] Running simulations (iteration $i)..."
 
-    run_sim "${CORE_ARR[0]}" ./statesimul.out NO NO SKIPRR nogen 4 0.3 -1 0.05 0.95 0 \
+    run_sim "${CORE_ARR[0]}" ./statesimul.out NO NO SKIPRR nogen 4 0.3 -1 0.05 0.95 0 $INIT_CYC \
         > /dev/null 2> "$BASE_DIR/baseline/run.err" &
     pid_baseline=$!
 
-    run_sim "${CORE_ARR[1]}" ./statesimul.out UTILGC INVW RR005 nogen 4 0.3 -1 0.05 0.95 0 0 FIXED_S \
+    run_sim "${CORE_ARR[1]}" ./statesimul.out UTILGC INVW RR005 nogen 4 0.3 -1 0.05 0.95 0 $INIT_CYC FIXED_S \
         > /dev/null 2> "$BASE_DIR/fixed-S/run.err" &
     pid_fixedS=$!
 
-    run_sim "${CORE_ARR[2]}" ./statesimul.out UTILGC INVW RR005 nogen 4 0.3 -1 0.05 0.95 0 0 FIXED_E \
+    run_sim "${CORE_ARR[2]}" ./statesimul.out UTILGC INVW RR005 nogen 4 0.3 -1 0.05 0.95 0 $INIT_CYC FIXED_E \
         > /dev/null 2> "$BASE_DIR/fixed-E/run.err" &
     pid_fixedE=$!
 
-    run_sim "${CORE_ARR[3]}" ./statesimul.out UTILGC INVW SKIPRR nogen 4 0.3 -1 0.05 0.95 0 \
+    run_sim "${CORE_ARR[3]}" ./statesimul.out UTILGC INVW SKIPRR nogen 4 0.3 -1 0.05 0.95 0 $INIT_CYC \
         > /dev/null 2> "$BASE_DIR/LaWL-D/run.err" &
     pid_LaWL_D=$!
 
-    run_sim "${CORE_ARR[4]}" ./statesimul.out UTILGC INVW RR005 nogen 4 0.3 -1 0.05 0.95 0 \
+    run_sim "${CORE_ARR[4]}" ./statesimul.out UTILGC INVW RR005 nogen 4 0.3 -1 0.05 0.95 0 $INIT_CYC \
         > /dev/null 2> "$BASE_DIR/LaWL/run.err" &
     pid_LaWL=$!
 
