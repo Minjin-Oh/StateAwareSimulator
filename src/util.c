@@ -36,6 +36,23 @@ extern int MINRC;
 #define LATENCY_MODE_STATE      0  /* PECAware — assumed == physical */
 #define LATENCY_MODE_FIXED_BOL  1  /* fresh-block assumption (STARTW/STARTR/STARTE) */
 #define LATENCY_MODE_FIXED_EOL  2  /* worn-block assumption  (ENDW /ENDR /ENDE ) */
+#define LATENCY_MODE_LAWL_OPT   3  /* paper Table II @ PEC=0     (LaWL-Opt) */
+#define LATENCY_MODE_LAWL_NOM   4  /* paper Table II @ PEC=1000  (LaWL-Nom) */
+#define LATENCY_MODE_LAWL_PES   5  /* paper Table II @ PEC=2000  (LaWL-Pes) */
+
+/* Paper Table II reference constants for LaWL-Opt/Nom/Pes. Deliberately kept
+ * separate from STARTW/ENDW (types.h) — those define the ground-truth PEC
+ * curve consumed by the execution engine and MUST NOT change across
+ * variants (Sec. 2.4 "실행 latency 불변"). Only the decision layer swaps. */
+#define LAWL_OPT_R  280.0f
+#define LAWL_OPT_W  725.0f
+#define LAWL_OPT_E  3500.0f
+#define LAWL_NOM_R  460.0f
+#define LAWL_NOM_W  702.0f
+#define LAWL_NOM_E  7000.0f
+#define LAWL_PES_R  640.0f
+#define LAWL_PES_W  680.0f
+#define LAWL_PES_E  14000.0f
 
 /* Set once in emul_main from argv[12]. Read by the *_assumed family only. */
 int latency_mode = LATENCY_MODE_STATE;
@@ -98,19 +115,34 @@ int latency_mode = LATENCY_MODE_STATE;
  * a single lens so an ablation can quantify the cost of *not* knowing the
  * actual latency at decision time. */
 float w_exec_assumed(int cycle){
-    if (latency_mode == LATENCY_MODE_FIXED_BOL) return (float)STARTW;
-    if (latency_mode == LATENCY_MODE_FIXED_EOL) return (float)ENDW;
-    return w_exec_phys(cycle);
+    switch(latency_mode){
+        case LATENCY_MODE_FIXED_BOL: return (float)STARTW;
+        case LATENCY_MODE_FIXED_EOL: return (float)ENDW;
+        case LATENCY_MODE_LAWL_OPT:  return LAWL_OPT_W;
+        case LATENCY_MODE_LAWL_NOM:  return LAWL_NOM_W;
+        case LATENCY_MODE_LAWL_PES:  return LAWL_PES_W;
+        default:                     return w_exec_phys(cycle);
+    }
 }
 float r_exec_assumed(int cycle){
-    if (latency_mode == LATENCY_MODE_FIXED_BOL) return (float)STARTR;
-    if (latency_mode == LATENCY_MODE_FIXED_EOL) return (float)ENDR;
-    return r_exec_phys(cycle);
+    switch(latency_mode){
+        case LATENCY_MODE_FIXED_BOL: return (float)STARTR;
+        case LATENCY_MODE_FIXED_EOL: return (float)ENDR;
+        case LATENCY_MODE_LAWL_OPT:  return LAWL_OPT_R;
+        case LATENCY_MODE_LAWL_NOM:  return LAWL_NOM_R;
+        case LATENCY_MODE_LAWL_PES:  return LAWL_PES_R;
+        default:                     return r_exec_phys(cycle);
+    }
 }
 float e_exec_assumed(int cycle){
-    if (latency_mode == LATENCY_MODE_FIXED_BOL) return (float)STARTE;
-    if (latency_mode == LATENCY_MODE_FIXED_EOL) return (float)ENDE;
-    return e_exec_phys(cycle);
+    switch(latency_mode){
+        case LATENCY_MODE_FIXED_BOL: return (float)STARTE;
+        case LATENCY_MODE_FIXED_EOL: return (float)ENDE;
+        case LATENCY_MODE_LAWL_OPT:  return LAWL_OPT_E;
+        case LATENCY_MODE_LAWL_NOM:  return LAWL_NOM_E;
+        case LATENCY_MODE_LAWL_PES:  return LAWL_PES_E;
+        default:                     return e_exec_phys(cycle);
+    }
 }
 
 int myceil(float a){

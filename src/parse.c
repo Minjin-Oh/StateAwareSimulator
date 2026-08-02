@@ -132,9 +132,12 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
     11th: gets a initial cycle count
     // [FIXED-LATENCY] 12th argv added below --------------------------------
     12th: latency mode used ONLY for LaWL decision-time criterion
-          - "STATE"   or omitted : dynamic (state-aware) latency (default)
-          - "FIXED_S"            : fixed latency using STARTW/STARTR/STARTE  (fresh-block criterion)
-          - "FIXED_E"            : fixed latency using ENDW/ENDR/ENDE        (worn-block criterion)
+          - "STATE"    or omitted : dynamic (state-aware) latency (default, LaWL)
+          - "FIXED_S"             : fixed using STARTW/STARTR/STARTE  (fresh-block)
+          - "FIXED_E"             : fixed using ENDW/ENDR/ENDE        (worn-block)
+          - "LAWL_OPT"            : Table II @ PEC=0     (280 / 725 / 3500)
+          - "LAWL_NOM"            : Table II @ PEC=1000  (460 / 702 / 7000)
+          - "LAWL_PES"            : Table II @ PEC=2000  (640 / 680 / 14000)
           Ground-truth exec time, utilization-overflow check and MAXPE
           termination stay state-aware regardless of this flag.
     // ---------------------------------------------------------------------
@@ -176,11 +179,11 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
      * internal constants are LATENCY_MODE_*. */
     *lat_mode = LATENCY_MODE_STATE;
     if (argv[12] != NULL){
-        if (strcmp(argv[12], "FIXED_S") == 0){
-            *lat_mode = LATENCY_MODE_FIXED_BOL;
-        } else if (strcmp(argv[12], "FIXED_E") == 0){
-            *lat_mode = LATENCY_MODE_FIXED_EOL;
-        }
+        if      (strcmp(argv[12], "FIXED_S")  == 0) *lat_mode = LATENCY_MODE_FIXED_BOL;
+        else if (strcmp(argv[12], "FIXED_E")  == 0) *lat_mode = LATENCY_MODE_FIXED_EOL;
+        else if (strcmp(argv[12], "LAWL_OPT") == 0) *lat_mode = LATENCY_MODE_LAWL_OPT;
+        else if (strcmp(argv[12], "LAWL_NOM") == 0) *lat_mode = LATENCY_MODE_LAWL_NOM;
+        else if (strcmp(argv[12], "LAWL_PES") == 0) *lat_mode = LATENCY_MODE_LAWL_PES;
     }
 
     //!!!overprovisioning rate and minimum reclaimable page is hardcoded in set_exec_flags!!!

@@ -37,9 +37,10 @@ float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e
  * AssumedLatencyModel — controller-facing exec times.
  * ============================================================================
  * Dispatches on latency_mode:
- *   LATENCY_MODE_STATE      : identical to PhysicalLatencyModel  (LaWL)
+ *   LATENCY_MODE_STATE      : identical to PhysicalLatencyModel  (LaWL, proposal)
  *   LATENCY_MODE_FIXED_BOL  : t_op(cycle) collapsed to t_op(0)   (fresh-block)
  *   LATENCY_MODE_FIXED_EOL  : t_op(cycle) collapsed to t_op(MAXPE) (worn-block)
+ *   LATENCY_MODE_LAWL_OPT/NOM/PES : Table II constants @ PEC=0 / 1000 / 2000
  * Callers: controller / admission logic ONLY (findGC.c, findW.c, findRR.c,
  * assignW.c). NEVER call these from sim engine paths that model actual
  * completion time.
@@ -47,6 +48,9 @@ float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e
 #define LATENCY_MODE_STATE      0
 #define LATENCY_MODE_FIXED_BOL  1
 #define LATENCY_MODE_FIXED_EOL  2
+#define LATENCY_MODE_LAWL_OPT   3
+#define LATENCY_MODE_LAWL_NOM   4
+#define LATENCY_MODE_LAWL_PES   5
 extern int latency_mode;
 
 float w_exec_assumed(int cycle);

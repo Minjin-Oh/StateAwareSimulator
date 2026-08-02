@@ -106,7 +106,7 @@ int main(int argc, char* argv[]){
     int skewnum;                     //number of skewed task
     int OPflag;
     int init_cyc = 0;
-    int lat_mode = 0;                // [FIXED-LATENCY] argv[12]: 0=STATE, 1=FIXED_S, 2=FIXED_E
+    int lat_mode = 0;                // argv[12]: 0=STATE 1=FIXED_S 2=FIXED_E 3=LAWL_OPT 4=LAWL_NOM 5=LAWL_PES
     float totutil;                   //a total utilization of current system
     //get flags
     set_scheme_flags(argv,
@@ -221,7 +221,7 @@ int main(int argc, char* argv[]){
     printf("[NOB MAXPE] : %d, %d\n",NOB,MAXPE);
     // [FIXED-LATENCY] echo which latency lens LaWL will use for decisions.
     // Ground-truth exec / overflow / MAXPE are always state-aware regardless.
-    printf("[LAT MODE ] : %d (0=STATE, 1=FIXED_S, 2=FIXED_E)\n", latency_mode);
+    printf("[LAT MODE ] : %d (0=STATE 1=FIXED_S 2=FIXED_E 3=LAWL_OPT 4=LAWL_NOM 5=LAWL_PES)\n", latency_mode);
     //sleep(1);
    
     //MINRC is now a configurable value, which can be adjusted like OP
@@ -487,15 +487,17 @@ int main(int argc, char* argv[]){
      * needed. Fallback to CWD preserves standalone use of this binary when
      * the ablation/ directory tree isn't present. */
     if(wflag == 0 && gcflag == 0 && rrflag == -1){
-        // u_check = fopen("Baseline_rrchecker.csv","w");                 // disabled: ablation sweep doesn't need per-cycle profile
         u_check = NULL;
-        fplife = fopen("ablation/baseline/Baseline_lifetime.csv","a");
+        const char* base_dir = getenv("SIM_LOG_DIR");
+        if(!base_dir || base_dir[0] == '\0') base_dir = "ablation";
+        char path[240];
+        snprintf(path, sizeof(path), "%s/baseline/Baseline_lifetime.csv", base_dir);
+        fplife = fopen(path,"a");
         if(!fplife) fplife = fopen("Baseline_lifetime.csv","a");
-        fpovhd = fopen("ablation/baseline/Baseline_overhead.csv","a");
+        snprintf(path, sizeof(path), "%s/baseline/Baseline_overhead.csv", base_dir);
+        fpovhd = fopen(path,"a");
         if(!fpovhd) fpovhd = fopen("Baseline_overhead.csv","a");
-        // updaterate_fp = fopen("Baseline_updaterate.csv","w");           // disabled
         updaterate_fp = NULL;
-        // gc_valid_fp = fopen("Baseline_gc_valid.csv","w");               // disabled
         gc_valid_fp = NULL;
     }
     else if(wflag == 11 && gcflag == 0 && rrflag ==  0){
@@ -506,41 +508,49 @@ int main(int argc, char* argv[]){
 	gc_valid_fp = fopen("Hyb_gc_valid.csv","w");
     }
     else if(wflag == 14 && gcflag == 6 && rrflag == -1){
-        // u_check = fopen("LaWL_D_rrchecker.csv","w");                    // disabled
         u_check = NULL;
-        fplife = fopen("ablation/LaWL-D/LaWL_D_lifetime.csv","a");
+        const char* base_dir = getenv("SIM_LOG_DIR");
+        if(!base_dir || base_dir[0] == '\0') base_dir = "ablation";
+        char path[240];
+        snprintf(path, sizeof(path), "%s/LaWL-D/LaWL_D_lifetime.csv", base_dir);
+        fplife = fopen(path,"a");
         if(!fplife) fplife = fopen("LaWL_D_lifetime.csv","a");
-        fpovhd = fopen("ablation/LaWL-D/LaWL_D_overhead.csv","a");
+        snprintf(path, sizeof(path), "%s/LaWL-D/LaWL_D_overhead.csv", base_dir);
+        fpovhd = fopen(path,"a");
         if(!fpovhd) fpovhd = fopen("LaWL_D_overhead.csv","a");
-        // updaterate_fp = fopen("LaWL_D_updaterate.csv","w");             // disabled
         updaterate_fp = NULL;
-        // gc_valid_fp = fopen("LaWL_D_gc_valid.csv","w");                 // disabled
         gc_valid_fp = NULL;
     }
     else if(wflag == 14 && gcflag == 6 && rrflag == 1){
-        // [FIXED-LATENCY] tag output files so STATE / FIXED_S / FIXED_E runs of
-        // the same LaWL (UTILGC INVW RR005) config don't overwrite each other.
+        // Tag output files so STATE / FIXED_S / FIXED_E / LAWL_{OPT,NOM,PES}
+        // runs of the same LaWL (UTILGC INVW RR005) config don't clobber.
         const char* lat_suffix = "";
         const char* ablation_dir = "LaWL";
-        if(latency_mode == 1){      lat_suffix = "_fixedS"; ablation_dir = "fixed-S"; }
-        else if(latency_mode == 2){ lat_suffix = "_fixedE"; ablation_dir = "fixed-E"; }
+        switch(latency_mode){
+            case 1: lat_suffix = "_fixedS";  ablation_dir = "fixed-S";  break;
+            case 2: lat_suffix = "_fixedE";  ablation_dir = "fixed-E";  break;
+            case 3: lat_suffix = "_lawlOpt"; ablation_dir = "LaWL-Opt"; break;
+            case 4: lat_suffix = "_lawlNom"; ablation_dir = "LaWL-Nom"; break;
+            case 5: lat_suffix = "_lawlPes"; ablation_dir = "LaWL-Pes"; break;
+        }
         /* BGRR variant tags outputs so a paired foreground-slack run and a
          * background-only run don't clobber each other. */
         const char* rr_suffix = (rrcond == 7) ? "_bgrr" : "";
-        char nm[80], path[160];
-        // sprintf(nm,"LaWL%s%s_rrchecker.csv",  lat_suffix, rr_suffix); u_check       = fopen(nm,"w");   // disabled
+        /* SIM_LOG_DIR overrides the "ablation" prefix so a sweep can send
+         * each utilization slice to its own dir (e.g. sweep_results/u_0.15/). */
+        const char* base_dir = getenv("SIM_LOG_DIR");
+        if(!base_dir || base_dir[0] == '\0') base_dir = "ablation";
+        char nm[96], path[240];
         u_check = NULL;
         sprintf(nm,"LaWL%s%s_lifetime.csv", lat_suffix, rr_suffix);
-        snprintf(path, sizeof(path), "ablation/%s/%s", ablation_dir, nm);
+        snprintf(path, sizeof(path), "%s/%s/%s", base_dir, ablation_dir, nm);
         fplife = fopen(path,"a");
         if(!fplife) fplife = fopen(nm,"a");
         sprintf(nm,"LaWL%s%s_overhead.csv", lat_suffix, rr_suffix);
-        snprintf(path, sizeof(path), "ablation/%s/%s", ablation_dir, nm);
+        snprintf(path, sizeof(path), "%s/%s/%s", base_dir, ablation_dir, nm);
         fpovhd = fopen(path,"a");
         if(!fpovhd) fpovhd = fopen(nm,"a");
-        // sprintf(nm,"LaWL%s%s_updaterate.csv", lat_suffix, rr_suffix); updaterate_fp = fopen(nm,"w");   // disabled
         updaterate_fp = NULL;
-        // sprintf(nm,"LaWL%s%s_gc_valid.csv",   lat_suffix, rr_suffix); gc_valid_fp   = fopen(nm,"w");   // disabled
         gc_valid_fp = NULL;
     }
     else{
