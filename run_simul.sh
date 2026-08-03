@@ -6,17 +6,21 @@
 #   ----         -----------------------------------------------------------
 #   task set     $NUM_TASKSETS regenerations (seed advances each iter)
 #   U_{r+w}      $UTIL_LIST                (default "0.1 0.15 0.2 0.25 0.3")
-#   variant      LaWL | LaWL-Opt | LaWL-Nom | LaWL-Pes
+#   variant      LaWL (STATE) | LaWL-opt | LaWL-avg | LaWL-pes
 #
 # All four variants at a given (U, iter) run against the same TASKGEN +
-# WORKGEN output, i.e. identical taskset and identical invalidation-time
-# profile — the ONLY thing that differs is the decision-layer latency lens
+# WORKGEN output — identical taskset and identical invalidation-time
+# profile. The ONLY thing that differs is the decision-layer latency lens
 # (argv[12] -> latency_mode). Ground-truth PEC-dependent execution stays
 # fixed (§2.4).
 #
-# Output goes to $BASE_DIR/u_<U>/<variant-dir>/*_lifetime.csv|_overhead.csv,
-# via the SIM_LOG_DIR env var honored by emul_main.c. Results accumulate
-# with fopen("a") — delete files under $BASE_DIR to start fresh.
+# Output contract with statesimul.out:
+#   The binary writes  <scheme>_lifetime.csv / <scheme>_overhead.csv  into
+#   $SIM_LOG_DIR (open in "a" mode). Filename encodes scheme (Baseline /
+#   Hyb / LaWL_D / LaWL / LaWL_opt / LaWL_avg / LaWL_pes / Dyn) so all
+#   variants for one U-value coexist in one directory without collision.
+#   Results accumulate across iters and across script re-runs — delete
+#   files under $BASE_DIR for a fresh sweep.
 #
 # Env knobs:
 #   NUM_TASKSETS   $1 override, default 100
@@ -44,7 +48,6 @@ else
     echo "[WARN] 'taskset' not found — running without CPU pinning"
 fi
 
-# Need 4 cores for the paper matrix, 6 if extras are on.
 if [ "$INCLUDE_EXTRAS" = "1" ]; then
     NEED_CORES=6
 else
@@ -66,9 +69,9 @@ else
         CORE_ARR=(0 0 0 0 0 0)
     fi
 fi
-# Probe each requested core. This works under Docker `--cpuset-cpus=63-67`
-# where nproc=5 but valid IDs are 63..67 — comparing IDs against nproc
-# would falsely reject them.
+# Probe each requested core. Works under Docker `--cpuset-cpus=63-67` where
+# nproc=5 but valid IDs are 63..67 — comparing IDs against nproc would
+# falsely reject them.
 if [ "$HAVE_TASKSET" = "1" ]; then
     for c in "${CORE_ARR[@]}"; do
         if ! taskset -c "$c" true 2>/dev/null; then
@@ -80,39 +83,26 @@ if [ "$HAVE_TASKSET" = "1" ]; then
     [ "$HAVE_TASKSET" = "1" ] && echo "[INFO] Pinning to cores: ${CORE_ARR[*]} (nproc=$NCPU)"
 fi
 
+# Launch statesimul.out with a specific SIM_LOG_DIR, optionally pinned.
+# Extra args after $core are forwarded to statesimul.out verbatim.
+# SIM_LOG_DIR comes from the exported env so all runs at a given U slot
+# into the same directory; distinct scheme prefixes keep filenames unique.
 run_sim() {
     local core="$1"; shift
     if [ "$HAVE_TASKSET" = "1" ]; then
-        taskset -c "$core" "$@"
+        taskset -c "$core" ./statesimul.out "$@"
     else
-        "$@"
+        ./statesimul.out "$@"
     fi
 }
 
-# Map internal mode -> subdir under $SIM_LOG_DIR (see emul_main.c tagging).
-declare -A DIR_OF=(
-    [LaWL]=LaWL
-    [Opt]=LaWL-Opt
-    [Nom]=LaWL-Nom
-    [Pes]=LaWL-Pes
-    [baseline]=baseline
-    [LaWL_D]=LaWL-D
-)
-
-# NOTE on accumulation: statesimul.out opens *_lifetime.csv / *_overhead.csv
-# with fopen("a") under $SIM_LOG_DIR/<variant-dir>/, so results accumulate
-# naturally across iters AND across script invocations. Delete files under
-# $BASE_DIR/u_<U>/ manually for a fresh sweep.
-
-echo "[INFO] Sweep matrix: variants=[LaWL, Opt, Nom, Pes]$([ "$INCLUDE_EXTRAS" = "1" ] && echo ' +baseline +LaWL-D')"
+echo "[INFO] Sweep matrix: variants=[LaWL, opt, avg, pes]$([ "$INCLUDE_EXTRAS" = "1" ] && echo ' +baseline +LaWL-D')"
 echo "[INFO] U_LIST=$UTIL_LIST  NUM_TASKSETS=$NUM_TASKSETS  INIT_CYC=$INIT_CYC"
 echo "[INFO] Output root: $BASE_DIR"
 
 for U in $UTIL_LIST; do
     U_DIR="$BASE_DIR/u_${U}"
-    # Make every subdir referenced by DIR_OF up-front so fopen("a") succeeds
-    # even for variants we skip on this run — cheap and idempotent.
-    mkdir -p "$U_DIR"/{LaWL,LaWL-Opt,LaWL-Nom,LaWL-Pes,baseline,LaWL-D}
+    mkdir -p "$U_DIR"
     export SIM_LOG_DIR="$U_DIR"
 
     echo "[INFO] ================== U=${U}  (out: $U_DIR) =================="
@@ -129,33 +119,35 @@ for U in $UTIL_LIST; do
             > /dev/null 2> "$U_DIR/workgen.err"
 
         echo "[INFO] Running simulations..."
-        # All four variants use the LaWL decision path (UTILGC INVW RR005);
-        # only argv[12] (latency_mode) differs. LaWL omits argv[12] so it
-        # defaults to STATE (assumed == physical).
+        # All four LaWL variants share the decision path (UTILGC INVW RR005).
+        # Only argv[12] (latency_mode) differs — that selects which lens the
+        # controller uses AND (in C) which filename prefix is picked, so the
+        # four processes write to distinct *_lifetime.csv / *_overhead.csv
+        # files in the same $SIM_LOG_DIR without racing.
         declare -A pids
-        run_sim "${CORE_ARR[0]}" ./statesimul.out UTILGC INVW RR005 nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC \
-            > /dev/null 2> "$U_DIR/${DIR_OF[LaWL]}/run.err" &
+        run_sim "${CORE_ARR[0]}" UTILGC INVW RR005 nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC \
+            > /dev/null 2> "$U_DIR/LaWL.err" &
         pids[LaWL]=$!
-        run_sim "${CORE_ARR[1]}" ./statesimul.out UTILGC INVW RR005 nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC LAWL_OPT \
-            > /dev/null 2> "$U_DIR/${DIR_OF[Opt]}/run.err" &
-        pids[Opt]=$!
-        run_sim "${CORE_ARR[2]}" ./statesimul.out UTILGC INVW RR005 nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC LAWL_NOM \
-            > /dev/null 2> "$U_DIR/${DIR_OF[Nom]}/run.err" &
-        pids[Nom]=$!
-        run_sim "${CORE_ARR[3]}" ./statesimul.out UTILGC INVW RR005 nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC LAWL_PES \
-            > /dev/null 2> "$U_DIR/${DIR_OF[Pes]}/run.err" &
-        pids[Pes]=$!
+        run_sim "${CORE_ARR[1]}" UTILGC INVW RR005 nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC LAWL_OPT \
+            > /dev/null 2> "$U_DIR/LaWL_opt.err" &
+        pids[opt]=$!
+        run_sim "${CORE_ARR[2]}" UTILGC INVW RR005 nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC LAWL_AVG \
+            > /dev/null 2> "$U_DIR/LaWL_avg.err" &
+        pids[avg]=$!
+        run_sim "${CORE_ARR[3]}" UTILGC INVW RR005 nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC LAWL_PES \
+            > /dev/null 2> "$U_DIR/LaWL_pes.err" &
+        pids[pes]=$!
 
         if [ "$INCLUDE_EXTRAS" = "1" ]; then
-            run_sim "${CORE_ARR[4]}" ./statesimul.out NO NO SKIPRR nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC \
-                > /dev/null 2> "$U_DIR/${DIR_OF[baseline]}/run.err" &
+            run_sim "${CORE_ARR[4]}" NO NO SKIPRR nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC \
+                > /dev/null 2> "$U_DIR/Baseline.err" &
             pids[baseline]=$!
-            run_sim "${CORE_ARR[5]}" ./statesimul.out UTILGC INVW SKIPRR nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC \
-                > /dev/null 2> "$U_DIR/${DIR_OF[LaWL_D]}/run.err" &
+            run_sim "${CORE_ARR[5]}" UTILGC INVW SKIPRR nogen 4 "$U" -1 0.05 0.95 0 $INIT_CYC \
+                > /dev/null 2> "$U_DIR/LaWL_D.err" &
             pids[LaWL_D]=$!
         fi
 
-        # Wait each individually so we know which one failed
+        # Wait each individually so we know which one failed.
         set +e
         declare -A results
         for name in "${!pids[@]}"; do
@@ -164,18 +156,16 @@ for U in $UTIL_LIST; do
         done
         set -e
 
-        # The simulator uses exit code 1 as its NORMAL end-of-life signal —
-        # fired from emul_main.c when a block hits MAXPE, utilization
-        # exceeds 1.0, or a deadline is missed. Those are exactly the events
-        # we're measuring. Only treat other codes (segfault 139, sigkill 137,
-        # etc.) as failure.
+        # Exit code 1 is the simulator's NORMAL end-of-life signal (MAXPE hit,
+        # utilization > 1.0, or deadline miss — the events being measured).
+        # Only treat other codes (segfault 139, sigkill 137, etc.) as failure.
         fail=0
         for name in "${!results[@]}"; do
             rc=${results[$name]}
             if [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ]; then
                 echo "[OK]    U=$U iter=$i $name  exit=$rc"
             else
-                echo "[FAIL]  U=$U iter=$i $name  exit=$rc  (see $U_DIR/${DIR_OF[$name]}/run.err)"
+                echo "[FAIL]  U=$U iter=$i $name  exit=$rc  (see $U_DIR/$name.err)"
                 fail=1
             fi
         done

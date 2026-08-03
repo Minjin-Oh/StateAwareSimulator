@@ -1,6 +1,6 @@
-#include "stateaware.h"     // contains 
+#include "stateaware.h"     // contains
 #include "init.h"           // contains init function for various structure params
-#include "emul.h"           // contains request process functions for emulation 
+#include "emul.h"           // contains request process functions for emulation
 #include "findRR.h"         // contains block selection functions
 #include "IOgen.h"          // contains random workload generation functions
 #include "emul_logger.h"    // contains latency logger functions
@@ -106,7 +106,7 @@ int main(int argc, char* argv[]){
     int skewnum;                     //number of skewed task
     int OPflag;
     int init_cyc = 0;
-    int lat_mode = 0;                // argv[12]: 0=STATE 1=FIXED_S 2=FIXED_E 3=LAWL_OPT 4=LAWL_NOM 5=LAWL_PES
+    int lat_mode = 0;                // argv[12]: 0=STATE 1=FIXED_S 2=FIXED_E 3=LAWL_OPT 4=LAWL_AVG 5=LAWL_PES
     float totutil;                   //a total utilization of current system
     //get flags
     set_scheme_flags(argv,
@@ -133,6 +133,9 @@ int main(int argc, char* argv[]){
     int do_rr = 0;
     long next_rr_check = 0;          //next simulated time WL admission may be evaluated (T_reloc gate)
     long cur_IO_end = __LONG_MAX__;  //absolute time when current req finishes
+    int  util_overflow_active = 0;   //rising-edge guard: log once per >=1.0 episode
+    long util_overflow_events = 0;   //cumulative episode count for end-of-run summary
+    long dl_miss_events       = 0;   //cumulative deadline-miss count (per last-req IO)
     float WU;                        //worst-case utilization tracker.
     float rrutil;                    //a utilization allowed to data relocation job
     cur_cp = 0;                      //current checkpoint time
@@ -140,6 +143,7 @@ int main(int argc, char* argv[]){
     //log file pointers
     FILE* rr_profile;
     FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
+    FILE *util_fp = NULL;            // per-IO-event (cur_cp,total_u) trace
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
@@ -221,7 +225,7 @@ int main(int argc, char* argv[]){
     printf("[NOB MAXPE] : %d, %d\n",NOB,MAXPE);
     // [FIXED-LATENCY] echo which latency lens LaWL will use for decisions.
     // Ground-truth exec / overflow / MAXPE are always state-aware regardless.
-    printf("[LAT MODE ] : %d (0=STATE 1=FIXED_S 2=FIXED_E 3=LAWL_OPT 4=LAWL_NOM 5=LAWL_PES)\n", latency_mode);
+    printf("[LAT MODE ] : %d (0=STATE 1=FIXED_S 2=FIXED_E 3=LAWL_OPT 4=LAWL_AVG 5=LAWL_PES)\n", latency_mode);
     //sleep(1);
    
     //MINRC is now a configurable value, which can be adjusted like OP
@@ -481,85 +485,72 @@ int main(int argc, char* argv[]){
     //init csv files
     // fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
     
-    /* Ablation sweeps (run_ablation.sh) accumulate lifetime/overhead across
-     * many tasksets via fopen("a"). Writing directly into ablation/<mode>/
-     * lets the natural append mode do the work — no per-iteration bash cat/mv
-     * needed. Fallback to CWD preserves standalone use of this binary when
-     * the ablation/ directory tree isn't present. */
-    if(wflag == 0 && gcflag == 0 && rrflag == -1){
-        u_check = NULL;
-        const char* base_dir = getenv("SIM_LOG_DIR");
-        if(!base_dir || base_dir[0] == '\0') base_dir = "ablation";
-        char path[240];
-        snprintf(path, sizeof(path), "%s/baseline/Baseline_lifetime.csv", base_dir);
-        fplife = fopen(path,"a");
-        if(!fplife) fplife = fopen("Baseline_lifetime.csv","a");
-        snprintf(path, sizeof(path), "%s/baseline/Baseline_overhead.csv", base_dir);
-        fpovhd = fopen(path,"a");
-        if(!fpovhd) fpovhd = fopen("Baseline_overhead.csv","a");
-        updaterate_fp = NULL;
-        gc_valid_fp = NULL;
-    }
-    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){
-	// u_check = fopen("Hyb_rrchecker.csv","w");
-        fplife = fopen("Hyb_lifetime.csv","a");
-        fpovhd = fopen("Hyb_overhead.csv","a");
-	updaterate_fp = fopen("Hyb_updaterate.csv","w");
-	gc_valid_fp = fopen("Hyb_gc_valid.csv","w");
-    }
-    else if(wflag == 14 && gcflag == 6 && rrflag == -1){
-        u_check = NULL;
-        const char* base_dir = getenv("SIM_LOG_DIR");
-        if(!base_dir || base_dir[0] == '\0') base_dir = "ablation";
-        char path[240];
-        snprintf(path, sizeof(path), "%s/LaWL-D/LaWL_D_lifetime.csv", base_dir);
-        fplife = fopen(path,"a");
-        if(!fplife) fplife = fopen("LaWL_D_lifetime.csv","a");
-        snprintf(path, sizeof(path), "%s/LaWL-D/LaWL_D_overhead.csv", base_dir);
-        fpovhd = fopen(path,"a");
-        if(!fpovhd) fpovhd = fopen("LaWL_D_overhead.csv","a");
-        updaterate_fp = NULL;
-        gc_valid_fp = NULL;
-    }
-    else if(wflag == 14 && gcflag == 6 && rrflag == 1){
-        // Tag output files so STATE / FIXED_S / FIXED_E / LAWL_{OPT,NOM,PES}
-        // runs of the same LaWL (UTILGC INVW RR005) config don't clobber.
-        const char* lat_suffix = "";
-        const char* ablation_dir = "LaWL";
+    /* Pick a scheme prefix so results from different (wflag, gcflag, rrflag)
+     * combos don't get mixed when they land in the same directory.
+     *   Baseline : wflag=0  gcflag=0  rrflag=-1
+     *   Hyb      : wflag=11 gcflag=0  rrflag=0
+     *   LaWL_D   : wflag=14 gcflag=6  rrflag=-1
+     *   LaWL fam : wflag=14 gcflag=6  rrflag=1
+     *   Dyn      : anything else
+     *
+     * The LaWL family further splits by latency_mode into STATE / opt / avg /
+     * pes (plus legacy fixedS/fixedE) — same decision path, different lens
+     * for the AssumedLatencyModel. Each variant gets its own filename so the
+     * shell can drop all four into the same directory without collision.
+     *
+     * Directory placement is not the C code's job: it's set via SIM_LOG_DIR
+     * by the shell orchestrator (defaults to CWD when unset). Files open in
+     * "a" mode so many taskset iterations accumulate into one CSV. */
+    const char* log_dir = getenv("SIM_LOG_DIR");
+    if(!log_dir || log_dir[0] == '\0') log_dir = ".";
+
+    char scheme_prefix[32] = "Dyn";
+    if      (wflag == 0  && gcflag == 0 && rrflag == -1) snprintf(scheme_prefix, sizeof(scheme_prefix), "Baseline");
+    else if (wflag == 11 && gcflag == 0 && rrflag ==  0) snprintf(scheme_prefix, sizeof(scheme_prefix), "Hyb");
+    else if (wflag == 14 && gcflag == 6 && rrflag == -1) snprintf(scheme_prefix, sizeof(scheme_prefix), "LaWL_D");
+    else if (wflag == 14 && gcflag == 6 && rrflag ==  1){
+        const char* lat_suffix = "";        /* STATE = paper's proposal, canonical name */
         switch(latency_mode){
-            case 1: lat_suffix = "_fixedS";  ablation_dir = "fixed-S";  break;
-            case 2: lat_suffix = "_fixedE";  ablation_dir = "fixed-E";  break;
-            case 3: lat_suffix = "_lawlOpt"; ablation_dir = "LaWL-Opt"; break;
-            case 4: lat_suffix = "_lawlNom"; ablation_dir = "LaWL-Nom"; break;
-            case 5: lat_suffix = "_lawlPes"; ablation_dir = "LaWL-Pes"; break;
+            case LATENCY_MODE_LAWL_OPT:  lat_suffix = "_opt";    break;
+            case LATENCY_MODE_LAWL_AVG:  lat_suffix = "_avg";    break;
+            case LATENCY_MODE_LAWL_PES:  lat_suffix = "_pes";    break;
+            case LATENCY_MODE_FIXED_BOL: lat_suffix = "_fixedS"; break;  /* legacy */
+            case LATENCY_MODE_FIXED_EOL: lat_suffix = "_fixedE"; break;  /* legacy */
         }
-        /* BGRR variant tags outputs so a paired foreground-slack run and a
-         * background-only run don't clobber each other. */
-        const char* rr_suffix = (rrcond == 7) ? "_bgrr" : "";
-        /* SIM_LOG_DIR overrides the "ablation" prefix so a sweep can send
-         * each utilization slice to its own dir (e.g. sweep_results/u_0.15/). */
-        const char* base_dir = getenv("SIM_LOG_DIR");
-        if(!base_dir || base_dir[0] == '\0') base_dir = "ablation";
-        char nm[96], path[240];
-        u_check = NULL;
-        sprintf(nm,"LaWL%s%s_lifetime.csv", lat_suffix, rr_suffix);
-        snprintf(path, sizeof(path), "%s/%s/%s", base_dir, ablation_dir, nm);
-        fplife = fopen(path,"a");
-        if(!fplife) fplife = fopen(nm,"a");
-        sprintf(nm,"LaWL%s%s_overhead.csv", lat_suffix, rr_suffix);
-        snprintf(path, sizeof(path), "%s/%s/%s", base_dir, ablation_dir, nm);
-        fpovhd = fopen(path,"a");
-        if(!fpovhd) fpovhd = fopen(nm,"a");
-        updaterate_fp = NULL;
-        gc_valid_fp = NULL;
+        snprintf(scheme_prefix, sizeof(scheme_prefix), "LaWL%s", lat_suffix);
     }
-    else{
-	u_check = fopen("Dyn_rrchecker.csv","w");
-        fplife = fopen("Dyn_lifetime.csv","a");
-        fpovhd = fopen("Dyn_overhead.csv","a");
-	updaterate_fp = fopen("Dyn_updaterate.csv","w");
-	gc_valid_fp = fopen("Dyn_gc_valid.csv","w");
-    }
+
+    char log_path[256];
+    snprintf(log_path, sizeof(log_path), "%s/%s_lifetime.csv", log_dir, scheme_prefix);
+    fplife = fopen(log_path, "a");
+    if(!fplife) perror(log_path);
+
+    snprintf(log_path, sizeof(log_path), "%s/%s_overhead.csv", log_dir, scheme_prefix);
+    fpovhd = fopen(log_path, "a");
+    if(!fpovhd) perror(log_path);
+
+    /* Per-event utilization trace. Doubles as the overflow log — sim runs
+     * until MAX PEC (experiment intent), so rows with is_overflow=1 mark
+     * episodes where total_u crossed 1.0 without terminating the run. */
+    snprintf(log_path, sizeof(log_path), "%s/%s_utilization.csv", log_dir, scheme_prefix);
+    util_fp = fopen(log_path, "a");
+    if(!util_fp) perror(log_path);
+
+    /* Legacy trace files — disabled by default. Callers null-check before writing. */
+    rr_profile     = NULL;
+    updateorder_fp = NULL;
+    u_check        = NULL;
+    updaterate_fp  = NULL;
+    gc_valid_fp    = NULL;
+
+    /* util_fp header intentionally omitted — file opens in "a" mode and
+     * many taskset iters share the same file; writing a header per run
+     * would produce duplicate header rows.
+     * Schema: cur_cp, total_u, is_overflow, is_dlmiss, response_time, src
+     *   src=poll : 1M-cycle utilization poll (no cur_IO → response_time=-1, is_dlmiss=0)
+     *   src=evt  : per IO event completion (response_time = cur_cp - IO_start_time;
+     *                                        is_dlmiss=1 only when last-req of an
+     *                                        RD/WR job breached its task period) */
     if(gc_valid_fp != NULL){
         fprintf(gc_valid_fp,"timestamp,taskidx,vic_idx,block_state,gc_valid_count\n");
     }
@@ -568,9 +559,9 @@ int main(int argc, char* argv[]){
     //lat_open(gcflag, wflag, rrflag, tasknum, lat_log_w, lat_log_r, lat_log_gc);
 
     
-   //  for(int i=0;i<tasknum;i++){
-   //      fprintf(fps[i],"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp,w_idx,w_state,fb,w");
-   //  }
+    //  for(int i=0;i<tasknum;i++){
+    //      fprintf(fps[i],"%s\n","timestamp,taskidx,WU,new_WU,noblock,w_util,r_util,g_util,old,yng,bidx,state,vp,w_idx,w_state,fb,w");
+    //  }
     // fprintf(rr_profile,"%s\n","timestamp,vic1,state,window,vic2,state,window");
     if(gcflag == 1 && wflag == 1 && rrflag == 1){
         fprintf(fplife,"\n"); 
@@ -654,29 +645,7 @@ int main(int argc, char* argv[]){
         test_gc_writeblock[i] = fopen(testgcwriteblockname,"w");
     }
 #endif
-    /* Mode-specific overhead-profile basename (disabled — ablation sweep
-     * only needs lifetime/overhead CSVs). ovhd_record() calls elsewhere
-     * still accumulate in-memory stats; file I/O is disabled at the
-     * ovhd_stats.c level (no raw dump, no atexit summary).
-     * {
-     *     char ovhd_base[80];
-     *     if (wflag == 0 && gcflag == 0 && rrflag == -1){
-     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Baseline");
-     *     } else if (wflag == 11 && gcflag == 0 && rrflag == 0){
-     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Hyb");
-     *     } else if (wflag == 14 && gcflag == 6 && rrflag == -1){
-     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_LaWL_D");
-     *     } else if (wflag == 14 && gcflag == 6 && rrflag == 1){
-     *         const char* lat = (latency_mode == LATENCY_MODE_FIXED_BOL) ? "_fixedS"
-     *                         : (latency_mode == LATENCY_MODE_FIXED_EOL) ? "_fixedE" : "";
-     *         const char* rr  = (rrcond == 7) ? "_bgrr" : "";
-     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_LaWL%s%s", lat, rr);
-     *     } else {
-     *         snprintf(ovhd_base, sizeof(ovhd_base), "ovhd_Dyn");
-     *     }
-     *     ovhd_init(ovhd_base);
-     * }
-     */
+
     gettimeofday(&(tot_start_time),NULL);
     //start of simulation
     while(cur_cp <= RUNTIME){
@@ -702,35 +671,26 @@ int main(int argc, char* argv[]){
         oldest = cached_oldest;
         //flash state checker
         if(cur_cp % 1000000L == 0){
-	    total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-	    //printf("cur_u:%f\n",total_u);
-            //utilization overflow(exit code)
-            if(total_u >= 1.0){                
-                printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
-                gettimeofday(&tot_end_time,NULL);
-                tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
-                tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
-                if(write_release_num != 0){
-                    write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
-                } else {
-                    write_ovhd_avg = 0;
+            total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
+            /* Utilization overflow — log & continue. Experiment runs until
+             * MAX PEC is reached (see the cached_maxpe_idx branch below);
+             * overflow is a diagnostic signal, not a termination condition.
+             * The util_fp trace records total_u anyway; here we also emit a
+             * "poll" row with is_overflow=1 so grep -w 1 on util_fp lists
+             * every episode. Rising-edge guard is stdout-only: printf once
+             * per episode instead of once per 1M-cycle poll tick. */
+            int is_overflow = (total_u >= 1.0) ? 1 : 0;
+            /* poll-src rows have no cur_IO → response_time=-1, is_dlmiss=0 */
+            if(util_fp) fprintf(util_fp, "%ld,%f,%d,%d,%ld,poll\n",
+                                cur_cp, total_u, is_overflow, 0, (long)-1);
+            if(is_overflow){
+                if(!util_overflow_active){
+                    util_overflow_active = 1;
+                    util_overflow_events++;
+                    printf("[%ld] utilization overflow (poll), util : %f  (continuing)\n", cur_cp, total_u);
                 }
-                if(gc_release_num != 0){
-                    gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
-                } else {
-                    gc_ovhd_avg = 0;
-                }
-                if(rr_release_num != 0){
-                    rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
-                } else {
-                    rr_ovhd_avg = 0;
-                }
-                fprintf(fplife,"%ld,",cur_cp);
-                fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-                fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
-                print_profile_updaterate(newmeta,updaterate_fp);
-                sleep(1);
-                return 1;
+            } else if(util_overflow_active){
+                util_overflow_active = 0;  // recovered — arm guard for next episode
             }
         }
         if(cached_maxpe_idx >= 0){
@@ -738,6 +698,8 @@ int main(int argc, char* argv[]){
             {
                 total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
                 printf("[%ld]a block(idx=%d) reached maximum P/E, util : %f\n",cur_cp, idx, total_u);
+                printf("[SUMMARY] util-overflow episodes during run: %ld\n", util_overflow_events);
+                printf("[SUMMARY] deadline misses during run       : %ld\n", dl_miss_events);
                 gettimeofday(&tot_end_time,NULL);                                                                     tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
                 tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
                 if(write_release_num != 0){
@@ -781,50 +743,40 @@ int main(int argc, char* argv[]){
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
                                     newmeta->total_fp,cur_IO->gc_valid_count);
-                    //utilization overflow(exit code)
-                    
+                    /* Utilization overflow observed right after a GC
+                     * completion — same policy as the polling check: log &
+                     * continue, don't terminate the sim. Row is written into
+                     * util_fp at the end of this if-branch anyway (see the
+                     * finish_req block below), so this site only handles the
+                     * stdout printf + rising-edge episode counter. */
                     if(total_u > 1.0){
-                        printf("[%ld]utilization overflow, util : %f\n",cur_cp, total_u);
-                        gettimeofday(&tot_end_time,NULL);
-                        tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
-                        tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
-                        if(write_release_num != 0){
-                            write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
-                        } else {
-                            write_ovhd_avg = 0;
+                        if(!util_overflow_active){
+                            util_overflow_active = 1;
+                            util_overflow_events++;
+                            printf("[%ld] utilization overflow (gc), util : %f  (continuing)\n", cur_cp, total_u);
                         }
-                        if(gc_release_num != 0){
-                            gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
-                        } else {
-                            gc_ovhd_avg = 0;
-                        }
-                        if(rr_release_num != 0){
-                            rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
-                        } else {
-                            rr_ovhd_avg = 0;
-                        }
-                        fprintf(fplife,"%ld,",cur_cp);
-                        fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-                        fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
-                        print_profile_updaterate(newmeta,updaterate_fp);
-                        sleep(1);
-                        return 1;
-                        
                     }
                 }
                 
+                /* Per-event dl-miss + response-time state, consumed by the
+                 * util_fp write further down. Both are meaningful only for
+                 * last-req IOs (job completions); non-terminal IOs get the
+                 * defaults below. Sim never terminates on dl miss — MAX PEC
+                 * is the sole terminator. */
+                int  ev_is_dlmiss     = 0;
+                long ev_response_time = -1;
+
                 //if last req is finished, do the following
                 if(cur_IO->last == 1){
-                    //check I/O latency
-                    //check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
-                    if(check_dl_violation(tasks,cur_IO,cur_cp)==2){
-                        fprintf(fplife,"%ld,",cur_cp);
-                        fflush(fplife);
-                        printf("dl miss detected,");
-                        sleep(1);
-                        return 1;
+                    ev_response_time = cur_cp - cur_IO->IO_start_time;
+                    if(check_dl_violation(tasks,cur_IO,cur_cp) == 1){
+                        ev_is_dlmiss = 1;
+                        dl_miss_events++;
+                        /* check_dl_violation already printed the per-task
+                         * diagnostic; nothing else to do here — the util_fp
+                         * evt row below flags is_dlmiss=1 for post-hoc grep. */
                     }
-                    //set finish flags for scheduler, 
+                    //set finish flags for scheduler,
                     //and if current job is delayed, check if next release is possible.
                     if(cur_IO->type == WR){
                         wjob_finished[cur_IO->taskidx] = 1;
@@ -862,10 +814,17 @@ int main(int argc, char* argv[]){
                     wr_end_bwr_flag = 1;
                 }
                 //finish request
-                finish_req(tasks, cur_IO, newmeta, 
-                           fblist_head, rsvlist_head, full_head, 
+                finish_req(tasks, cur_IO, newmeta,
+                           fblist_head, rsvlist_head, full_head,
                            &(cur_GC[cur_IO->taskidx]),&(cur_rr));
 
+                if(util_fp != NULL){
+                    float __log_u = find_cur_util(tasks, tasknum, newmeta,
+                                                  get_blockstate_meta(newmeta, OLD));
+                    int __log_ov = (__log_u >= 1.0f) ? 1 : 0;
+                    fprintf(util_fp,"%ld,%f,%d,%d,%ld,evt\n",
+                            cur_cp, __log_u, __log_ov, ev_is_dlmiss, ev_response_time);
+                }
 
                 //reset I/O pointer and IO end time tracker
                 free(cur_IO);

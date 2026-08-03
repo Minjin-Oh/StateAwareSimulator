@@ -37,9 +37,9 @@ int check_dl_violation(rttask* tasks, IO* cur_IO, long cur_cp){
             return 1;
         }
     }
-    else{
-        return 0;
-    }
+    /* Fall-through for RD/WR without violation, and for other IO types
+     * (GCER, RR* etc.) — no per-task deadline defined for them. */
+    return 0;
 }
 
 void pec_dump_snapshot(FILE *fp, const meta *m, long ts) {
