@@ -1,5 +1,7 @@
 #include "findW.h"
 #include "ovhd_stats.h"
+#include "shadow_stats.h"
+#include "stateaware.h"     /* latency_mode + LATENCY_MODE_STATE */
 
 /* Controller path (write block selection incl. LaWL INVW). All exec/util
  * helpers MUST route through the AssumedLatencyModel — *_exec_assumed /
@@ -9,6 +11,66 @@
 
 extern double OP;
 extern int MINRC;
+extern long cur_cp;
+
+/* [C1 SHADOW] Owned here (used to live in assignW.c). Populated by
+ * compute_shadow_write; read + cleared by emul_main.c after each write
+ * job release. */
+shadow_stat_write g_shadow_write = {0};
+
+/* [C1 SHADOW] Standalone feasibility-count evaluator. The actual write
+ * allocator (find_write_maxinvalid, ~700 lines with DYN-mode state buffers)
+ * cannot be called twice with different latency_mode because it mutates
+ * metadata->cur_rank_info. Instead, this read-only helper iterates the
+ * fblist + write_head candidates *externally*, tags each as feasible under
+ * (a) the current latency_mode and (b) LATENCY_MODE_STATE, and stores the
+ * two counts in g_shadow_write. That directly supports §C1's feasible_ratio
+ * (Optimistic → 1.0 predicted, Pessimistic → 0.0 predicted). Chosen-block
+ * divergence is left as -1 for both since we don't replay the allocator. */
+void compute_shadow_write(rttask* task, int taskidx, int tasknum, meta* metadata,
+                          bhead* fblist_head, bhead* write_head){
+    int old = get_blockstate_meta(metadata, OLD);
+    int n_cand = 0, n_feas_mode = 0, n_feas_shadow = 0;
+    int saved_mode = latency_mode;
+    int is_state = (saved_mode == LATENCY_MODE_STATE);
+
+    /* Iterate both candidate pools that assign_write_invalid / find_write_maxinvalid
+     * would consider as a source of write blocks. write_head first (active
+     * write blocks with free pages), then fblist (unused free blocks). */
+    for(int pool = 0; pool < 2; pool++){
+        bhead* head = (pool == 0) ? write_head : fblist_head;
+        if(head == NULL) continue;
+        block* cur = head->head;
+        while(cur != NULL){
+            n_cand++;
+            int cur_state = metadata->state[cur->idx];
+            float wu_m = __calc_wu_assumed(&(task[taskidx]), cur_state);
+            int feas_m = (find_util_safe_assumed(task,tasknum,metadata,old,taskidx,WR,wu_m) == 0);
+            if(feas_m) n_feas_mode++;
+            int feas_s;
+            if(is_state){
+                feas_s = feas_m;
+            } else {
+                latency_mode = LATENCY_MODE_STATE;
+                float wu_s = __calc_wu_assumed(&(task[taskidx]), cur_state);
+                feas_s = (find_util_safe_assumed(task,tasknum,metadata,old,taskidx,WR,wu_s) == 0);
+                latency_mode = saved_mode;
+            }
+            if(feas_s) n_feas_shadow++;
+            cur = cur->next;
+        }
+    }
+
+    g_shadow_write.cur_cp            = cur_cp;
+    g_shadow_write.task              = taskidx;
+    g_shadow_write.n_candidates      = n_cand;
+    g_shadow_write.n_feasible_mode   = n_feas_mode;
+    g_shadow_write.n_feasible_shadow = n_feas_shadow;
+    g_shadow_write.chosen_mode       = -1;   /* not replayed */
+    g_shadow_write.chosen_shadow     = -1;
+    g_shadow_write.young_or_old      = -1;
+    g_shadow_write.valid             = (n_cand > 0) ? 1 : 0;
+}
 
 //FIXME:: a temporary solution to expose locality variables to find_write_gradient function
 extern float sploc;

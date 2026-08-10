@@ -324,6 +324,8 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     // 1-(2). if not (UTILGC = 6)
     else if (gcflag == 6){
         vic = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head);
+        /* [C2 SHADOW] Populate g_shadow_gc with tie count + STATE-lens pick. */
+        compute_shadow_gc(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head,vic);
     }
     
     //     //find gc target

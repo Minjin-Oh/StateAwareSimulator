@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -g -W -DOVHD_NO_RAW
-LDFLAGS = -lm -ldl
+LDFLAGS = -lm -ldl -lz
 
 #source directory
 SRC_DIR = ./src

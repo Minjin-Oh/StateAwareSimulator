@@ -424,7 +424,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
     block* ret = NULL;
     //search for current write block
     //!!!make sure that, when write block is removed, it MUST BE REMOVED FROM GLOBAL BLOCK LIST
-    if(young_flag == 1){   
+    if(young_flag == 1){
         cur = glob_yb->head;
         while(cur != NULL){
             cur_state = metadata->state[cur->idx];
@@ -450,7 +450,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
     if(ret == NULL){
         printf("checking fb. num : %d\n",fblist_head->blocknum);
         cur = fblist_head->head;
-        if(young_flag == 1){        
+        if(young_flag == 1){
             while(cur != NULL){
                 //skip check if current block is not suitable
                 cur_state = metadata->state[cur->idx];
@@ -460,7 +460,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
                 }
                 if(ret == NULL){
                     ret = cur;
-                } 
+                }
                 else if (metadata->state[cur->idx] < metadata->state[ret->idx]){
                     ret = cur;
                 }
@@ -473,7 +473,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
                 return ret;
             }
         }
-        else if(old_flag == 1){        
+        else if(old_flag == 1){
             while(cur != NULL){
                 //skip check if current block is not suitable
                 cur_state = metadata->state[cur->idx];
@@ -483,7 +483,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
                 }
                 if(ret == NULL){
                     ret = cur;
-                } 
+                }
                 else if (metadata->state[cur->idx] > metadata->state[ret->idx]){
                     ret = cur;
                 }
@@ -495,7 +495,7 @@ block* assign_write_invalid(rttask* task, int taskidx, int tasknum, meta* metada
                 printf("[O]retrieve %d from fblist\n",ret->idx);
                 return ret;
             }
-        }   
+        }
     }
     //edgecase::ret is still NULL?
     if(glob_yb->head != NULL){

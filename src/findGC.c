@@ -1,4 +1,6 @@
 #include "findGC.h"
+#include "shadow_stats.h"
+#include "stateaware.h"     /* latency_mode + LATENCY_MODE_STATE */
 #include <float.h>
 
 /* Controller path (GC victim selection). Every exec/util helper here MUST
@@ -9,6 +11,10 @@
 
 extern double OP;
 extern int MINRC;
+
+/* [C2 SHADOW] Populated by compute_shadow_gc() after each find_gc_utilsort()
+ * pick. Read and cleared by emul_main.c right after gc_job_start_q returns. */
+shadow_stat_gc g_shadow_gc = {0};
 
 //FIXME:: a temporary solution to expose queue to find_util_safe function.
 extern IOhead** wq;
@@ -499,6 +505,69 @@ block* find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, 
         printf("[GC] No block satisfies MINRC=%d, relax MINRC with invnum=%d\n", MINRC, best_relaxed_inv);
         return best_relaxed_blk;
     }
+}
+
+/* [C2 SHADOW] Given the mode-lens pick already produced by find_gc_utilsort,
+ * compute (a) EU-tie stats under mode-lens and (b) the shadow pick under
+ * STATE-lens. Populates g_shadow_gc for emul_main.c to log. Read-only:
+ * metadata untouched. Call SITE: right after find_gc_utilsort in IOsim_q.c. */
+void compute_shadow_gc(rttask* task, int taskidx, int tasknum, meta* metadata,
+                       bhead* full_head, bhead* rsvlist_head, bhead* write_head,
+                       block* chosen_mode){
+    if(full_head == NULL || full_head->head == NULL || rsvlist_head->head == NULL){
+        g_shadow_gc.valid = 0;
+        return;
+    }
+    int copyblock_state = metadata->state[rsvlist_head->head->idx];
+    float gc_period = (float)_gc_period(&(task[taskidx]), (int)MINRC);
+
+    /* Mode-lens: iterate full_head, compute gc_util per viable candidate
+     * (inv >= MINRC), count how many share the minimum. Fixed-lens should
+     * exhibit within-bucket ties (§C2 EU_tie_rate → 1.0 expectation). */
+    float w_exec_copy_m = w_exec_assumed(copyblock_state);
+    int   n_cand   = 0;
+    float min_util = FLT_MAX;
+    int   n_tie    = 0;
+    block* cur = full_head->head;
+    while(cur != NULL){
+        int inv = metadata->invnum[cur->idx];
+        if(inv > PPB) inv = PPB;
+        if(inv < MINRC){ cur = cur->next; continue; }
+        n_cand++;
+        int cur_state = metadata->state[cur->idx];
+        float gc_exec = (float)(PPB - inv) * (w_exec_copy_m + r_exec_assumed(cur_state))
+                      + e_exec_assumed(cur_state);
+        float gc_util = gc_exec / gc_period;
+        if(gc_util < min_util){
+            min_util = gc_util;
+            n_tie = 1;
+        } else if(gc_util == min_util){
+            n_tie++;
+        }
+        cur = cur->next;
+    }
+
+    /* Shadow-lens pick: re-run selection under STATE. Skip the second call
+     * when we already ARE STATE (chosen_shadow == chosen_mode by tautology). */
+    int saved = latency_mode;
+    block* chosen_shadow;
+    if(saved == LATENCY_MODE_STATE){
+        chosen_shadow = chosen_mode;
+    } else {
+        latency_mode = LATENCY_MODE_STATE;
+        chosen_shadow = find_gc_utilsort(task, taskidx, tasknum, metadata,
+                                         full_head, rsvlist_head, write_head);
+        latency_mode = saved;
+    }
+
+    g_shadow_gc.cur_cp          = cur_cp;
+    g_shadow_gc.task            = taskidx;
+    g_shadow_gc.n_candidates    = n_cand;
+    g_shadow_gc.n_tie_mode      = n_tie;
+    g_shadow_gc.min_gcutil_mode = min_util;
+    g_shadow_gc.chosen_mode     = chosen_mode   ? chosen_mode->idx   : -1;
+    g_shadow_gc.chosen_shadow   = chosen_shadow ? chosen_shadow->idx : -1;
+    g_shadow_gc.valid           = 1;
 }
 
 int find_gc_test(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* full_head, bhead* rsvlist_head, bhead* write_head){

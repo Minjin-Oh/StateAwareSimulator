@@ -2,16 +2,26 @@
 #include "init.h"           // contains init function for various structure params
 #include "emul.h"           // contains request process functions for emulation
 #include "findRR.h"         // contains block selection functions
+#include "findW.h"          // compute_shadow_write() for §C1 shadow eval
 #include "IOgen.h"          // contains random workload generation functions
 #include "emul_logger.h"    // contains latency logger functions
 #include "ovhd_stats.h"     // decision-overhead distribution instrumentation
+#include "shadow_stats.h"   // g_shadow_write / g_shadow_gc for C1/C2 divergence
 #include <unistd.h>         // sleep()
+#include <math.h>           // sqrt() for end-of-run PEC-distribution stats
+#include <zlib.h>           // gzFile / gzopen / gzprintf / gzclose — util_fp is gz-compressed
 
 /* LaWL-S invocation period (Sec. VI-B: "LaWL-S is invoked every T_reloc").
  * Gates the WL admission evaluation so it is attempted once per T_reloc
  * instead of after every write-job completion (do_rr polling artifact).
  * 500 ms: same period as the clustering-boundary update. */
 #define TRELOC 500000L
+
+/* Force-background RR scheme (parse.c: argv[3]=="BGRR"). When set, LaWL-S
+ * admission bypasses the slack check and unconditionally queues RR at the
+ * lowest priority. Kept as an opt-in scheme; all other rrcond values run
+ * the paper's slack-based admission (Eq. 13). Mirrors IOsim_q.c. */
+#define RRCOND_BGRR 7
 
 //globals
 block* cur_fb = NULL;
@@ -140,10 +150,28 @@ int main(int argc, char* argv[]){
     float rrutil;                    //a utilization allowed to data relocation job
     cur_cp = 0;                      //current checkpoint time
     
-    //log file pointers
-    FILE* rr_profile;
-    FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
-    FILE *util_fp = NULL;            // per-IO-event (cur_cp,total_u) trace
+    //log file pointers — NULL-init so unmatched (wflag,gcflag,rrflag,latency_mode)
+    //combos don't leak an uninitialized pointer into later fprintf calls.
+    FILE* rr_profile = NULL;
+    FILE *fp = NULL, *fplife = NULL, *fpwrite = NULL, *fpread = NULL, *fprr = NULL, *fpovhd = NULL;
+    gzFile util_fp = NULL;           // per-IO-event trace, gzip-streamed to keep disk bounded
+    /* [C3] per-invocation LaWL-S admission trace + one-shot end-of-run summary.
+     * Opened only for rrflag != -1 schemes (LaWL family + Hybrid); Baseline /
+     * LaWL-D never call the admission block so admit metrics are undefined. */
+    FILE *fpadmit = NULL;
+    FILE *fpadmit_sum = NULL;
+    /* [C1/C2 SHADOW] per-decision shadow-evaluation traces. Opened for every
+     * scheme that runs a write / GC decision (all except pure Baseline that
+     * bypasses INVW+UTILGC). Shadow rows are only written when the mode's
+     * decision hit the instrumented path (g_shadow_*.valid == 1). */
+    FILE *fpshadow_w = NULL;    /* §C1 write-block divergence */
+    FILE *fpshadow_g = NULL;    /* §C2 GC-victim divergence */
+    /* [C4] per-job release/completion trace + end-of-run summary.
+     * Enables post-hoc computation of Δ_unsafe + FN/FP confusion matrix
+     * (§C4 & §3.4(c)(d)). Opened for every scheme so LaWL / opt / avg / pes /
+     * baseline / dyn / hybrid can be compared side-by-side. */
+    FILE *fpjobs     = NULL;
+    FILE *fpjobs_sum = NULL;
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
@@ -206,6 +234,45 @@ int main(int argc, char* argv[]){
     long write_ovhd_sum = 0;
     long gc_ovhd_sum = 0;
     long rr_ovhd_sum = 0;
+    /* [C3] LaWL-S admission accounting.
+     *   admit          : slack budget positive AND a victim pair was found.
+     *   skip_noslack   : slack budget non-positive under current latency lens
+     *                    (Eq. 13 admission failed). This is the criterion-
+     *                    driven skip — the metric §C3 targets.
+     *   skip_novictim  : slack ok but find_WR/RR_target returned no pair.
+     * Reported separately so admit_rate = admit / (admit + skip_noslack)
+     * is not diluted by orthogonal skips. */
+    long rr_admit_events         = 0;
+    long rr_skip_noslack_events  = 0;
+    long rr_skip_novictim_events = 0;
+
+    /* [C4] Δ_unsafe + confusion-matrix accounting. Both t_first_* timestamps
+     * are captured on FIRST occurrence and remain -1 if the event never fires
+     * during the run (interpret as "safe" / "conservative" in post-proc).
+     * Confusion cells count per-job-completion pairs of (release-time
+     * prediction, job-interval reality). */
+    long t_first_dlmiss     = -1L;
+    long t_first_infeasible = -1L;
+    long n_releases   = 0, n_feasible = 0, n_infeasible = 0, n_miss = 0;
+    long cnt_FN = 0, cnt_FP = 0, cnt_TN = 0, cnt_TP = 0;
+    /* Per-task pending prediction: at release we stash (release_time,
+     * deadline, prediction); at completion we look it up, tally the
+     * confusion cell, and emit a jobs.csv row. `valid=0` while no job
+     * of this (task, type) is in flight. */
+    typedef struct {
+        long release_time;
+        long deadline;
+        int  prediction;   /* 1=infeasible, 0=feasible under find_worst_util_assumed */
+        int  valid;
+    } pending_pred_t;
+    pending_pred_t pending_w[tasknum];
+    pending_pred_t pending_r[tasknum];
+    pending_pred_t pending_gc[tasknum];
+    for(int __k=0; __k<tasknum; __k++){
+        pending_w[__k].valid  = 0;
+        pending_r[__k].valid  = 0;
+        pending_gc[__k].valid = 0;
+    }
     long tot_runtime;
     double tot_runtime_readable;
     double write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg;
@@ -497,44 +564,93 @@ int main(int argc, char* argv[]){
      * pes (plus legacy fixedS/fixedE) — same decision path, different lens
      * for the AssumedLatencyModel. Each variant gets its own filename so the
      * shell can drop all four into the same directory without collision.
-     *
-     * Directory placement is not the C code's job: it's set via SIM_LOG_DIR
-     * by the shell orchestrator (defaults to CWD when unset). Files open in
-     * "a" mode so many taskset iterations accumulate into one CSV. */
-    const char* log_dir = getenv("SIM_LOG_DIR");
-    if(!log_dir || log_dir[0] == '\0') log_dir = ".";
+    */
 
-    char scheme_prefix[32] = "Dyn";
-    if      (wflag == 0  && gcflag == 0 && rrflag == -1) snprintf(scheme_prefix, sizeof(scheme_prefix), "Baseline");
-    else if (wflag == 11 && gcflag == 0 && rrflag ==  0) snprintf(scheme_prefix, sizeof(scheme_prefix), "Hyb");
-    else if (wflag == 14 && gcflag == 6 && rrflag == -1) snprintf(scheme_prefix, sizeof(scheme_prefix), "LaWL_D");
-    else if (wflag == 14 && gcflag == 6 && rrflag ==  1){
-        const char* lat_suffix = "";        /* STATE = paper's proposal, canonical name */
-        switch(latency_mode){
-            case LATENCY_MODE_LAWL_OPT:  lat_suffix = "_opt";    break;
-            case LATENCY_MODE_LAWL_AVG:  lat_suffix = "_avg";    break;
-            case LATENCY_MODE_LAWL_PES:  lat_suffix = "_pes";    break;
-            case LATENCY_MODE_FIXED_BOL: lat_suffix = "_fixedS"; break;  /* legacy */
-            case LATENCY_MODE_FIXED_EOL: lat_suffix = "_fixedE"; break;  /* legacy */
-        }
-        snprintf(scheme_prefix, sizeof(scheme_prefix), "LaWL%s", lat_suffix);
+    // baseline
+    if (wflag == 0  && gcflag == 0 && rrflag == -1){
+        fplife = fopen("baseline_lifetime.csv", "a");
+        fpovhd = fopen("baseline_overhead.csv", "a");
+        util_fp = gzopen("baseline_utilization.csv.gz", "ab");
+        fpjobs      = fopen("baseline_jobs.csv",         "a");
+        fpjobs_sum  = fopen("baseline_jobs_summary.csv", "a");
     }
-
-    char log_path[256];
-    snprintf(log_path, sizeof(log_path), "%s/%s_lifetime.csv", log_dir, scheme_prefix);
-    fplife = fopen(log_path, "a");
-    if(!fplife) perror(log_path);
-
-    snprintf(log_path, sizeof(log_path), "%s/%s_overhead.csv", log_dir, scheme_prefix);
-    fpovhd = fopen(log_path, "a");
-    if(!fpovhd) perror(log_path);
-
-    /* Per-event utilization trace. Doubles as the overflow log — sim runs
-     * until MAX PEC (experiment intent), so rows with is_overflow=1 mark
-     * episodes where total_u crossed 1.0 without terminating the run. */
-    snprintf(log_path, sizeof(log_path), "%s/%s_utilization.csv", log_dir, scheme_prefix);
-    util_fp = fopen(log_path, "a");
-    if(!util_fp) perror(log_path);
+    // dynamic WL
+    else if (wflag == 11 && gcflag == 0 && rrflag == -1) {
+        fplife = fopen("dyn_lifetime.csv", "a");
+        fpovhd = fopen("dyn_overhead.csv", "a");
+        util_fp = gzopen("dyn_utilization.csv.gz", "ab");
+        fpjobs      = fopen("dyn_jobs.csv",         "a");
+        fpjobs_sum  = fopen("dyn_jobs_summary.csv", "a");
+    }
+    // hybrid WL
+    else if (wflag == 11 && gcflag == 0 && rrflag ==  0) {
+        fplife = fopen("hyb_lifetime.csv", "a");
+        fpovhd = fopen("hyb_overhead.csv", "a");
+        util_fp = gzopen("hyb_utilization.csv.gz", "ab");
+        fpadmit     = fopen("hyb_admit.csv",         "a");
+        fpadmit_sum = fopen("hyb_admit_summary.csv", "a");
+        fpjobs      = fopen("hyb_jobs.csv",         "a");
+        fpjobs_sum  = fopen("hyb_jobs_summary.csv", "a");
+    }
+    // LaWL_D
+    else if (wflag == 14 && gcflag == 6 && rrflag == -1) {
+        fplife = fopen("LaWL_D_lifetime.csv", "a");
+        fpovhd = fopen("LaWL_D_overhead.csv", "a");
+        util_fp = gzopen("LaWL_D_utilization.csv.gz", "ab");
+        fpshadow_w = fopen("LaWL_D_shadow_write.csv", "a");
+        fpshadow_g = fopen("LaWL_D_shadow_gc.csv",    "a");
+        fpjobs      = fopen("LaWL_D_jobs.csv",         "a");
+        fpjobs_sum  = fopen("LaWL_D_jobs_summary.csv", "a");
+    }
+    // LaWL
+    else if (wflag == 14 && gcflag == 6 && rrflag ==  1){
+        switch(latency_mode){
+            case LATENCY_MODE_LAWL_OPT:
+                fplife = fopen("LaWL_opt_lifetime.csv", "a");
+                fpovhd = fopen("LaWL_opt_overhead.csv", "a");
+                util_fp = gzopen("LaWL_opt_utilization.csv.gz", "ab");
+                fpadmit     = fopen("LaWL_opt_admit.csv",         "a");
+                fpadmit_sum = fopen("LaWL_opt_admit_summary.csv", "a");
+                fpshadow_w  = fopen("LaWL_opt_shadow_write.csv",  "a");
+                fpshadow_g  = fopen("LaWL_opt_shadow_gc.csv",     "a");
+                fpjobs      = fopen("LaWL_opt_jobs.csv",         "a");
+                fpjobs_sum  = fopen("LaWL_opt_jobs_summary.csv", "a");
+                break;
+            case LATENCY_MODE_LAWL_AVG:
+                fplife = fopen("LaWL_avg_lifetime.csv", "a");
+                fpovhd = fopen("LaWL_avg_overhead.csv", "a");
+                util_fp = gzopen("LaWL_avg_utilization.csv.gz", "ab");
+                fpadmit     = fopen("LaWL_avg_admit.csv",         "a");
+                fpadmit_sum = fopen("LaWL_avg_admit_summary.csv", "a");
+                fpshadow_w  = fopen("LaWL_avg_shadow_write.csv",  "a");
+                fpshadow_g  = fopen("LaWL_avg_shadow_gc.csv",     "a");
+                fpjobs      = fopen("LaWL_avg_jobs.csv",         "a");
+                fpjobs_sum  = fopen("LaWL_avg_jobs_summary.csv", "a");
+                break;
+            case LATENCY_MODE_LAWL_PES:
+                fplife = fopen("LaWL_pes_lifetime.csv", "a");
+                fpovhd = fopen("LaWL_pes_overhead.csv", "a");
+                util_fp = gzopen("LaWL_pes_utilization.csv.gz", "ab");
+                fpadmit     = fopen("LaWL_pes_admit.csv",         "a");
+                fpadmit_sum = fopen("LaWL_pes_admit_summary.csv", "a");
+                fpshadow_w  = fopen("LaWL_pes_shadow_write.csv",  "a");
+                fpshadow_g  = fopen("LaWL_pes_shadow_gc.csv",     "a");
+                fpjobs      = fopen("LaWL_pes_jobs.csv",         "a");
+                fpjobs_sum  = fopen("LaWL_pes_jobs_summary.csv", "a");
+                break;
+            case LATENCY_MODE_STATE:
+                fplife = fopen("LaWL_lifetime.csv", "a");
+                fpovhd = fopen("LaWL_overhead.csv", "a");
+                util_fp = gzopen("LaWL_utilization.csv.gz", "ab");
+                fpadmit     = fopen("LaWL_admit.csv",         "a");
+                fpadmit_sum = fopen("LaWL_admit_summary.csv", "a");
+                fpshadow_w  = fopen("LaWL_shadow_write.csv",  "a");
+                fpshadow_g  = fopen("LaWL_shadow_gc.csv",     "a");
+                fpjobs      = fopen("LaWL_jobs.csv",         "a");
+                fpjobs_sum  = fopen("LaWL_jobs_summary.csv", "a");
+                break;
+        }
+    }
 
     /* Legacy trace files — disabled by default. Callers null-check before writing. */
     rr_profile     = NULL;
@@ -542,6 +658,17 @@ int main(int argc, char* argv[]){
     u_check        = NULL;
     updaterate_fp  = NULL;
     gc_valid_fp    = NULL;
+
+    /* Fail fast if no branch matched — otherwise the fprintf sites below
+     * would dereference NULL fplife/fpovhd deep into the sim run. Cover
+     * cases like FIXED_S/FIXED_E argv[12] flags (not in the LaWL switch),
+     * or arbitrary (wflag,gcflag,rrflag) combos users try. */
+    if(!fplife || !fpovhd){
+        fprintf(stderr, "[FATAL] no log-open branch matched: "
+                        "wflag=%d gcflag=%d rrflag=%d latency_mode=%d\n",
+                        wflag, gcflag, rrflag, latency_mode);
+        return 2;
+    }
 
     /* util_fp header intentionally omitted — file opens in "a" mode and
      * many taskset iters share the same file; writing a header per run
@@ -681,8 +808,8 @@ int main(int argc, char* argv[]){
              * per episode instead of once per 1M-cycle poll tick. */
             int is_overflow = (total_u >= 1.0) ? 1 : 0;
             /* poll-src rows have no cur_IO → response_time=-1, is_dlmiss=0 */
-            if(util_fp) fprintf(util_fp, "%ld,%f,%d,%d,%ld,poll\n",
-                                cur_cp, total_u, is_overflow, 0, (long)-1);
+            if(util_fp) gzprintf(util_fp, "%ld,%f,%d,%d,%ld,poll\n",
+                                 cur_cp, total_u, is_overflow, 0, (long)-1);
             if(is_overflow){
                 if(!util_overflow_active){
                     util_overflow_active = 1;
@@ -720,6 +847,60 @@ int main(int argc, char* argv[]){
                 fprintf(fplife,"%ld,",cur_cp);
                 fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
                 fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
+                /* [C3] end-of-run admit summary + PEC-distribution stats.
+                 * PEC dist quantifies how evenly relocation spread wear
+                 * (§C3 last measurement bullet). */
+                if(fpadmit_sum){
+                    long __psum = 0, __psq = 0;
+                    int  __pmax = newmeta->state[0], __pmin = newmeta->state[0];
+                    for(int __i=0; __i<NOB; __i++){
+                        int __s = newmeta->state[__i];
+                        __psum += __s;
+                        __psq  += (long)__s * (long)__s;
+                        if(__s > __pmax) __pmax = __s;
+                        if(__s < __pmin) __pmin = __s;
+                    }
+                    double __pmean = (double)__psum / (double)NOB;
+                    double __pvar  = ((double)__psq  / (double)NOB) - __pmean * __pmean;
+                    if(__pvar < 0) __pvar = 0;
+                    double __pstd  = sqrt(__pvar);
+                    long   __tot   = rr_admit_events + rr_skip_noslack_events + rr_skip_novictim_events;
+                    double __arate = (__tot > 0) ? (double)rr_admit_events / (double)__tot : 0.0;
+                    fprintf(fpadmit_sum,
+                            "%ld,%ld,%ld,%ld,%f,%d,%d,%f,%f\n",
+                            cur_cp, rr_admit_events,
+                            rr_skip_noslack_events, rr_skip_novictim_events,
+                            __arate, __pmax, __pmin, __pmean, __pstd);
+                }
+                /* [C4] End-of-run confusion-matrix summary.
+                 *   delta_unsafe = t_first_infeasible − t_first_dlmiss
+                 * Missing timestamps (event never fired) are emitted as -1
+                 * and delta_unsafe is left at 0; post-proc must condition on
+                 * both t_first_* being present before interpreting Δ. */
+                if(fpjobs_sum){
+                    long __delta = 0L;
+                    if(t_first_dlmiss != -1L && t_first_infeasible != -1L)
+                        __delta = t_first_infeasible - t_first_dlmiss;
+                    long   __nn   = n_releases - n_miss;
+                    double __fnr  = (n_miss > 0) ? (double)cnt_FN / (double)n_miss : 0.0;
+                    double __fpr  = (__nn  > 0) ? (double)cnt_FP / (double)__nn   : 0.0;
+                    fprintf(fpjobs_sum,
+                            "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%f,%f\n",
+                            cur_cp, t_first_dlmiss, t_first_infeasible, __delta,
+                            n_releases, n_feasible, n_infeasible, n_miss,
+                            cnt_FN, cnt_FP, cnt_TN, cnt_TP, __fnr, __fpr);
+                }
+                /* Flush + write gz trailer. Without gzclose, the zlib
+                 * stream is left mid-block and readers see EOF errors. */
+                if(util_fp)     gzclose(util_fp);
+                if(fplife)      fclose(fplife);
+                if(fpovhd)      fclose(fpovhd);
+                if(fpadmit)     fclose(fpadmit);
+                if(fpadmit_sum) fclose(fpadmit_sum);
+                if(fpshadow_w)  fclose(fpshadow_w);
+                if(fpshadow_g)  fclose(fpshadow_g);
+                if(fpjobs)      fclose(fpjobs);
+                if(fpjobs_sum)  fclose(fpjobs_sum);
                 sleep(1);
                 return 1;
             }
@@ -776,6 +957,37 @@ int main(int argc, char* argv[]){
                          * diagnostic; nothing else to do here — the util_fp
                          * evt row below flags is_dlmiss=1 for post-hoc grep. */
                     }
+                    /* [C4] Job-completion trace + confusion-matrix tally.
+                     * Look up the release-time prediction stashed at release,
+                     * emit a jobs.csv row, and bump the appropriate FN/FP/
+                     * TN/TP counter. Δ_unsafe: record first miss timestamp. */
+                    if(fpjobs_sum){
+                        pending_pred_t* pp = NULL;
+                        const char*     tag = NULL;
+                        if(cur_IO->type == WR){       pp = &pending_w[cur_IO->taskidx];  tag = "WR"; }
+                        else if(cur_IO->type == RD){  pp = &pending_r[cur_IO->taskidx];  tag = "RD"; }
+                        else if(cur_IO->type == GCER){pp = &pending_gc[cur_IO->taskidx]; tag = "GC"; }
+                        if(pp && pp->valid){
+                            int __am = ev_is_dlmiss;
+                            if(__am){
+                                n_miss++;
+                                if(t_first_dlmiss == -1L) t_first_dlmiss = cur_cp;
+                            }
+                            /* Confusion cell: (prediction=feasible/infeasible)
+                             * × (reality=miss/no-miss). Paper §3.4(d). */
+                            if      (pp->prediction == 0 && __am == 1) cnt_FN++;  /* unsafe */
+                            else if (pp->prediction == 0 && __am == 0) cnt_TN++;
+                            else if (pp->prediction == 1 && __am == 1) cnt_TP++;
+                            else /* pred=1 && am=0 */                  cnt_FP++;  /* over-conservative */
+                            if(fpjobs){
+                                fprintf(fpjobs, "%s,%d,%ld,%ld,%d,%ld,%d\n",
+                                        tag, cur_IO->taskidx,
+                                        pp->release_time, pp->deadline,
+                                        pp->prediction, cur_cp, __am);
+                            }
+                            pp->valid = 0;
+                        }
+                    }
                     //set finish flags for scheduler,
                     //and if current job is delayed, check if next release is possible.
                     if(cur_IO->type == WR){
@@ -799,7 +1011,7 @@ int main(int argc, char* argv[]){
                                 //if current write is delayed, check if write release is possible
                                 if(cur_cp >= cur_IO->deadline){
                                     next_w_release[a] = cur_cp;
-                                } 
+                                }
                             }
                         }
                     }
@@ -822,8 +1034,8 @@ int main(int argc, char* argv[]){
                     float __log_u = find_cur_util(tasks, tasknum, newmeta,
                                                   get_blockstate_meta(newmeta, OLD));
                     int __log_ov = (__log_u >= 1.0f) ? 1 : 0;
-                    fprintf(util_fp,"%ld,%f,%d,%d,%ld,evt\n",
-                            cur_cp, __log_u, __log_ov, ev_is_dlmiss, ev_response_time);
+                    gzprintf(util_fp,"%ld,%f,%d,%d,%ld,evt\n",
+                             cur_cp, __log_u, __log_ov, ev_is_dlmiss, ev_response_time);
                 }
 
                 //reset I/O pointer and IO end time tracker
@@ -843,10 +1055,38 @@ int main(int argc, char* argv[]){
             }
             if(cur_cp == next_w_release[j] && wjob_finished[j] == 1 && wjob_deferred[j] == 0){
                 long __wt0 = ovhd_now_us();
-                cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta, 
+                cur_wb[j] = write_job_start_q(tasks, j, tasknum, newmeta,
                                               fblist_head, full_head, write_head,
                                               w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
                 write_release_num++;
+                /* [C1 SHADOW] Standalone feasibility-count evaluator over
+                 * write_head + fblist_head. Populates g_shadow_write, which
+                 * the block below flushes to fpshadow_w. Runs unconditionally
+                 * for LaWL / LaWL-D so §C1's feasible_ratio is always
+                 * measurable regardless of which internal allocator path
+                 * write_job_start_q took. */
+                if(fpshadow_w){
+                    compute_shadow_write(tasks, j, tasknum, newmeta,
+                                         fblist_head, write_head);
+                }
+                /* [C4] Stash release-time prediction for this WR job. The
+                 * matching completion (last==1) block looks this up to tally
+                 * the (prediction, reality) confusion cell. */
+                if(fpjobs_sum){
+                    float __wcu_p = find_worst_util_assumed(tasks, tasknum, newmeta);
+                    int   __pred  = (__wcu_p > 1.0f) ? 1 : 0;
+                    pending_w[j].release_time = cur_cp;
+                    pending_w[j].deadline     = cur_cp + (long)tasks[j].wp;
+                    pending_w[j].prediction   = __pred;
+                    pending_w[j].valid        = 1;
+                    n_releases++;
+                    if(__pred){
+                        n_infeasible++;
+                        if(t_first_infeasible == -1L) t_first_infeasible = cur_cp;
+                    } else {
+                        n_feasible++;
+                    }
+                }
                 {
                     long __d = ovhd_now_us() - __wt0;
                     int  __had_cl = 0;
@@ -863,9 +1103,24 @@ int main(int argc, char* argv[]){
                     /* pure per-request write decision cost */
                     ovhd_record(OVHD_WRITE, __pure, cur_cp);
                 }
+                /* [C1 SHADOW] Flush any shadow-write stats populated by
+                 * assign_write_invalid()'s fblist path during this call. */
+                if(fpshadow_w && g_shadow_write.valid){
+                    fprintf(fpshadow_w,"%ld,%d,%d,%d,%d,%d,%d,%d,%d\n",
+                            g_shadow_write.cur_cp,
+                            g_shadow_write.task,
+                            g_shadow_write.n_candidates,
+                            g_shadow_write.n_feasible_mode,
+                            g_shadow_write.n_feasible_shadow,
+                            g_shadow_write.chosen_mode,
+                            g_shadow_write.chosen_shadow,
+                            g_shadow_write.young_or_old,
+                            (g_shadow_write.chosen_mode != g_shadow_write.chosen_shadow) ? 1 : 0);
+                    g_shadow_write.valid = 0;
+                }
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
                 wjob_finished[j] = 0;
-            } 
+            }
             else if (cur_cp == next_w_release[j] && wjob_finished[j] == 0){
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
             } 
@@ -877,9 +1132,25 @@ int main(int argc, char* argv[]){
                 //printf("next r : %ld, cur cp : %ld, rjob : %d\n",next_r_release[j],cur_cp,rjob_finished[j]);
                 read_job_start_q(tasks,j,newmeta,
                                  r_workloads[j],rq[j], cur_cp);
+                /* [C4] release-time prediction for RD. Same schema as WR. */
+                if(fpjobs_sum){
+                    float __wcu_p = find_worst_util_assumed(tasks, tasknum, newmeta);
+                    int   __pred  = (__wcu_p > 1.0f) ? 1 : 0;
+                    pending_r[j].release_time = cur_cp;
+                    pending_r[j].deadline     = cur_cp + (long)tasks[j].rp;
+                    pending_r[j].prediction   = __pred;
+                    pending_r[j].valid        = 1;
+                    n_releases++;
+                    if(__pred){
+                        n_infeasible++;
+                        if(t_first_infeasible == -1L) t_first_infeasible = cur_cp;
+                    } else {
+                        n_feasible++;
+                    }
+                }
                 next_r_release[j] = cur_cp + (long)tasks[j].rp;
                 rjob_finished[j] = 0;
-            } 
+            }
             else if (cur_cp == next_r_release[j] && rjob_finished[j] == 0){
                 next_r_release[j] = cur_cp + (long)tasks[j].rp;
             }
@@ -899,9 +1170,43 @@ int main(int argc, char* argv[]){
                         gc_ovhd_sum += __d;
                         ovhd_record(OVHD_GC, __d, cur_cp);
                     }
+                    /* [C2 SHADOW] Flush shadow-gc stats populated by
+                     * compute_shadow_gc during this call. */
+                    if(fpshadow_g && g_shadow_gc.valid){
+                        fprintf(fpshadow_g,"%ld,%d,%d,%d,%f,%d,%d,%d\n",
+                                g_shadow_gc.cur_cp,
+                                g_shadow_gc.task,
+                                g_shadow_gc.n_candidates,
+                                g_shadow_gc.n_tie_mode,
+                                g_shadow_gc.min_gcutil_mode,
+                                g_shadow_gc.chosen_mode,
+                                g_shadow_gc.chosen_shadow,
+                                (g_shadow_gc.chosen_mode != g_shadow_gc.chosen_shadow) ? 1 : 0);
+                        g_shadow_gc.valid = 0;
+                    }
+                    /* [C4] release-time prediction for GC. GC has no per-job
+                     * deadline in check_dl_violation (returns 0 for GCER),
+                     * so completions always tally into the "no miss" columns.
+                     * The paper's confusion matrix is meaningful mostly for
+                     * WR/RD; GC entries add background TN/FP mass. */
+                    if(fpjobs_sum){
+                        float __wcu_p = find_worst_util_assumed(tasks, tasknum, newmeta);
+                        int   __pred  = (__wcu_p > 1.0f) ? 1 : 0;
+                        pending_gc[j].release_time = cur_cp;
+                        pending_gc[j].deadline     = cur_cp + (long)tasks[j].gcp;
+                        pending_gc[j].prediction   = __pred;
+                        pending_gc[j].valid        = 1;
+                        n_releases++;
+                        if(__pred){
+                            n_infeasible++;
+                            if(t_first_infeasible == -1L) t_first_infeasible = cur_cp;
+                        } else {
+                            n_feasible++;
+                        }
+                    }
                     gcjob_finished[j] = 0;
                     next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
-                } 
+                }
                 else {
                     next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
                     gcjob_finished[j] = 1;
@@ -920,23 +1225,56 @@ int main(int argc, char* argv[]){
                 build_hot_cold(newmeta,hotlist,coldlist);
                 hot_cold_list = 1;
             }
-            // [SLACK-BASED + FIXED-LATENCY] LaWL relocation budget = foreground slack.
-            // find_worst_util_dec auto-dispatches on latency_mode (argv[12]):
-            //   STATE   -> state-aware WCU (identical to legacy find_worst_util)
-            //   FIXED_S -> WCU under fresh-block criterion (STARTW/STARTR/STARTE)
-            //   FIXED_E -> WCU under worn-block criterion  (ENDW /ENDR /ENDE)
-            // If foreground alone already saturates the CPU, rrutil <= 0 and
-            // find_RR_period falls back to LONG_MAX -> RR effectively background.
-
-            rrutil = -1.0; //override util so that WL always run in background mode.
-            // rrutil = 1.0 - find_worst_util_assumed(tasks,tasknum,newmeta);
+            // [C3 / SLACK-BASED + FIXED-LATENCY] LaWL relocation budget = foreground slack.
+            // find_worst_util_assumed auto-dispatches on latency_mode (argv[12]):
+            //   STATE    -> state-aware WCU (identical to legacy find_worst_util)
+            //   LAWL_OPT -> WCU under fresh-block lens   (small WCU -> rrutil high, admit)
+            //   LAWL_AVG -> WCU under mid-PEC lens
+            //   LAWL_PES -> WCU under worn-block lens    (large WCU -> rrutil <= 0, skip)
+            //   FIXED_S/FIXED_E -> legacy fixed lens
+            // BGRR (rrcond==7) is a distinct opt-in scheme that requests
+            // unconditional background relocation — preserve legacy override.
+            float __wcu = find_worst_util_assumed(tasks, tasknum, newmeta);
+            if (rrcond == RRCOND_BGRR){
+                rrutil = -1.0;  //BGRR: skip admission check, run RR at background priority
+            } else {
+                rrutil = 1.0 - (double)__wcu;
+            }
+            /* [C3 SHADOW] What WOULD dyn (STATE-lens) have decided at the
+             * same state? Compute WCU under STATE and record the pair for
+             * post-hoc divergence analysis. No-op when we already ARE STATE. */
+            float  __wcu_shadow    = __wcu;
+            double __rrutil_shadow = rrutil;
+            if(latency_mode != LATENCY_MODE_STATE){
+                int __saved = latency_mode;
+                latency_mode = LATENCY_MODE_STATE;
+                __wcu_shadow = find_worst_util_assumed(tasks, tasknum, newmeta);
+                latency_mode = __saved;
+                __rrutil_shadow = 1.0 - (double)__wcu_shadow;
+            }
 
             long __rt0 = ovhd_now_us();
-            RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
-                            rr,&(cur_rr),(double)rrutil,cur_cp);
-	    if(rr->reqnum != 0){
-		rr_release_num++;
-	    }
+            /* decision:
+             *   0 = skip_noslack  (rrutil <= 0 under current lens; BGRR exempt)
+             *   1 = admit         (rrutil > 0 AND victim pair found)
+             *   2 = skip_novictim (rrutil > 0 but find_WR/RR_target returned no pair)
+             * For BGRR: always take the RR_job_start_q path; classify as admit/novictim. */
+            int __decision;
+            if (rrcond != RRCOND_BGRR && rrutil <= 0.0){
+                __decision = 0;
+                rr_skip_noslack_events++;
+            } else {
+                RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
+                                rr,&(cur_rr),(double)rrutil,cur_cp);
+                if(rr->reqnum != 0){
+                    rr_release_num++;
+                    rr_admit_events++;
+                    __decision = 1;
+                } else {
+                    rr_skip_novictim_events++;
+                    __decision = 2;
+                }
+            }
             {
                 long __d = ovhd_now_us() - __rt0;
                 rr_ovhd_sum += __d;
@@ -944,11 +1282,28 @@ int main(int argc, char* argv[]){
             }
             if(rr->reqnum != 0){
                 rr_finished = 0;
-            } 
+            }
             else {
                 rr_finished = 1;
             }
-            // next_rr_check = cur_cp + TRELOC; //advance gate regardless of admit outcome (skip-counter semantics, Eq. 13)
+            /* [C3] per-invocation admit trace. Post-processed into the
+             * lifetime-binned admit_rate profile that C3 needs.
+             * Extended columns record the shadow (STATE-lens) rrutil so
+             * divergence can be computed post-hoc:
+             *   would_admit_actual = (decision == 1 || decision == 2)
+             *   would_admit_shadow = (rrutil_shadow > 0)
+             *   divergent = (would_admit_actual != would_admit_shadow)  */
+            if(fpadmit){
+                int __would_actual = (__decision == 1 || __decision == 2) ? 1 : 0;
+                int __would_shadow = (__rrutil_shadow > 0.0) ? 1 : 0;
+                int __div_admit    = (__would_actual != __would_shadow) ? 1 : 0;
+                fprintf(fpadmit, "%ld,%f,%f,%d,%d,%d,%f,%f,%d,%d\n",
+                        cur_cp, (double)__wcu, rrutil,
+                        cached_yngest, cached_oldest, __decision,
+                        (double)__wcu_shadow, __rrutil_shadow,
+                        __would_shadow, __div_admit);
+            }
+            next_rr_check = cur_cp + TRELOC; //advance gate regardless of admit outcome (skip-counter semantics, Eq. 13)
             do_rr = 0;
         }
         /*
@@ -1064,6 +1419,54 @@ int main(int argc, char* argv[]){
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
     fprintf(fplife,"%ld,",cur_cp);
     fflush(fplife);
+    /* [C3] end-of-run admit summary + PEC-distribution stats — RUNTIME
+     * fallthrough path. Mirrors the MAX-PEC exit above so the summary CSV
+     * gets one row per taskset iter regardless of which end fires first. */
+    if(fpadmit_sum){
+        long __psum = 0, __psq = 0;
+        int  __pmax = newmeta->state[0], __pmin = newmeta->state[0];
+        for(int __i=0; __i<NOB; __i++){
+            int __s = newmeta->state[__i];
+            __psum += __s;
+            __psq  += (long)__s * (long)__s;
+            if(__s > __pmax) __pmax = __s;
+            if(__s < __pmin) __pmin = __s;
+        }
+        double __pmean = (double)__psum / (double)NOB;
+        double __pvar  = ((double)__psq  / (double)NOB) - __pmean * __pmean;
+        if(__pvar < 0) __pvar = 0;
+        double __pstd  = sqrt(__pvar);
+        long   __tot   = rr_admit_events + rr_skip_noslack_events + rr_skip_novictim_events;
+        double __arate = (__tot > 0) ? (double)rr_admit_events / (double)__tot : 0.0;
+        fprintf(fpadmit_sum,
+                "%ld,%ld,%ld,%ld,%f,%d,%d,%f,%f\n",
+                cur_cp, rr_admit_events,
+                rr_skip_noslack_events, rr_skip_novictim_events,
+                __arate, __pmax, __pmin, __pmean, __pstd);
+    }
+    /* [C4] End-of-run confusion-matrix summary — RUNTIME fallthrough. */
+    if(fpjobs_sum){
+        long __delta = 0L;
+        if(t_first_dlmiss != -1L && t_first_infeasible != -1L)
+            __delta = t_first_infeasible - t_first_dlmiss;
+        long   __nn   = n_releases - n_miss;
+        double __fnr  = (n_miss > 0) ? (double)cnt_FN / (double)n_miss : 0.0;
+        double __fpr  = (__nn  > 0) ? (double)cnt_FP / (double)__nn   : 0.0;
+        fprintf(fpjobs_sum,
+                "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%f,%f\n",
+                cur_cp, t_first_dlmiss, t_first_infeasible, __delta,
+                n_releases, n_feasible, n_infeasible, n_miss,
+                cnt_FN, cnt_FP, cnt_TN, cnt_TP, __fnr, __fpr);
+    }
+    if(util_fp)     gzclose(util_fp);
+    if(fplife)      fclose(fplife);
+    if(fpovhd)      fclose(fpovhd);
+    if(fpadmit)     fclose(fpadmit);
+    if(fpadmit_sum) fclose(fpadmit_sum);
+    if(fpshadow_w)  fclose(fpshadow_w);
+    if(fpshadow_g)  fclose(fpshadow_g);
+    if(fpjobs)      fclose(fpjobs);
+    if(fpjobs_sum)  fclose(fpjobs_sum);
     sleep(1);
     return 0;
 }
