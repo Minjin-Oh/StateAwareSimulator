@@ -278,13 +278,20 @@ int main(int argc, char* argv[]){
     long rr_skip_noslack_events  = 0;
     long rr_skip_novictim_events = 0;
 
-    /* [C4] Δ_unsafe + confusion-matrix accounting. Both t_first_* timestamps
+    /* [C4] Δ_unsafe + confusion-matrix accounting. All t_first_* timestamps
      * are captured on FIRST occurrence and remain -1 if the event never fires
      * during the run (interpret as "safe" / "conservative" in post-proc).
      * Confusion cells count per-job-completion pairs of (release-time
-     * prediction, job-interval reality). */
-    long t_first_dlmiss     = -1L;
-    long t_first_infeasible = -1L;
+     * prediction, job-interval reality).
+     *
+     * t_first_util_overflow — first cur_cp where total_u crosses 1.0 (either
+     * during 1M-cycle poll or right after a GC completion). Reference for
+     * the utilization trace: gz rows carry a per-event is_overflow flag,
+     * but this global gives the sweep-summary landmark without post-hoc
+     * awk over million-row traces. */
+    long t_first_dlmiss        = -1L;
+    long t_first_infeasible    = -1L;
+    long t_first_util_overflow = -1L;
     long n_releases   = 0, n_feasible = 0, n_infeasible = 0, n_miss = 0;
     long cnt_FN = 0, cnt_FP = 0, cnt_TN = 0, cnt_TP = 0;
     /* Per-task pending prediction: at release we stash (release_time,
@@ -824,6 +831,7 @@ int main(int argc, char* argv[]){
                 if(!util_overflow_active){
                     util_overflow_active = 1;
                     util_overflow_events++;
+                    if(t_first_util_overflow == -1L) t_first_util_overflow = cur_cp;
                     printf("[%ld] utilization overflow (poll), util : %f  (continuing)\n", cur_cp, total_u);
                 }
             } else if(util_overflow_active){
@@ -837,6 +845,9 @@ int main(int argc, char* argv[]){
                 printf("[%ld]a block(idx=%d) reached maximum P/E, util : %f\n",cur_cp, idx, total_u);
                 printf("[SUMMARY] util-overflow episodes during run: %ld\n", util_overflow_events);
                 printf("[SUMMARY] deadline misses during run       : %ld\n", dl_miss_events);
+                printf("[SUMMARY] first util>=1.0  timestamp       : %ld\n", t_first_util_overflow);
+                printf("[SUMMARY] first deadline-miss timestamp    : %ld\n", t_first_dlmiss);
+                printf("[SUMMARY] first infeasible timestamp       : %ld\n", t_first_infeasible);
                 gettimeofday(&tot_end_time,NULL);                                                                     tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
                 tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
                 if(write_release_num != 0){
@@ -886,7 +897,9 @@ int main(int argc, char* argv[]){
                  *   delta_unsafe = t_first_infeasible − t_first_dlmiss
                  * Missing timestamps (event never fired) are emitted as -1
                  * and delta_unsafe is left at 0; post-proc must condition on
-                 * both t_first_* being present before interpreting Δ. */
+                 * both t_first_* being present before interpreting Δ.
+                 * t_first_util_overflow appended at the end so downstream
+                 * readers of the original 14-column schema still work. */
                 if(fpjobs_sum){
                     long __delta = 0L;
                     if(t_first_dlmiss != -1L && t_first_infeasible != -1L)
@@ -895,10 +908,11 @@ int main(int argc, char* argv[]){
                     double __fnr  = (n_miss > 0) ? (double)cnt_FN / (double)n_miss : 0.0;
                     double __fpr  = (__nn  > 0) ? (double)cnt_FP / (double)__nn   : 0.0;
                     fprintf(fpjobs_sum,
-                            "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%f,%f\n",
+                            "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%f,%f,%ld\n",
                             cur_cp, t_first_dlmiss, t_first_infeasible, __delta,
                             n_releases, n_feasible, n_infeasible, n_miss,
-                            cnt_FN, cnt_FP, cnt_TN, cnt_TP, __fnr, __fpr);
+                            cnt_FN, cnt_FP, cnt_TN, cnt_TP, __fnr, __fpr,
+                            t_first_util_overflow);
                 }
                 /* Flush + write gz trailer. Without gzclose, the zlib
                  * stream is left mid-block and readers see EOF errors. */
@@ -944,6 +958,7 @@ int main(int argc, char* argv[]){
                         if(!util_overflow_active){
                             util_overflow_active = 1;
                             util_overflow_events++;
+                            if(t_first_util_overflow == -1L) t_first_util_overflow = cur_cp;
                             printf("[%ld] utilization overflow (gc), util : %f  (continuing)\n", cur_cp, total_u);
                         }
                     }
@@ -1463,10 +1478,11 @@ int main(int argc, char* argv[]){
         double __fnr  = (n_miss > 0) ? (double)cnt_FN / (double)n_miss : 0.0;
         double __fpr  = (__nn  > 0) ? (double)cnt_FP / (double)__nn   : 0.0;
         fprintf(fpjobs_sum,
-                "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%f,%f\n",
+                "%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%f,%f,%ld\n",
                 cur_cp, t_first_dlmiss, t_first_infeasible, __delta,
                 n_releases, n_feasible, n_infeasible, n_miss,
-                cnt_FN, cnt_FP, cnt_TN, cnt_TP, __fnr, __fpr);
+                cnt_FN, cnt_FP, cnt_TN, cnt_TP, __fnr, __fpr,
+                t_first_util_overflow);
     }
     if(util_fp)     gzclose(util_fp);
     if(fplife)      fclose(fplife);

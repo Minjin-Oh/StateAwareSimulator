@@ -101,10 +101,10 @@ rttask* generate_taskset_hardcode_motiv(int tasknum, float tot_util, int addr, f
 
     // 1) 하드코딩된 파라미터들 (필요하면 아래 배열만 바꿔서 실험하면 됨)
     const int MAX_FIXED = 4;
-    const int wp_tbl[4] = {12000, 24000, 48000, 96000};
-    const int rp_tbl[4] = {18000, 36000, 72000, 144000};
-    const int wn_tbl[4] = {1, 1, 1, 1};
-    const int rn_tbl[4] = {6, 6, 6, 6};
+    const int wp_tbl[4] = {175000, 180000, 600000, 1200000};
+    const int rp_tbl[4] = {2400000, 2400000, 240000, 480000};
+    const int wn_tbl[4] = {20, 12, 1, 1};
+    const int rn_tbl[4] = {1, 1, 8, 6};
 
     // tasknum이 MAX_FIXED 개수보다 크면 그냥 에러
     if (tasknum > MAX_FIXED) {
