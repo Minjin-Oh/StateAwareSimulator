@@ -157,21 +157,53 @@ int main(int argc, char* argv[]){
     gzFile util_fp = NULL;           // per-IO-event trace, gzip-streamed to keep disk bounded
     /* [C3] per-invocation LaWL-S admission trace + one-shot end-of-run summary.
      * Opened only for rrflag != -1 schemes (LaWL family + Hybrid); Baseline /
-     * LaWL-D never call the admission block so admit metrics are undefined. */
-    FILE *fpadmit = NULL;
-    FILE *fpadmit_sum = NULL;
+     * LaWL-D never call the admission block so admit metrics are undefined.
+     * Trace is gzip-compressed: hundreds of thousands of rows per taskset. */
+    gzFile fpadmit = NULL;
+    FILE  *fpadmit_sum = NULL;
     /* [C1/C2 SHADOW] per-decision shadow-evaluation traces. Opened for every
      * scheme that runs a write / GC decision (all except pure Baseline that
      * bypasses INVW+UTILGC). Shadow rows are only written when the mode's
-     * decision hit the instrumented path (g_shadow_*.valid == 1). */
-    FILE *fpshadow_w = NULL;    /* §C1 write-block divergence */
-    FILE *fpshadow_g = NULL;    /* §C2 GC-victim divergence */
+     * decision hit the instrumented path (g_shadow_*.valid == 1). Gzipped:
+     * one row per write/GC job, easily millions per taskset. */
+    gzFile fpshadow_w = NULL;   /* §C1 write-block divergence */
+    gzFile fpshadow_g = NULL;   /* §C2 GC-victim divergence */
     /* [C4] per-job release/completion trace + end-of-run summary.
      * Enables post-hoc computation of Δ_unsafe + FN/FP confusion matrix
      * (§C4 & §3.4(c)(d)). Opened for every scheme so LaWL / opt / avg / pes /
-     * baseline / dyn / hybrid can be compared side-by-side. */
-    FILE *fpjobs     = NULL;
-    FILE *fpjobs_sum = NULL;
+     * baseline / dyn / hybrid can be compared side-by-side. Gzipped. */
+    gzFile fpjobs     = NULL;
+    FILE  *fpjobs_sum = NULL;
+
+    /* Per-taskset iteration index. Files that record per-event traces
+     * (utilization, admit, shadow_*, jobs) must NOT be appended across
+     * tasksets — each run generates a new event stream that overwrites the
+     * previous if we open in "a"/"ab" mode. run_simul.sh exports SIM_ITER=$i
+     * so we can suffix these files with _<iter> and open in "w"/"wb" mode.
+     * Aggregate summaries (lifetime, overhead, *_summary) keep "a"/"ab"
+     * because they record ONE ROW per iter and multi-iter accumulation is
+     * the whole point. When SIM_ITER is unset (single-shot run) the suffix
+     * is empty. */
+    char iter_suffix[32] = "";
+    {
+        const char* __ie = getenv("SIM_ITER");
+        if(__ie && __ie[0]){
+            snprintf(iter_suffix, sizeof(iter_suffix), "_%s", __ie);
+        }
+    }
+    /* Filename builder for per-iter event traces. Uses a local scratch
+     * buffer (128 is safe for our names). Opens in "wb" so multi-iter
+     * sweeps don't accidentally concatenate distinct taskset streams;
+     * SIM_ITER differentiates them, and running without SIM_ITER (single-
+     * shot mode) simply overwrites the same file on each run. All per-iter
+     * traces are gzip-compressed — millions of rows per taskset make
+     * plain-text CSV impractical (§C1 shadow_write, §C2 shadow_gc,
+     * §C3 admit, §C4 jobs). */
+    #define OPEN_ITER_GZ(fp, base) do { \
+        char __p[128]; \
+        snprintf(__p, sizeof(__p), "%s%s.csv.gz", (base), iter_suffix); \
+        (fp) = gzopen(__p, "wb"); \
+    } while(0)
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
@@ -568,87 +600,65 @@ int main(int argc, char* argv[]){
 
     // baseline
     if (wflag == 0  && gcflag == 0 && rrflag == -1){
-        fplife = fopen("baseline_lifetime.csv", "a");
-        fpovhd = fopen("baseline_overhead.csv", "a");
-        util_fp = gzopen("baseline_utilization.csv.gz", "ab");
-        fpjobs      = fopen("baseline_jobs.csv",         "a");
+        fplife      = fopen("baseline_lifetime.csv",     "a");
+        fpovhd      = fopen("baseline_overhead.csv",     "a");
         fpjobs_sum  = fopen("baseline_jobs_summary.csv", "a");
+        OPEN_ITER_GZ (util_fp, "baseline_utilization");
+        OPEN_ITER_GZ(fpjobs,  "baseline_jobs");
     }
     // dynamic WL
     else if (wflag == 11 && gcflag == 0 && rrflag == -1) {
-        fplife = fopen("dyn_lifetime.csv", "a");
-        fpovhd = fopen("dyn_overhead.csv", "a");
-        util_fp = gzopen("dyn_utilization.csv.gz", "ab");
-        fpjobs      = fopen("dyn_jobs.csv",         "a");
+        fplife      = fopen("dyn_lifetime.csv",     "a");
+        fpovhd      = fopen("dyn_overhead.csv",     "a");
         fpjobs_sum  = fopen("dyn_jobs_summary.csv", "a");
+        OPEN_ITER_GZ (util_fp, "dyn_utilization");
+        OPEN_ITER_GZ(fpjobs,  "dyn_jobs");
     }
     // hybrid WL
     else if (wflag == 11 && gcflag == 0 && rrflag ==  0) {
-        fplife = fopen("hyb_lifetime.csv", "a");
-        fpovhd = fopen("hyb_overhead.csv", "a");
-        util_fp = gzopen("hyb_utilization.csv.gz", "ab");
-        fpadmit     = fopen("hyb_admit.csv",         "a");
-        fpadmit_sum = fopen("hyb_admit_summary.csv", "a");
-        fpjobs      = fopen("hyb_jobs.csv",         "a");
+        fplife      = fopen("hyb_lifetime.csv",     "a");
+        fpovhd      = fopen("hyb_overhead.csv",     "a");
+        fpadmit_sum = fopen("hyb_admit_summary.csv","a");
         fpjobs_sum  = fopen("hyb_jobs_summary.csv", "a");
+        OPEN_ITER_GZ (util_fp, "hyb_utilization");
+        OPEN_ITER_GZ(fpadmit, "hyb_admit");
+        OPEN_ITER_GZ(fpjobs,  "hyb_jobs");
     }
     // LaWL_D
     else if (wflag == 14 && gcflag == 6 && rrflag == -1) {
-        fplife = fopen("LaWL_D_lifetime.csv", "a");
-        fpovhd = fopen("LaWL_D_overhead.csv", "a");
-        util_fp = gzopen("LaWL_D_utilization.csv.gz", "ab");
-        fpshadow_w = fopen("LaWL_D_shadow_write.csv", "a");
-        fpshadow_g = fopen("LaWL_D_shadow_gc.csv",    "a");
-        fpjobs      = fopen("LaWL_D_jobs.csv",         "a");
+        fplife      = fopen("LaWL_D_lifetime.csv",     "a");
+        fpovhd      = fopen("LaWL_D_overhead.csv",     "a");
         fpjobs_sum  = fopen("LaWL_D_jobs_summary.csv", "a");
+        OPEN_ITER_GZ (util_fp,    "LaWL_D_utilization");
+        OPEN_ITER_GZ(fpshadow_w, "LaWL_D_shadow_write");
+        OPEN_ITER_GZ(fpshadow_g, "LaWL_D_shadow_gc");
+        OPEN_ITER_GZ(fpjobs,     "LaWL_D_jobs");
     }
     // LaWL
     else if (wflag == 14 && gcflag == 6 && rrflag ==  1){
+        const char* prefix = NULL;
         switch(latency_mode){
-            case LATENCY_MODE_LAWL_OPT:
-                fplife = fopen("LaWL_opt_lifetime.csv", "a");
-                fpovhd = fopen("LaWL_opt_overhead.csv", "a");
-                util_fp = gzopen("LaWL_opt_utilization.csv.gz", "ab");
-                fpadmit     = fopen("LaWL_opt_admit.csv",         "a");
-                fpadmit_sum = fopen("LaWL_opt_admit_summary.csv", "a");
-                fpshadow_w  = fopen("LaWL_opt_shadow_write.csv",  "a");
-                fpshadow_g  = fopen("LaWL_opt_shadow_gc.csv",     "a");
-                fpjobs      = fopen("LaWL_opt_jobs.csv",         "a");
-                fpjobs_sum  = fopen("LaWL_opt_jobs_summary.csv", "a");
-                break;
-            case LATENCY_MODE_LAWL_AVG:
-                fplife = fopen("LaWL_avg_lifetime.csv", "a");
-                fpovhd = fopen("LaWL_avg_overhead.csv", "a");
-                util_fp = gzopen("LaWL_avg_utilization.csv.gz", "ab");
-                fpadmit     = fopen("LaWL_avg_admit.csv",         "a");
-                fpadmit_sum = fopen("LaWL_avg_admit_summary.csv", "a");
-                fpshadow_w  = fopen("LaWL_avg_shadow_write.csv",  "a");
-                fpshadow_g  = fopen("LaWL_avg_shadow_gc.csv",     "a");
-                fpjobs      = fopen("LaWL_avg_jobs.csv",         "a");
-                fpjobs_sum  = fopen("LaWL_avg_jobs_summary.csv", "a");
-                break;
-            case LATENCY_MODE_LAWL_PES:
-                fplife = fopen("LaWL_pes_lifetime.csv", "a");
-                fpovhd = fopen("LaWL_pes_overhead.csv", "a");
-                util_fp = gzopen("LaWL_pes_utilization.csv.gz", "ab");
-                fpadmit     = fopen("LaWL_pes_admit.csv",         "a");
-                fpadmit_sum = fopen("LaWL_pes_admit_summary.csv", "a");
-                fpshadow_w  = fopen("LaWL_pes_shadow_write.csv",  "a");
-                fpshadow_g  = fopen("LaWL_pes_shadow_gc.csv",     "a");
-                fpjobs      = fopen("LaWL_pes_jobs.csv",         "a");
-                fpjobs_sum  = fopen("LaWL_pes_jobs_summary.csv", "a");
-                break;
-            case LATENCY_MODE_STATE:
-                fplife = fopen("LaWL_lifetime.csv", "a");
-                fpovhd = fopen("LaWL_overhead.csv", "a");
-                util_fp = gzopen("LaWL_utilization.csv.gz", "ab");
-                fpadmit     = fopen("LaWL_admit.csv",         "a");
-                fpadmit_sum = fopen("LaWL_admit_summary.csv", "a");
-                fpshadow_w  = fopen("LaWL_shadow_write.csv",  "a");
-                fpshadow_g  = fopen("LaWL_shadow_gc.csv",     "a");
-                fpjobs      = fopen("LaWL_jobs.csv",         "a");
-                fpjobs_sum  = fopen("LaWL_jobs_summary.csv", "a");
-                break;
+            case LATENCY_MODE_LAWL_OPT: prefix = "LaWL_opt"; break;
+            case LATENCY_MODE_LAWL_AVG: prefix = "LaWL_avg"; break;
+            case LATENCY_MODE_LAWL_PES: prefix = "LaWL_pes"; break;
+            case LATENCY_MODE_STATE:    prefix = "LaWL";     break;
+            default:                    prefix = NULL;
+        }
+        if(prefix){
+            char __path[128];
+            snprintf(__path, sizeof(__path), "%s_lifetime.csv",     prefix); fplife      = fopen(__path, "a");
+            snprintf(__path, sizeof(__path), "%s_overhead.csv",     prefix); fpovhd      = fopen(__path, "a");
+            snprintf(__path, sizeof(__path), "%s_admit_summary.csv",prefix); fpadmit_sum = fopen(__path, "a");
+            snprintf(__path, sizeof(__path), "%s_jobs_summary.csv", prefix); fpjobs_sum  = fopen(__path, "a");
+            /* Per-iter event traces. Reuse a scratch buffer built by the
+             * macros; the underlying files open in "w"/"wb" so multi-iter
+             * sweeps don't concatenate distinct per-taskset streams. */
+            char __base[80];
+            snprintf(__base, sizeof(__base), "%s_utilization",  prefix); OPEN_ITER_GZ (util_fp,    __base);
+            snprintf(__base, sizeof(__base), "%s_admit",        prefix); OPEN_ITER_GZ(fpadmit,    __base);
+            snprintf(__base, sizeof(__base), "%s_shadow_write", prefix); OPEN_ITER_GZ(fpshadow_w, __base);
+            snprintf(__base, sizeof(__base), "%s_shadow_gc",    prefix); OPEN_ITER_GZ(fpshadow_g, __base);
+            snprintf(__base, sizeof(__base), "%s_jobs",         prefix); OPEN_ITER_GZ(fpjobs,     __base);
         }
     }
 
@@ -895,11 +905,11 @@ int main(int argc, char* argv[]){
                 if(util_fp)     gzclose(util_fp);
                 if(fplife)      fclose(fplife);
                 if(fpovhd)      fclose(fpovhd);
-                if(fpadmit)     fclose(fpadmit);
+                if(fpadmit)     gzclose(fpadmit);
                 if(fpadmit_sum) fclose(fpadmit_sum);
-                if(fpshadow_w)  fclose(fpshadow_w);
-                if(fpshadow_g)  fclose(fpshadow_g);
-                if(fpjobs)      fclose(fpjobs);
+                if(fpshadow_w)  gzclose(fpshadow_w);
+                if(fpshadow_g)  gzclose(fpshadow_g);
+                if(fpjobs)      gzclose(fpjobs);
                 if(fpjobs_sum)  fclose(fpjobs_sum);
                 sleep(1);
                 return 1;
@@ -980,10 +990,10 @@ int main(int argc, char* argv[]){
                             else if (pp->prediction == 1 && __am == 1) cnt_TP++;
                             else /* pred=1 && am=0 */                  cnt_FP++;  /* over-conservative */
                             if(fpjobs){
-                                fprintf(fpjobs, "%s,%d,%ld,%ld,%d,%ld,%d\n",
-                                        tag, cur_IO->taskidx,
-                                        pp->release_time, pp->deadline,
-                                        pp->prediction, cur_cp, __am);
+                                gzprintf(fpjobs, "%s,%d,%ld,%ld,%d,%ld,%d\n",
+                                         tag, cur_IO->taskidx,
+                                         pp->release_time, pp->deadline,
+                                         pp->prediction, cur_cp, __am);
                             }
                             pp->valid = 0;
                         }
@@ -1106,16 +1116,16 @@ int main(int argc, char* argv[]){
                 /* [C1 SHADOW] Flush any shadow-write stats populated by
                  * assign_write_invalid()'s fblist path during this call. */
                 if(fpshadow_w && g_shadow_write.valid){
-                    fprintf(fpshadow_w,"%ld,%d,%d,%d,%d,%d,%d,%d,%d\n",
-                            g_shadow_write.cur_cp,
-                            g_shadow_write.task,
-                            g_shadow_write.n_candidates,
-                            g_shadow_write.n_feasible_mode,
-                            g_shadow_write.n_feasible_shadow,
-                            g_shadow_write.chosen_mode,
-                            g_shadow_write.chosen_shadow,
-                            g_shadow_write.young_or_old,
-                            (g_shadow_write.chosen_mode != g_shadow_write.chosen_shadow) ? 1 : 0);
+                    gzprintf(fpshadow_w,"%ld,%d,%d,%d,%d,%d,%d,%d,%d\n",
+                             g_shadow_write.cur_cp,
+                             g_shadow_write.task,
+                             g_shadow_write.n_candidates,
+                             g_shadow_write.n_feasible_mode,
+                             g_shadow_write.n_feasible_shadow,
+                             g_shadow_write.chosen_mode,
+                             g_shadow_write.chosen_shadow,
+                             g_shadow_write.young_or_old,
+                             (g_shadow_write.chosen_mode != g_shadow_write.chosen_shadow) ? 1 : 0);
                     g_shadow_write.valid = 0;
                 }
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
@@ -1173,15 +1183,15 @@ int main(int argc, char* argv[]){
                     /* [C2 SHADOW] Flush shadow-gc stats populated by
                      * compute_shadow_gc during this call. */
                     if(fpshadow_g && g_shadow_gc.valid){
-                        fprintf(fpshadow_g,"%ld,%d,%d,%d,%f,%d,%d,%d\n",
-                                g_shadow_gc.cur_cp,
-                                g_shadow_gc.task,
-                                g_shadow_gc.n_candidates,
-                                g_shadow_gc.n_tie_mode,
-                                g_shadow_gc.min_gcutil_mode,
-                                g_shadow_gc.chosen_mode,
-                                g_shadow_gc.chosen_shadow,
-                                (g_shadow_gc.chosen_mode != g_shadow_gc.chosen_shadow) ? 1 : 0);
+                        gzprintf(fpshadow_g,"%ld,%d,%d,%d,%f,%d,%d,%d\n",
+                                 g_shadow_gc.cur_cp,
+                                 g_shadow_gc.task,
+                                 g_shadow_gc.n_candidates,
+                                 g_shadow_gc.n_tie_mode,
+                                 g_shadow_gc.min_gcutil_mode,
+                                 g_shadow_gc.chosen_mode,
+                                 g_shadow_gc.chosen_shadow,
+                                 (g_shadow_gc.chosen_mode != g_shadow_gc.chosen_shadow) ? 1 : 0);
                         g_shadow_gc.valid = 0;
                     }
                     /* [C4] release-time prediction for GC. GC has no per-job
@@ -1297,11 +1307,11 @@ int main(int argc, char* argv[]){
                 int __would_actual = (__decision == 1 || __decision == 2) ? 1 : 0;
                 int __would_shadow = (__rrutil_shadow > 0.0) ? 1 : 0;
                 int __div_admit    = (__would_actual != __would_shadow) ? 1 : 0;
-                fprintf(fpadmit, "%ld,%f,%f,%d,%d,%d,%f,%f,%d,%d\n",
-                        cur_cp, (double)__wcu, rrutil,
-                        cached_yngest, cached_oldest, __decision,
-                        (double)__wcu_shadow, __rrutil_shadow,
-                        __would_shadow, __div_admit);
+                gzprintf(fpadmit, "%ld,%f,%f,%d,%d,%d,%f,%f,%d,%d\n",
+                         cur_cp, (double)__wcu, rrutil,
+                         cached_yngest, cached_oldest, __decision,
+                         (double)__wcu_shadow, __rrutil_shadow,
+                         __would_shadow, __div_admit);
             }
             next_rr_check = cur_cp + TRELOC; //advance gate regardless of admit outcome (skip-counter semantics, Eq. 13)
             do_rr = 0;
@@ -1461,11 +1471,11 @@ int main(int argc, char* argv[]){
     if(util_fp)     gzclose(util_fp);
     if(fplife)      fclose(fplife);
     if(fpovhd)      fclose(fpovhd);
-    if(fpadmit)     fclose(fpadmit);
+    if(fpadmit)     gzclose(fpadmit);
     if(fpadmit_sum) fclose(fpadmit_sum);
-    if(fpshadow_w)  fclose(fpshadow_w);
-    if(fpshadow_g)  fclose(fpshadow_g);
-    if(fpjobs)      fclose(fpjobs);
+    if(fpshadow_w)  gzclose(fpshadow_w);
+    if(fpshadow_g)  gzclose(fpshadow_g);
+    if(fpjobs)      gzclose(fpjobs);
     if(fpjobs_sum)  fclose(fpjobs_sum);
     sleep(1);
     return 0;

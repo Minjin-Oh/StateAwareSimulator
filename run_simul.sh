@@ -142,6 +142,14 @@ for U in $UTIL_LIST; do
             "$SIMUL" NO NO NO WORKGEN 4 "$U" -1 0.05 0.95 0 \
                 > /dev/null 2> workgen.err
 
+            # Exported so per-taskset event traces (utilization / admit /
+            # shadow_* / jobs) get suffixed with _<i> and open in "w"/"wb"
+            # instead of overwriting each other. Aggregate summary files
+            # (lifetime / overhead / *_summary) still append. Zero-padded to
+            # a fixed width so alphabetic file listings stay in iter order
+            # regardless of NUM_TASKSETS scale.
+            export SIM_ITER=$(printf "%03d" "$i")
+
             echo "[INFO] Running simulations..."
             # The 4 LaWL variants share the decision path (UTILGC INVW RR005).
             # Only argv[12] (latency_mode) differs — that selects both the lens
