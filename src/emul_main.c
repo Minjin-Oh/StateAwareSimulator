@@ -1147,9 +1147,20 @@ int main(int argc, char* argv[]){
                 wjob_finished[j] = 0;
             }
             else if (cur_cp == next_w_release[j] && wjob_finished[j] == 0){
+                /* [C4] Deadline-moment miss detection. next_w_release[j] was
+                 * set to (prev_release + wp), which is exactly the previous
+                 * job's deadline. Reaching this cur_cp with wjob_finished==0
+                 * means the previous WR job is still in flight past its
+                 * deadline — miss confirmed at the deadline instant, without
+                 * waiting for the eventual completion. */
+                if(t_first_dlmiss == -1L) t_first_dlmiss = cur_cp;
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
-            } 
+            }
             else if (cur_cp == next_w_release[j] && wjob_deferred[j] == 1){
+                /* [C4] Deferred at release moment = the new WR job could
+                 * not even start on time (no free pages). This is a miss
+                 * of the new job's deadline requirement. */
+                if(t_first_dlmiss == -1L) t_first_dlmiss = cur_cp;
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
             }
 
@@ -1177,6 +1188,11 @@ int main(int argc, char* argv[]){
                 rjob_finished[j] = 0;
             }
             else if (cur_cp == next_r_release[j] && rjob_finished[j] == 0){
+                /* [C4] Deadline-moment miss detection — mirror of the WR
+                 * branch above. Reaching next_r_release[j] with
+                 * rjob_finished==0 means the previous RD job hasn't
+                 * completed by its deadline (= release + rp). */
+                if(t_first_dlmiss == -1L) t_first_dlmiss = cur_cp;
                 next_r_release[j] = cur_cp + (long)tasks[j].rp;
             }
 
