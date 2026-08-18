@@ -865,7 +865,13 @@ int main(int argc, char* argv[]){
                 } else {
                     rr_ovhd_avg = 0;
                 }
-                fprintf(fplife,"%ld,",cur_cp);
+                /* lifetime.csv columns (per iter, one row):
+                 *   1. end_cur_cp       — sim termination time (MAX PEC hit)
+                 *   2. t_first_util_ov  — first cur_cp where total_u>=1.0
+                 *                         (-1 if never overflowed during run)
+                 * §C4 lifetime lower bound is column 2 (observed capacity
+                 * violation); column 1 is the physical device end-of-life. */
+                fprintf(fplife,"%ld,%ld\n", cur_cp, t_first_util_overflow);
                 fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
                 fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                 /* [C3] end-of-run admit summary + PEC-distribution stats.
@@ -1458,7 +1464,9 @@ int main(int argc, char* argv[]){
         //printf("[fnt res]next_time : %ld\n",cur_cp);
     }
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
-    fprintf(fplife,"%ld,",cur_cp);
+    /* Same 2-column schema as the MAX-PEC branch: end_cur_cp,
+     * t_first_util_overflow (-1 if never overflowed). */
+    fprintf(fplife,"%ld,%ld\n", cur_cp, t_first_util_overflow);
     fflush(fplife);
     /* [C3] end-of-run admit summary + PEC-distribution stats — RUNTIME
      * fallthrough path. Mirrors the MAX-PEC exit above so the summary CSV
