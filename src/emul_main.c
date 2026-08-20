@@ -95,7 +95,26 @@ int init_length = 10;
 
 int main(int argc, char* argv[]){
     //init params
-    srand(time(NULL)); 
+    /* Seed: argv[13] optional explicit seed for reproducibility. When set
+     * (>0), TASKGEN / WORKGEN produce deterministic outputs across separate
+     * invocations, letting a pre-gen script yield identical tasksets on any
+     * host. When absent, fall back to time(NULL) — original behavior. Also
+     * governs the rand() call at emul_main.c line ~400 (block-state init)
+     * so 5 variants launched with the same seed start from identical state.
+     * The seed slot sits AFTER argv[12] (LAT_MODE) so pre-existing callers
+     * that stop at argv[12] see no behavior change. */
+    unsigned int __seed = 0;
+    if(argc > 13 && argv[13] != NULL && argv[13][0] != '\0'){
+        int __s = atoi(argv[13]);
+        if(__s > 0) __seed = (unsigned int)__s;
+    }
+    if(__seed > 0){
+        srand(__seed);
+        printf("[SEED] explicit seed=%u\n", __seed);
+    } else {
+        srand(time(NULL));
+        printf("[SEED] time-based (no argv[13])\n");
+    }
     bhead* fblist_head = NULL;                             //heads for block list
     bhead* rsvlist_head;
     bhead* full_head;
