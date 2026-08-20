@@ -56,6 +56,12 @@ extern int MINRC;
 
 /* Set once in emul_main from argv[12]. Read by the *_assumed family only. */
 int latency_mode = LATENCY_MODE_STATE;
+
+/* [PES FALLBACK] Counters incremented by findW.c / findGC.c when criterion
+ * rejects every candidate and greedy fallback is used. Reset implicitly to
+ * 0 at process start (globals); each sim invocation is one run. */
+long g_write_fallback_events = 0;
+long g_gc_fallback_events    = 0;
 #ifdef EXECSTEP
     extern prof_exec exec_steps;
     float w_exec_phys(int cycle){

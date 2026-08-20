@@ -53,6 +53,15 @@ float __calc_gcu(rttask* task, int min_rc, int scale_w, int scale_r, int scale_e
 #define LATENCY_MODE_LAWL_PES   5
 extern int latency_mode;
 
+/* [PES FALLBACK] Bumped by find_write_maxinvalid / find_gc_utilsort when the
+ * criterion (find_util_safe_assumed / _find_gc_safe) rejects every candidate
+ * and the allocator degrades to greedy (lowest-state block / MINRC bucket).
+ * Under LATENCY_MODE_LAWL_PES this fires frequently; under STATE it should
+ * be ~0. Logged into {prefix}_admit_summary.csv trailing columns so §6.1
+ * "fallback 발동 횟수 로깅" check is satisfied without a new CSV file. */
+extern long g_write_fallback_events;
+extern long g_gc_fallback_events;
+
 float w_exec_assumed(int cycle);
 float r_exec_assumed(int cycle);
 float e_exec_assumed(int cycle);

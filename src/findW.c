@@ -1,6 +1,6 @@
 #include "findW.h"
 #include "ovhd_stats.h"
-#include "shadow_stats.h"
+// #include "shadow_stats.h"   /* disabled for ablation runs */
 #include "stateaware.h"     /* latency_mode + LATENCY_MODE_STATE */
 
 /* Controller path (write block selection incl. LaWL INVW). All exec/util
@@ -13,20 +13,11 @@ extern double OP;
 extern int MINRC;
 extern long cur_cp;
 
-/* [C1 SHADOW] Owned here (used to live in assignW.c). Populated by
- * compute_shadow_write; read + cleared by emul_main.c after each write
- * job release. */
+/* [C1 SHADOW] disabled for ablation runs — see plan §Q2. Original body
+ * preserved under #if 0 for future re-enable. */
+#if 0
 shadow_stat_write g_shadow_write = {0};
 
-/* [C1 SHADOW] Standalone feasibility-count evaluator. The actual write
- * allocator (find_write_maxinvalid, ~700 lines with DYN-mode state buffers)
- * cannot be called twice with different latency_mode because it mutates
- * metadata->cur_rank_info. Instead, this read-only helper iterates the
- * fblist + write_head candidates *externally*, tags each as feasible under
- * (a) the current latency_mode and (b) LATENCY_MODE_STATE, and stores the
- * two counts in g_shadow_write. That directly supports §C1's feasible_ratio
- * (Optimistic → 1.0 predicted, Pessimistic → 0.0 predicted). Chosen-block
- * divergence is left as -1 for both since we don't replay the allocator. */
 void compute_shadow_write(rttask* task, int taskidx, int tasknum, meta* metadata,
                           bhead* fblist_head, bhead* write_head){
     int old = get_blockstate_meta(metadata, OLD);
@@ -34,9 +25,6 @@ void compute_shadow_write(rttask* task, int taskidx, int tasknum, meta* metadata
     int saved_mode = latency_mode;
     int is_state = (saved_mode == LATENCY_MODE_STATE);
 
-    /* Iterate both candidate pools that assign_write_invalid / find_write_maxinvalid
-     * would consider as a source of write blocks. write_head first (active
-     * write blocks with free pages), then fblist (unused free blocks). */
     for(int pool = 0; pool < 2; pool++){
         bhead* head = (pool == 0) ? write_head : fblist_head;
         if(head == NULL) continue;
@@ -66,11 +54,12 @@ void compute_shadow_write(rttask* task, int taskidx, int tasknum, meta* metadata
     g_shadow_write.n_candidates      = n_cand;
     g_shadow_write.n_feasible_mode   = n_feas_mode;
     g_shadow_write.n_feasible_shadow = n_feas_shadow;
-    g_shadow_write.chosen_mode       = -1;   /* not replayed */
+    g_shadow_write.chosen_mode       = -1;
     g_shadow_write.chosen_shadow     = -1;
     g_shadow_write.young_or_old      = -1;
     g_shadow_write.valid             = (n_cand > 0) ? 1 : 0;
 }
+#endif
 
 //FIXME:: a temporary solution to expose locality variables to find_write_gradient function
 extern float sploc;
@@ -1774,6 +1763,10 @@ block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metad
         cur = cur->next;
     }
     if(!final_b){ fprintf(stderr,"\n[Critical Error] No block found."); fflush(stderr); exit(EXIT_FAILURE); }
+    /* [PES FALLBACK] Rank-safe iteration in write_head found nothing feasible.
+     * We're picking min-state block from either list, bypassing find_util_safe.
+     * Under STATE this branch is rare; under LAWL_PES it dominates. */
+    g_write_fallback_events++;
     if(final_from_free){
         wb_new = ll_remove(fblist_head, final_b->idx);
         if(!wb_new){ fprintf(stderr,"\n[Critical Error] Failed to remove block."); fflush(stderr); exit(EXIT_FAILURE); }

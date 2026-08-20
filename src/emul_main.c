@@ -2,11 +2,11 @@
 #include "init.h"           // contains init function for various structure params
 #include "emul.h"           // contains request process functions for emulation
 #include "findRR.h"         // contains block selection functions
-#include "findW.h"          // compute_shadow_write() for §C1 shadow eval
+#include "findW.h"          // compute_shadow_write disabled for ablation runs
 #include "IOgen.h"          // contains random workload generation functions
 #include "emul_logger.h"    // contains latency logger functions
 #include "ovhd_stats.h"     // decision-overhead distribution instrumentation
-#include "shadow_stats.h"   // g_shadow_write / g_shadow_gc for C1/C2 divergence
+// #include "shadow_stats.h"   /* disabled for ablation runs */
 #include <unistd.h>         // sleep()
 #include <math.h>           // sqrt() for end-of-run PEC-distribution stats
 #include <zlib.h>           // gzFile / gzopen / gzprintf / gzclose — util_fp is gz-compressed
@@ -161,13 +161,10 @@ int main(int argc, char* argv[]){
      * Trace is gzip-compressed: hundreds of thousands of rows per taskset. */
     gzFile fpadmit = NULL;
     FILE  *fpadmit_sum = NULL;
-    /* [C1/C2 SHADOW] per-decision shadow-evaluation traces. Opened for every
-     * scheme that runs a write / GC decision (all except pure Baseline that
-     * bypasses INVW+UTILGC). Shadow rows are only written when the mode's
-     * decision hit the instrumented path (g_shadow_*.valid == 1). Gzipped:
-     * one row per write/GC job, easily millions per taskset. */
-    gzFile fpshadow_w = NULL;   /* §C1 write-block divergence */
-    gzFile fpshadow_g = NULL;   /* §C2 GC-victim divergence */
+    /* [C1/C2 SHADOW] disabled for ablation runs — declarations kept NULL so
+     * the guarded gzclose / if(fpshadow_*) blocks stay well-formed. */
+    gzFile fpshadow_w = NULL;   /* always NULL: shadow logging disabled */
+    gzFile fpshadow_g = NULL;   /* always NULL: shadow logging disabled */
     /* [C4] per-job release/completion trace + end-of-run summary.
      * Enables post-hoc computation of Δ_unsafe + FN/FP confusion matrix
      * (§C4 & §3.4(c)(d)). Opened for every scheme so LaWL / opt / avg / pes /
@@ -637,8 +634,9 @@ int main(int argc, char* argv[]){
         fpovhd      = fopen("LaWL_D_overhead.csv",     "a");
         fpjobs_sum  = fopen("LaWL_D_jobs_summary.csv", "a");
         OPEN_ITER_GZ (util_fp,    "LaWL_D_utilization");
-        OPEN_ITER_GZ(fpshadow_w, "LaWL_D_shadow_write");
-        OPEN_ITER_GZ(fpshadow_g, "LaWL_D_shadow_gc");
+        /* shadow_write/shadow_gc traces disabled for ablation runs */
+        // OPEN_ITER_GZ(fpshadow_w, "LaWL_D_shadow_write");
+        // OPEN_ITER_GZ(fpshadow_g, "LaWL_D_shadow_gc");
         OPEN_ITER_GZ(fpjobs,     "LaWL_D_jobs");
     }
     // LaWL
@@ -663,8 +661,9 @@ int main(int argc, char* argv[]){
             char __base[80];
             snprintf(__base, sizeof(__base), "%s_utilization",  prefix); OPEN_ITER_GZ (util_fp,    __base);
             snprintf(__base, sizeof(__base), "%s_admit",        prefix); OPEN_ITER_GZ(fpadmit,    __base);
-            snprintf(__base, sizeof(__base), "%s_shadow_write", prefix); OPEN_ITER_GZ(fpshadow_w, __base);
-            snprintf(__base, sizeof(__base), "%s_shadow_gc",    prefix); OPEN_ITER_GZ(fpshadow_g, __base);
+            /* shadow_write/shadow_gc traces disabled for ablation runs */
+            // snprintf(__base, sizeof(__base), "%s_shadow_write", prefix); OPEN_ITER_GZ(fpshadow_w, __base);
+            // snprintf(__base, sizeof(__base), "%s_shadow_gc",    prefix); OPEN_ITER_GZ(fpshadow_g, __base);
             snprintf(__base, sizeof(__base), "%s_jobs",         prefix); OPEN_ITER_GZ(fpjobs,     __base);
         }
     }
@@ -893,11 +892,14 @@ int main(int argc, char* argv[]){
                     double __pstd  = sqrt(__pvar);
                     long   __tot   = rr_admit_events + rr_skip_noslack_events + rr_skip_novictim_events;
                     double __arate = (__tot > 0) ? (double)rr_admit_events / (double)__tot : 0.0;
+                    /* Trailing wfb/gfb columns: pes fallback counts (write/GC).
+                     * Under STATE ~0; under LAWL_PES dominates. Plan §6.1. */
                     fprintf(fpadmit_sum,
-                            "%ld,%ld,%ld,%ld,%f,%d,%d,%f,%f\n",
+                            "%ld,%ld,%ld,%ld,%f,%d,%d,%f,%f,%ld,%ld\n",
                             cur_cp, rr_admit_events,
                             rr_skip_noslack_events, rr_skip_novictim_events,
-                            __arate, __pmax, __pmin, __pmean, __pstd);
+                            __arate, __pmax, __pmin, __pmean, __pstd,
+                            g_write_fallback_events, g_gc_fallback_events);
                 }
                 /* [C4] End-of-run confusion-matrix summary.
                  *   delta_unsafe = t_first_infeasible − t_first_dlmiss
@@ -1090,16 +1092,11 @@ int main(int argc, char* argv[]){
                                               fblist_head, full_head, write_head,
                                               w_workloads[j], wq[j], cur_wb[j], wflag, cur_cp);
                 write_release_num++;
-                /* [C1 SHADOW] Standalone feasibility-count evaluator over
-                 * write_head + fblist_head. Populates g_shadow_write, which
-                 * the block below flushes to fpshadow_w. Runs unconditionally
-                 * for LaWL / LaWL-D so §C1's feasible_ratio is always
-                 * measurable regardless of which internal allocator path
-                 * write_job_start_q took. */
-                if(fpshadow_w){
-                    compute_shadow_write(tasks, j, tasknum, newmeta,
-                                         fblist_head, write_head);
-                }
+                /* [C1 SHADOW] disabled for ablation runs — fpshadow_w is always NULL. */
+                // if(fpshadow_w){
+                //     compute_shadow_write(tasks, j, tasknum, newmeta,
+                //                          fblist_head, write_head);
+                // }
                 /* [C4] Stash release-time prediction for this WR job. The
                  * matching completion (last==1) block looks this up to tally
                  * the (prediction, reality) confusion cell. */
@@ -1134,21 +1131,20 @@ int main(int argc, char* argv[]){
                     /* pure per-request write decision cost */
                     ovhd_record(OVHD_WRITE, __pure, cur_cp);
                 }
-                /* [C1 SHADOW] Flush any shadow-write stats populated by
-                 * assign_write_invalid()'s fblist path during this call. */
-                if(fpshadow_w && g_shadow_write.valid){
-                    gzprintf(fpshadow_w,"%ld,%d,%d,%d,%d,%d,%d,%d,%d\n",
-                             g_shadow_write.cur_cp,
-                             g_shadow_write.task,
-                             g_shadow_write.n_candidates,
-                             g_shadow_write.n_feasible_mode,
-                             g_shadow_write.n_feasible_shadow,
-                             g_shadow_write.chosen_mode,
-                             g_shadow_write.chosen_shadow,
-                             g_shadow_write.young_or_old,
-                             (g_shadow_write.chosen_mode != g_shadow_write.chosen_shadow) ? 1 : 0);
-                    g_shadow_write.valid = 0;
-                }
+                /* [C1 SHADOW] shadow_write log flush disabled for ablation runs. */
+                // if(fpshadow_w && g_shadow_write.valid){
+                //     gzprintf(fpshadow_w,"%ld,%d,%d,%d,%d,%d,%d,%d,%d\n",
+                //              g_shadow_write.cur_cp,
+                //              g_shadow_write.task,
+                //              g_shadow_write.n_candidates,
+                //              g_shadow_write.n_feasible_mode,
+                //              g_shadow_write.n_feasible_shadow,
+                //              g_shadow_write.chosen_mode,
+                //              g_shadow_write.chosen_shadow,
+                //              g_shadow_write.young_or_old,
+                //              (g_shadow_write.chosen_mode != g_shadow_write.chosen_shadow) ? 1 : 0);
+                //     g_shadow_write.valid = 0;
+                // }
                 next_w_release[j] = cur_cp + (long)tasks[j].wp;
                 wjob_finished[j] = 0;
             }
@@ -1217,20 +1213,19 @@ int main(int argc, char* argv[]){
                         gc_ovhd_sum += __d;
                         ovhd_record(OVHD_GC, __d, cur_cp);
                     }
-                    /* [C2 SHADOW] Flush shadow-gc stats populated by
-                     * compute_shadow_gc during this call. */
-                    if(fpshadow_g && g_shadow_gc.valid){
-                        gzprintf(fpshadow_g,"%ld,%d,%d,%d,%f,%d,%d,%d\n",
-                                 g_shadow_gc.cur_cp,
-                                 g_shadow_gc.task,
-                                 g_shadow_gc.n_candidates,
-                                 g_shadow_gc.n_tie_mode,
-                                 g_shadow_gc.min_gcutil_mode,
-                                 g_shadow_gc.chosen_mode,
-                                 g_shadow_gc.chosen_shadow,
-                                 (g_shadow_gc.chosen_mode != g_shadow_gc.chosen_shadow) ? 1 : 0);
-                        g_shadow_gc.valid = 0;
-                    }
+                    /* [C2 SHADOW] shadow_gc log flush disabled for ablation runs. */
+                    // if(fpshadow_g && g_shadow_gc.valid){
+                    //     gzprintf(fpshadow_g,"%ld,%d,%d,%d,%f,%d,%d,%d\n",
+                    //              g_shadow_gc.cur_cp,
+                    //              g_shadow_gc.task,
+                    //              g_shadow_gc.n_candidates,
+                    //              g_shadow_gc.n_tie_mode,
+                    //              g_shadow_gc.min_gcutil_mode,
+                    //              g_shadow_gc.chosen_mode,
+                    //              g_shadow_gc.chosen_shadow,
+                    //              (g_shadow_gc.chosen_mode != g_shadow_gc.chosen_shadow) ? 1 : 0);
+                    //     g_shadow_gc.valid = 0;
+                    // }
                     /* [C4] release-time prediction for GC. GC has no per-job
                      * deadline in check_dl_violation (returns 0 for GCER),
                      * so completions always tally into the "no miss" columns.
@@ -1487,11 +1482,13 @@ int main(int argc, char* argv[]){
         double __pstd  = sqrt(__pvar);
         long   __tot   = rr_admit_events + rr_skip_noslack_events + rr_skip_novictim_events;
         double __arate = (__tot > 0) ? (double)rr_admit_events / (double)__tot : 0.0;
+        /* Trailing wfb/gfb columns: pes fallback counts. Plan §6.1. */
         fprintf(fpadmit_sum,
-                "%ld,%ld,%ld,%ld,%f,%d,%d,%f,%f\n",
+                "%ld,%ld,%ld,%ld,%f,%d,%d,%f,%f,%ld,%ld\n",
                 cur_cp, rr_admit_events,
                 rr_skip_noslack_events, rr_skip_novictim_events,
-                __arate, __pmax, __pmin, __pmean, __pstd);
+                __arate, __pmax, __pmin, __pmean, __pstd,
+                g_write_fallback_events, g_gc_fallback_events);
     }
     /* [C4] End-of-run confusion-matrix summary — RUNTIME fallthrough. */
     if(fpjobs_sum){

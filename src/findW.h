@@ -7,9 +7,6 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
 
 //find writeblock functions
 block* find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata, bhead* fblist_head, bhead* write_head, int* w_lpas, int idx, long workload_reset_time);
-/* [C1 SHADOW] Populates g_shadow_write (shadow_stats.h) with feasibility
- * counts under the current latency_mode vs LATENCY_MODE_STATE, iterating
- * write_head + fblist_head candidates. Read-only; safe to call after any
- * write_job_start_q return. Chosen-block divergence is not measured. */
-void compute_shadow_write(rttask* task, int taskidx, int tasknum, meta* metadata,
-                          bhead* fblist_head, bhead* write_head);
+/* [C1 SHADOW] compute_shadow_write declaration disabled for ablation runs. */
+// void compute_shadow_write(rttask* task, int taskidx, int tasknum, meta* metadata,
+//                           bhead* fblist_head, bhead* write_head);
