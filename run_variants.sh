@@ -35,6 +35,12 @@ else
     CORES=(0 1 2 3 4)
 fi
 
+# Resolve to absolute paths — the subshell below does `cd "$RESULT"`, which
+# would break relative refs like "./statesimul.out" and "./tasksets".
+case "$SIM"         in /*) ;; *) SIM="$PWD/${SIM#./}"                 ;; esac
+case "$TASKSET_DIR" in /*) ;; *) TASKSET_DIR="$PWD/${TASKSET_DIR#./}" ;; esac
+case "$RESULT_DIR"  in /*) ;; *) RESULT_DIR="$PWD/${RESULT_DIR#./}"   ;; esac
+
 [ -x "$SIM" ] || { echo "[FATAL] $SIM not executable"; exit 1; }
 [ -d "$TASKSET_DIR" ] || { echo "[FATAL] $TASKSET_DIR not found"; exit 1; }
 mkdir -p "$RESULT_DIR"

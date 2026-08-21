@@ -19,6 +19,11 @@ TASKNUM=${TASKNUM:-4}
 PARALLEL=${PARALLEL:-4}
 SIM=${SIM:-./statesimul.out}
 
+# Resolve to absolute paths — the subshell below does `cd "$DIR"`, which
+# would break relative refs like "./statesimul.out" and "./tasksets".
+case "$SIM"         in /*) ;; *) SIM="$PWD/${SIM#./}"                 ;; esac
+case "$TASKSET_DIR" in /*) ;; *) TASKSET_DIR="$PWD/${TASKSET_DIR#./}" ;; esac
+
 [ -x "$SIM" ] || { echo "[FATAL] $SIM not executable"; exit 1; }
 mkdir -p "$TASKSET_DIR"
 
