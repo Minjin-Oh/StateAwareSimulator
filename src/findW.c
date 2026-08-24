@@ -1549,6 +1549,8 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     metadata->cur_rank_info.cur_left_write[taskidx] -= 1;
     // printf("[%ld]cur_rank : %d\n",cur_cp,cur_rank);
 
+    // 2. find corresponding block
+    cur = write_head->head;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
         if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){

@@ -692,10 +692,10 @@ int main(int argc, char* argv[]){
                     //    print_hotdist_profile(fps[tasknum+i],tasks,cur_cp, newmeta,-1,i);
                     //}
                     //print_freeblock_profile(fps[tasknum+4],cur_cp,newmeta,fblist_head,write_head);
-                    total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fps[cur_IO->taskidx],yngest,oldest,cur_cp,
-                                    cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
-                                    cur_wb[cur_IO->taskidx],fblist_head,write_head,
-                                    newmeta->total_fp,cur_IO->gc_valid_count);
+                    // total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fps[cur_IO->taskidx],yngest,oldest,cur_cp,
+                    //                 cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
+                    //                 cur_wb[cur_IO->taskidx],fblist_head,write_head,
+                    //                newmeta->total_fp,cur_IO->gc_valid_count);
 
                     // utilization overflow 2 (exit code)
                     if(total_u > 1.0){
@@ -732,7 +732,7 @@ int main(int argc, char* argv[]){
                 if(cur_IO->last == 1){
 
                     // check I/O latency
-                    check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
+                    //check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
 
                     // deadline miss overflow (exit code)
                     if(check_dl_violation(tasks,cur_IO,cur_cp)==1){
@@ -858,7 +858,7 @@ int main(int argc, char* argv[]){
                                     gcq[j], &(cur_GC[j]), gcflag, cur_cp);
                         gc_release_num++;
                         gettimeofday(&(algo_end_time),NULL);
-                        fprintf(fpovhd_gc, "%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+                        // fprintf(fpovhd_gc, "%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                         gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
 			next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
                         gcjob_finished[j] = 0;
@@ -892,9 +892,9 @@ int main(int argc, char* argv[]){
             RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
                             rr,&(cur_rr),(double)rrutil,cur_cp, skewnum);
             rr_release_num++;
-            gettimeofday(&(algo_end_time),NULL);
-            rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-	    fprintf(fpovhd_rr, "%ld\n", algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+	    gettimeofday(&(algo_end_time),NULL);
+	    rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+	    // fprintf(fpovhd_rr, "%ld\n", algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
             if(rr->reqnum != 0){
                 rr_finished = 0;
             } 
