@@ -84,7 +84,7 @@ void make_req_gc(meta* metadata, rttask* tasks, int taskidx, long cur_cp, block*
 
 block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                      bhead* fblist_head, bhead* full_head, bhead* write_head,
-                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp, FILE* fpovhd_w, FILE* fpovhd_w_process){
+                     FILE* fp_w, IOhead* wq, block* cur_target, int wflag, long cur_cp){
 
     //makes write job according to workload and task parameter
     //printf("[%d]write start, time : %d\n",taskidx,cur_cp);
@@ -112,7 +112,6 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
         }
     }
     
-    fprintf(fpovhd_w,"%s \n", "new job release");
 
     for(int i=0;i<tasks[taskidx].wn;i++){
         //make sure that no full block is in write block list during assign logic.
@@ -127,26 +126,14 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             }
         }
         if(wflag == 0){ // argv[2] == NO
-            gettimeofday(&(algo_start_time_detail),NULL);
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            gettimeofday(&(algo_end_time_detail),NULL);
-            w_ovhd = algo_end_time_detail.tv_sec * 1000000 + algo_end_time_detail.tv_usec - algo_start_time_detail.tv_sec * 1000000 - algo_start_time_detail.tv_usec;
-            fprintf(fpovhd_w,"%ld \n",w_ovhd);
         } else if(wflag == 11){ // argv[2] == MOTIVALLY
-            gettimeofday(&(algo_start_time_detail),NULL);
             cur = assign_write_dynwl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-            gettimeofday(&(algo_end_time_detail),NULL);
-            w_ovhd = algo_end_time_detail.tv_sec * 1000000 + algo_end_time_detail.tv_usec - algo_start_time_detail.tv_sec * 1000000 - algo_start_time_detail.tv_usec;
-            fprintf(fpovhd_w,"%ld \n",w_ovhd);
         } else if(wflag == 12 || wflag == 13){ // argv[2] == GRADW or GRADW_MOD
             cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
         } else if(wflag == 14){ // argv[2] == INVW
-            gettimeofday(&(algo_start_time_detail),NULL);
-            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,cur_cp, fpovhd_w_process);
-            gettimeofday(&(algo_end_time_detail),NULL);
-            w_ovhd = algo_end_time_detail.tv_sec * 1000000 + algo_end_time_detail.tv_usec - algo_start_time_detail.tv_sec * 1000000 - algo_start_time_detail.tv_usec;
-            fprintf(fpovhd_w,"%ld \n",w_ovhd);
-        }
+            cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,cur_cp);
+	}
 
         block* checktemp = fblist_head->head; 
         cur_offset = PPB - cur->fpnum;
@@ -279,7 +266,7 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
 
 void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata, 
                   bhead* fblist_head, bhead* full_head, bhead* rsvlist_head, bhead* write_head,
-                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp, FILE* fpovhd_gc_detail, FILE* fpovhd_gc_utilsort){
+                  int write_limit, IOhead* gcq, GCblock* cur_GC, int gcflag, long cur_cp){
     if(gcq->reqnum != 0){
         //printf("[%ld]queue not empty, dl miss detected. task %d GC\n",cur_cp,taskidx);
         //sleep(3);
@@ -318,10 +305,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     } else if (gcflag == 5){
         gc_limit = find_gcweighted(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
     } else if (gcflag == 6){
-        gettimeofday(&(algo_start_time_detail),NULL);
-        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head, fpovhd_gc_utilsort);
-        gettimeofday(&(algo_end_time_detail),NULL);
-        fprintf(fpovhd_gc_detail, "%ld\n", (long)(algo_end_time_detail.tv_sec * 1000000 + algo_end_time_detail.tv_usec - algo_start_time_detail.tv_sec * 1000000 - algo_start_time_detail.tv_usec));
+        gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head);
     }
     print_blocklist_info(write_head,metadata);
     print_blocklist_info(full_head,metadata);
@@ -353,7 +337,6 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
                 cur = cur->next;
             }
         }*/
-        gettimeofday(&(algo_start_time_detail),NULL);
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] < metadata->invnum[cur->idx]) &&
                (metadata->state[cur->idx] >= write_limit)){
@@ -365,9 +348,6 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
         if(vic==NULL){
             vic = full_head->head;
         }
-        gettimeofday(&(algo_end_time_detail),NULL);
-        gc_ovhd = algo_end_time_detail.tv_sec * 1000000 + algo_end_time_detail.tv_usec - algo_start_time_detail.tv_sec * 1000000 - algo_start_time_detail.tv_usec;
-        fprintf(fpovhd_gc_detail,"%ld \n",gc_ovhd);
     }
     
     // 2-(2). if not, choose a victim block from full_block list using index
@@ -500,7 +480,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
 }
 
 void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_head, bhead* full_head, bhead* hotlist, bhead* coldlist,
-                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, int skewnum, FILE* fpovhd_rr_detail, FILE* fpovhd_rr_detail_process){
+                  IOhead* rrq, RRblock* cur_RR, double rrutil, long cur_cp, int skewnum){
     char reloc_w = 0;
     char reloc_r = 0;
     int vic1 = -1;
@@ -516,14 +496,10 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
     // 1. find relocation victim blocks
     // 1-(1). Static WL
     if(rrflag == 0){
-        gettimeofday(&(algo_start_time_detail),NULL);
-        find_RR_dualpool(tasks, tasknum, metadata, full_head, hotlist, coldlist, &vic1, &vic2, fpovhd_rr_detail_process);
-        gettimeofday(&(algo_end_time_detail),NULL);
-        vic_select = algo_end_time_detail.tv_sec * 1000000 + algo_end_time_detail.tv_usec - algo_start_time_detail.tv_sec * 1000000 - algo_start_time_detail.tv_usec;
+        find_RR_dualpool(tasks, tasknum, metadata, full_head, hotlist, coldlist, &vic1, &vic2);
     }
     // 1-(2). LaWL
     else if (rrflag == 1){
-        gettimeofday(&(algo_start_time_detail),NULL);
         if (skewnum >= 2){ // write-intensive
             // write-based relocation 
             find_WR_target_simple(tasks, tasknum, metadata, fblist_head,full_head,&vic1,&vic2);
@@ -551,11 +527,7 @@ void RR_job_start_q(rttask* tasks, int tasknum, meta* metadata, bhead* fblist_he
                 reloc_r = 1;
             }
         }
-        gettimeofday(&(algo_end_time_detail),NULL);
-        vic_select = algo_end_time_detail.tv_sec * 1000000 + algo_end_time_detail.tv_usec - algo_start_time_detail.tv_sec * 1000000 - algo_start_time_detail.tv_usec;    
     }
-
-    fprintf(fpovhd_rr_detail, "%ld\n", vic_select);
 
     // 2. if victim block is not found, cancel WL and return.
     if(rrflag == 0 || rrflag == 1){
