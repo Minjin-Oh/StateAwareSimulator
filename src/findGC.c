@@ -15,11 +15,6 @@ extern int update_cnt[NOP];
 extern int max_valid_pg;
 extern long* lpa_update_timing[NOP];
 
-static struct timeval algo_start_time_gc_detail;
-static struct timeval algo_end_time_gc_detail;
-long init_array, sort, find_priority, find_offset, candidate, edge_case = 0;
-
-
 int _find_gc_safe(rttask* tasks, int tasknum, meta* metadata, int old, int taskidx, int type, float util, int cur_b, int rsv_b){
     //check if current I/O job does not violate util test along with recently released other jobs.
     
@@ -417,8 +412,6 @@ int find_gc_utilsort(rttask* task, int taskidx, int tasknum, meta* metadata, bhe
     // !!!find_gc_ has floating point issues
     // sort the victim blocks in order of utilization
     // allocate victim block to GC task proportionally with GC period
-    struct timeval a;
-    struct timeval b;
 
     int gc_period_sort[tasknum];                    // array to store period of GC
     int task_order[tasknum];                        // array to store order of task

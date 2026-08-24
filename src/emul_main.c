@@ -46,9 +46,6 @@ int tot_longlive_cnt = 0;
 FILE **fps;
 FILE *test_gc_writeblock[4];
 FILE *updaterate_fp;
-FILE *longliveratio_fp;
-FILE *updateorder_fp;
-FILE *getupdateorder_fp;
 
 // FIXME:: set these as global to expose global write block to assign_write_invalid function
 bhead* glob_yb;
@@ -115,9 +112,8 @@ int main(int argc, char* argv[]){
     cur_cp = 0;                      // current checkpoint time
     
     // log file pointers
-    FILE* rr_profile;
-    FILE *fp, *fplife, *fpwrite, *fpread, *fprr, *fpovhd;
-    FILE *fpovhd_gc, *fpovhd_w, *fpovhd_rr, *fpovhd_gc_utilsort, *fpovhd_gc_detail, *fpovhd_w_detail, *fpovhd_w_process, *fpovhd_rr_detail, *fpovhd_rr_detail_process;
+    FILE *fplife = NULL, *fpovhd = NULL;
+    FILE *u_check = NULL;
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
@@ -466,7 +462,6 @@ int main(int argc, char* argv[]){
     // init csv files
     // fps = open_file_pertask(gcflag,wflag,rrflag,tasknum);
 
-    FILE* u_check = NULL;
     if(wflag == 0 && gcflag == 0 && rrflag == -1){           // Baseline
         u_check = fopen("Baseline_rrchecker.csv","w");
         updaterate_fp = fopen("Baseline_updaterate.csv","w");
@@ -522,8 +517,12 @@ int main(int argc, char* argv[]){
         // updateorder_fp = fopen("LaWL_updateorder.csv", "w");
         fplife = fopen("LaWL_lifetime.csv","a");
         fpovhd = fopen("LaWL_overhead.csv","a");
-    }	
-
+    }
+    else {
+        fprintf(stderr, "error: unsupported (wflag,gcflag,rrflag) = (%d,%d,%d)\n", wflag, gcflag, rrflag);
+        exit_code = 1;
+        goto CLEANUP;
+    }
 
     IO_open(tasknum, w_workloads, r_workloads);
     // lat_open(gcflag, wflag, rrflag, tasknum, lat_log_w, lat_log_r, lat_log_gc);
@@ -692,7 +691,8 @@ int main(int argc, char* argv[]){
                     //    print_hotdist_profile(fps[tasknum+i],tasks,cur_cp, newmeta,-1,i);
                     //}
                     //print_freeblock_profile(fps[tasknum+4],cur_cp,newmeta,fblist_head,write_head);
-                    total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,fps[cur_IO->taskidx],yngest,oldest,cur_cp,
+                    FILE* per_task_fp = (fps != NULL) ? fps[cur_IO->taskidx] : NULL;
+                    total_u = print_profile(tasks,tasknum,cur_IO->taskidx,newmeta,per_task_fp,yngest,oldest,cur_cp,
                                     cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                                     cur_wb[cur_IO->taskidx],fblist_head,write_head,
                                     newmeta->total_fp,cur_IO->gc_valid_count);
@@ -858,7 +858,7 @@ int main(int argc, char* argv[]){
                                     gcq[j], &(cur_GC[j]), gcflag, cur_cp);
                         gc_release_num++;
                         gettimeofday(&(algo_end_time),NULL);
-                        fprintf(fpovhd_gc, "%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+                        // fprintf(fpovhd_gc, "%ld\n",algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
                         gc_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
 			next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
                         gcjob_finished[j] = 0;
@@ -894,7 +894,7 @@ int main(int argc, char* argv[]){
             rr_release_num++;
             gettimeofday(&(algo_end_time),NULL);
             rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-	    fprintf(fpovhd_rr, "%ld\n", algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+	        // fprintf(fpovhd_rr, "%ld\n", algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
             if(rr->reqnum != 0){
                 rr_finished = 0;
             } 
@@ -994,14 +994,13 @@ int main(int argc, char* argv[]){
     
     CLEANUP:
     // 1) 진행 중 I/O 있으면 정리
-    // cur_IO는 finish_req에서 free하지만, 혹시 남아있으면 방어적으로 free
     if (cur_IO) { free(cur_IO); cur_IO = NULL; }
 
-    // 2) 로그 파일 닫기 (열었던 것만)
-    //     if (fplife) fclose(fplife);
-    //     if (fpovhd) fclose(fpovhd);
-    //     for (int i = 0; i < tasknum; i++) if (fps && fps[i]) fclose(fps[i]);
-    //     lat_close(...) 유틸이 있다면 호출
+    // 2) 로그 파일 닫기
+    if (fplife)        fclose(fplife);
+    if (fpovhd)        fclose(fpovhd);
+    if (u_check)       fclose(u_check);
+    if (updaterate_fp) fclose(updaterate_fp);
 
     // 3) I/O 큐들 free: per-task heads + 단일 head
     if (wq) {

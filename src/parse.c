@@ -145,6 +145,10 @@ void set_exec_flags(char* argv[], int *tasknum, float *totutil,
     *tploc = atof(argv[9]);
     *OPflag = 0;
     if(*skewness >= 0){
+        if (argv[10] == NULL){
+            fprintf(stderr, "error: skewness=%d requires argv[10] (skewnum)\n", *skewness);
+            exit(EXIT_FAILURE);
+        }
         *skewnum = atoi(argv[10]);
     }
     if (argv[11] != NULL){

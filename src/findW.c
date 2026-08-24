@@ -27,8 +27,6 @@ extern FILE **fps;
 extern long* lpa_update_timing[NOP];
 extern int update_cnt[NOP];
 extern int tot_longlive_cnt;
-extern FILE *longliveratio_fp;
-extern FILE *updateorder_fp;
 extern FILE **w_workloads;
 extern FILE **r_workloads;
 
@@ -1413,7 +1411,7 @@ int __calc_invorder_mem(int pagenum, meta* metadata, long cur_lpa_timing, long w
         }
         ret += invalid_per_lpa;
     }
-    fprintf(updateorder_fp,"%d,\n",ret);
+    // fprintf(updateorder_fp,"%d,\n",ret);   // updateorder_fp is no longer opened
     return ret;
 }
 
@@ -1423,12 +1421,6 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     // MAXINVALID_RANK_DYN :: window-based request clustering. dynamically change range for cluster
     // MAXINVALID_RANK_STAT :: window-based request clutsering, based on pre-assigned threshold
     // MAXINVALID_RANK_FIXED :: request clustering, strictly following absolute request order
-
-    long select_target_closest=0;
-    long select_target_free = 0;
-    long select_target_fail = 0;
-    long select_target=0;
-    long clustering=0;
 
     // params to find lpa rank
     char name[30];
@@ -1549,6 +1541,8 @@ int find_write_maxinvalid(rttask* task, int taskidx, int tasknum, meta* metadata
     metadata->cur_rank_info.cur_left_write[taskidx] -= 1;
     // printf("[%ld]cur_rank : %d\n",cur_cp,cur_rank);
 
+    // 2. find corresponding block
+    cur = write_head->head;
     while(cur != NULL){
         cur_state = metadata->state[cur->idx];
         if(_find_write_safe(task,tasknum,metadata,old,taskidx,WR,__calc_wu(&(task[taskidx]),cur_state),cur->idx,w_lpas) == -1){

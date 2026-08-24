@@ -6,8 +6,6 @@ extern int prev_erase;
 extern int prev_mincyc;
 extern int prev_cyc[NOB];
 void find_RR_dualpool(rttask* task, int tasknum, meta* metadata, bhead* full_head, bhead* hotlist, bhead* coldlist, int* res1, int* res2){
-    
-    long reloc_target, update_pool, hot_evict, cold_evict;
 
     //get relocation target
 
