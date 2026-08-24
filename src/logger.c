@@ -463,7 +463,6 @@ void print_hotdist_profile(FILE* fp, rttask* tasks, int cur_cp, meta* metadata, 
         }
     } else{
         printf("unknown hotness specification, please write appropriate type.\n");
-        sleep(1);
         abort();
     }
 
@@ -635,7 +634,6 @@ void check_profile(float tot_u, meta* metadata, rttask* tasks, int tasknum, long
         fflush(fp);
         fclose(fp);
         fclose(fplife);
-        sleep(1);
         abort();
     }
 }
@@ -677,7 +675,6 @@ void check_block(float tot_u, meta* metadata, rttask* tasks, int tasknum, long c
         fflush(fp);
         fclose(fp);
         fclose(fplife);
-        sleep(1);
         abort();
     }
 }

@@ -306,9 +306,8 @@ void IO_open(int tasknum, FILE** wfpp, FILE** rfpp){
             printf("file pointer of read workload is missing\n");
             abort();
         }
-        
+
     }
-    sleep(3);
 }
 
 void IO_close(int tasknum, FILE** wfpp, FILE** rfpp){
@@ -329,9 +328,7 @@ void add_offset_for_timing(meta* metadata, int taskidx, int lpa_lb, int lpa_ub, 
         }
         
     }
-    printf("reset %d ~ %d, offset : %ld to %ld\n",lpa_lb,lpa_ub,metadata->rewind_time_per_task[taskidx],cur_cp);
     metadata->rewind_time_per_task[taskidx] = cur_cp;
-    sleep(1);
 }
 
 void reset_IO_update(meta* metadata, int lpa_lb, int lpa_ub, long IO_offset){

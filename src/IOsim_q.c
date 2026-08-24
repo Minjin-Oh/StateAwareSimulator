@@ -129,11 +129,9 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             cur = assign_write_FIFO(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
         } else if(wflag == 11){ // argv[2] == MOTIVALLY
             cur = assign_write_dynwl(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target);
-        } else if(wflag == 12 || wflag == 13){ // argv[2] == GRADW or GRADW_MOD
-            cur = assign_write_gradient(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,wflag);
         } else if(wflag == 14){ // argv[2] == INVW
             cur = assign_write_maxinvalid(tasks,taskidx,tasknum,metadata,fblist_head,write_head,cur_target,lpas,i,cur_cp);
-	}
+        }
 
         block* checktemp = fblist_head->head; 
         cur_offset = PPB - cur->fpnum;
@@ -294,17 +292,7 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     int others_vic_idx;
 
     // 1. find gc victim block index
-    if (gcflag == 1){
-        gc_limit = find_gcctrl(tasks,taskidx,tasknum,metadata,full_head);
-    } else if (gcflag == 2){
-        gc_limit = find_gcctrl_greedy(tasks,taskidx,tasknum,metadata,full_head);
-    } else if (gcflag == 3){
-        gc_limit = find_gcctrl_limit(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
-    } else if (gcflag == 4){
-        gc_limit = find_gcctrl_yng(tasks,taskidx,tasknum,metadata,full_head);
-    } else if (gcflag == 5){
-        gc_limit = find_gcweighted(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head);
-    } else if (gcflag == 6){
+    if (gcflag == 6){
         gc_limit = find_gc_utilsort(tasks,taskidx,tasknum,metadata,full_head,rsvlist_head,write_head);
     }
     print_blocklist_info(write_head,metadata);

@@ -34,7 +34,6 @@ void finish_WR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
 void finish_BWR(rttask* task, IO* cur_IO, meta* metadata, bhead* full_head){
     // currently, BWR does nothing.(testing sched)
     printf("[BWR]%d goto %d\n",cur_IO->rr_vic_ppa, cur_IO->rr_tar_ppa);
-    sleep(1);
     /*
     // similar to WR, but have to check concurrency issue
     int old_ppa, old_lpa, new_ppa, old_block;

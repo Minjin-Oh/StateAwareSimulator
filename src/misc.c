@@ -47,13 +47,8 @@ int* add_checkpoints(int tasknum, rttask* tasks, long runtime, int* cps_size){
         cnt++;
         RRmult++;
     }
-    printf("size %ld, cnt %ld\n",size,cnt);
     qsort(cps,size,sizeof(long),compare);
     *cps_size = (int)size;
-    for(int i=0;i<300;i++){
-        printf("%ld, ",cps[i]);
-    }
-    sleep(1);
     return cps;
 }
 

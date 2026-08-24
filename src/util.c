@@ -77,7 +77,6 @@ int _gc_period(rttask* task,int _minrc){
         return task->wp * (float)1/(float)mult;
     }
     printf("gc period calc fail\n");
-    sleep(1);
     abort();
 }
 
@@ -98,7 +97,6 @@ int __calc_gcmult(int wp, int wn, int _minrc){
         return (int)(wp * (float)1/(float)mult);
     }
     printf("gc period calc fail\n");
-    sleep(1);
     abort();
 }
 
@@ -158,7 +156,6 @@ int _find_min_period(rttask* task,int tasknum){
 
     if(ret == -1){
         printf("min period not found\n");
-        sleep(1);
         abort();
     }
     return ret;
@@ -266,22 +263,6 @@ int find_util_safe(rttask* tasks, int tasknum, meta* metadata, int old, int task
         printf("util safety check failed\n");
         abort();
     }
-}
-
-int util_check_main(){
-    // exec function test
-    printf("[exec time scaling]\n");
-    printf("20 cycle %f %f %f\n",w_exec(20),r_exec(20),e_exec(20));
-    printf("10 cycle %f %f %f\n",w_exec(10),r_exec(10),e_exec(10));
-    printf("00 cycle %f %f %f\n",w_exec(0),r_exec(0),e_exec(0));
-    rttask* tasks = (rttask*)malloc(sizeof(rttask)*3);
-    init_task(&(tasks[0]),1,STARTW*50,65,STARTR*10,10,__calc_gcmult(STARTW*50,65,(int)(PPB*OP)),0,PPB*OP);
-    printf("[util calc check]\n");
-    printf("rd util e:%d p:%d u:%f\n",tasks[0].rn*STARTR, tasks[0].rp,__calc_ru(&(tasks[0]),0));
-    printf("wt util e:%d p:%d u:%f\n",tasks[0].wn*STARTW, tasks[0].wp,__calc_wu(&(tasks[0]),0));
-    int gc_exec = (PPB-(int)(PPB*OP))*(w_exec(0)+r_exec(0))+e_exec(0);
-    int gc_period = _gc_period(&(tasks[0]),(int)(PPB*OP));
-    printf("gc util e:%d p:%d u:%f\n",gc_exec,gc_period,__calc_gcu(&(tasks[0]),(int)(PPB*OP),0,20,20));
 }
 
 long get_gc_locktime(meta* metadata, int blockidx){

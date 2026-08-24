@@ -217,16 +217,7 @@ int main(int argc, char* argv[]){
         task_gen_success = 0;
         while(task_gen_success == 0){
             if(skewness == -1){         // UUNIFAST algorithm
-                rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0); 
-            }
-            else if (skewness == -2){   // manually assign value for taskset(hardcode). edit parameters for test. (using the taskparam.csv)
-                rand_tasks = generate_taskset_hardcode(tasknum,max_valid_pg,&res);
-            }
-            else if(skewness == -3){    // motivation task generator codes
-                rand_tasks = generate_taskset_hardcode_motiv(tasknum,totutil,max_valid_pg,&res,0); 
-            }
-            else if(skewness == -4){    // manually assign w/r utilization for each task. edit parameters for test.
-                rand_tasks = generate_taskset_fixed(max_valid_pg,&res);
+                rand_tasks = generate_taskset(tasknum,totutil,max_valid_pg,&res,0);
             }
             else if(skewness >= 0){
                 // skew2: skewnum = number of write-intensive tasks (rest are read-intensive).
@@ -355,112 +346,6 @@ int main(int argc, char* argv[]){
     }
     IO_close(tasknum,w_workloads,r_workloads);
 #endif
-
-    // LPA PROFILE GENERATOR CODE
-    // profile LPA invalidation pattern(per each address)
-    if(profflag == 1){
-        int prof_targ_lpa;
-        int wn_count = 0;
-        char name[30];
-        FILE* write_targ_file;
-        IO_open(tasknum,w_workloads,r_workloads);
-        for(int a=0;a<tasknum;a++){
-            cur_cp = 0;
-            wn_count = 0;
-            while(EOF != fscanf(w_workloads[a],"%d,",&prof_targ_lpa)){
-                // write on file
-                sprintf(name,"./timing/%d.csv",prof_targ_lpa);
-                write_targ_file = fopen(name,"a");
-                fprintf(write_targ_file,"%ld,",cur_cp);
-                fclose(write_targ_file);
-                wn_count++;
-                if(wn_count == tasks[a].wn){
-                    cur_cp += tasks[a].wp;
-                    wn_count = 0;
-                }
-            }
-        }
-        exit_code = 0;
-        goto CLEANUP;
-    }
-
-    // LPA PROFILE GENERATOR CODE 2
-    // profile LPA invalidation pattern in one file for plotting + profile GC pattern for plotting
-    if(profflag == 2){
-        // main flag :: generate a scatter plot of LPA update vs timestamp
-        int wn_count[tasknum];
-        int wn_before_GC = 0;
-        long next_wp[tasknum];
-        long next_cp;
-        int next_task;
-        int invalidation_count;
-        long invalid_cumulative = 0;
-        long reclaim_cumulative = 0;
-        int fp_count;
-        char name[30];
-        char name2[30];
-        FILE* IO_scatter_file;
-        FILE* GC_scatter_file;
-        IO_open(tasknum,w_workloads,r_workloads);
-        sprintf(name,"scatter.csv");
-        sprintf(name2,"GC_timing.csv");
-        IO_scatter_file = fopen(name,"w");
-        GC_scatter_file = fopen(name2,"w");
-        for(int a=0;a<tasknum;a++){
-            next_wp[a] = tasks[a].wp;
-        }
-
-        // start profiling assuming that dummy write is all done.
-        cur_cp = 0;
-        invalidation_count = 0;
-        fp_count = PPB*NOB - max_valid_pg;
-        while(cur_cp <= WORKLOAD_LENGTH){
-            for(int a=0;a<tasknum;a++){
-                if(cur_cp % tasks[a].wp == 0){
-                    for(int b=0;b<tasks[a].wn;b++){
-                        wn_before_GC++;
-                        invalidation_count++;
-                        invalid_cumulative++;
-                        fp_count--;
-                        fprintf(IO_scatter_file,"%ld, %ld, %d, %ld\n",cur_cp,(long)IOget(w_workloads[a]),a,invalid_cumulative);
-                    }
-                }
-            }
-            for(int a=0;a<tasknum;a++){
-                if(cur_cp % tasks[a].gcp == 0){         // GC timing reached
-                    if(invalidation_count >= expected_invalid){
-                        reclaim_cumulative += PPB;
-                        fprintf(GC_scatter_file,"%ld, -1, %d, %d, %d, %d, %ld, %ld\n",cur_cp,wn_before_GC,invalidation_count,fp_count,a,invalid_cumulative,reclaim_cumulative);
-                        wn_before_GC = 0;
-                        invalidation_count -= PPB;
-                        fp_count += PPB;
-                    } else {
-                        // do nothing, which means we skip GC.
-                    }
-                }
-            }
-            // find next checkpoint.
-            next_cp = next_wp[0];
-            for(int a=1;a<tasknum;a++){
-                if(next_wp[a] < next_cp){
-                    next_cp = next_wp[a];
-                }
-            } // checkpoint found.
-            // update tasks' checkpoint if next_cp == next_wp[a].
-
-            for(int a=0;a<tasknum;a++){
-                if(next_wp[a] == next_cp){
-                    next_wp[a] += tasks[a].wp;
-                }
-            } // checkpoint updated
-            cur_cp = next_cp;
-            printf("next checkpoint: %ld, cur_inv: %d, cur_fp: %d\n",cur_cp,invalidation_count,fp_count);
-        }
-        fclose(IO_scatter_file);
-        fclose(GC_scatter_file);
-        exit_code = 0;
-        goto CLEANUP;
-    }
 
     // (deprecated) run gradient tests for write in offline, and assign offset value for WGRAD policy.
     offset = (int)((float)(tasks[0].addr_ub - tasks[0].addr_lb)*sploc/2.0);
@@ -602,15 +487,6 @@ int main(int argc, char* argv[]){
     }
 
     // !!finish initialization
-    printf("fblist sanity check :");
-    block* test = fblist_head->head;
-    while(test != NULL){ 
-        printf("[%d]%d, ",test->idx,test->fpnum);
-        test = test->next;
-    }
-    printf("\n");
-    sleep(5);
-
 
     // Run simulation
 
@@ -663,24 +539,20 @@ int main(int argc, char* argv[]){
                 fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
                 fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                 print_profile_updaterate(newmeta,updaterate_fp);
-                sleep(1);
                 exit_code = 1;
                     goto CLEANUP;
             }
         }
 
         // 2-(2). max P/E cycle overflow (exit code)
-        for(int idx=0;idx<NOB;idx++){
-            if(newmeta->state[idx] >= MAXPE){
-                total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-                printf("[%ld]a block reach maximum P/E, util : %d\n", cur_cp, total_u);
-                fprintf(fplife,"%ld,",cur_cp);
-                sleep(1);
-                exit_code = 1;
-                goto CLEANUP;
-            } else {
-                /*do nothing*/
-            }
+        // `oldest` already scans the whole state array via get_blockstate_meta above;
+        // reuse it instead of scanning NOB blocks a third time per checkpoint.
+        if(oldest >= MAXPE){
+            total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
+            printf("[%ld]a block reach maximum P/E, util : %d\n", cur_cp, total_u);
+            fprintf(fplife,"%ld,",cur_cp);
+            exit_code = 1;
+            goto CLEANUP;
         }
 
         // execution order must be (req completion --> job release --> req pick)
@@ -724,12 +596,11 @@ int main(int argc, char* argv[]){
                         fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
                         fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
                         print_profile_updaterate(newmeta,updaterate_fp);
-                        sleep(1);
                         exit_code = 1;
                         goto CLEANUP;
                     }
                 }
-                
+
                 // if last req is finished, do the following
                 if(cur_IO->last == 1){
 
@@ -741,7 +612,6 @@ int main(int argc, char* argv[]){
                         fprintf(fplife,"%ld,",cur_cp);
                         fflush(fplife);
                         printf("dl miss detected,");
-                        sleep(1);
                         exit_code = 1;
                         goto CLEANUP;
                     }
@@ -992,8 +862,7 @@ int main(int argc, char* argv[]){
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
     fprintf(fplife,"%ld,",cur_cp);
     fflush(fplife);
-    sleep(1);
-    
+
     CLEANUP:
     // 1) 진행 중 I/O 있으면 정리
     // cur_IO는 finish_req에서 free하지만, 혹시 남아있으면 방어적으로 free

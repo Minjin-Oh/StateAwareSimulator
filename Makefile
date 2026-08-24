@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -W 
+CFLAGS = -O2 -g -Wall
 LDFLAGS = -lm -ldl
 
 #source directory

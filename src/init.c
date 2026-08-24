@@ -106,7 +106,6 @@ void init_metadata(meta* metadata, int tasknum, int cycle){
             metadata->cur_rank_info.timings_for_write[i][j] = 0;
         }
     }
-    sleep(1);
 }
 
 void free_metadata(meta* metadata){
