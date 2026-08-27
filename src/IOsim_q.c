@@ -105,7 +105,7 @@ block* write_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata
             //if returned value is EOF
             //1. reset file & read first data.
             rewind(fp_w);
-            fscanf(fp_w,"%ld,",&(lpas[i]));
+            fscanf(fp_w,"%d,",&(lpas[i]));
             //2. add offset to expected update timing.
             add_offset_for_timing(metadata,taskidx,tasks[taskidx].addr_lb,tasks[taskidx].addr_ub,cur_cp);
             reset_IO_update(metadata,tasks[taskidx].addr_lb,tasks[taskidx].addr_ub,cur_cp);
@@ -227,7 +227,7 @@ void read_job_start_q(rttask* task, int taskidx, meta* metadata, FILE* fp_r, IOh
             //if returned value is EOF
             //1. reset file & read first data.
             rewind(fp_r);
-            fscanf(fp_r,"%ld,",&lpa);
+            fscanf(fp_r,"%d,",&lpa);
         }
         IO* req = (IO*)malloc(sizeof(IO));
         req->type = RD;
@@ -299,8 +299,9 @@ void gc_job_start_q(rttask* tasks, int taskidx, int tasknum, meta* metadata,
     print_blocklist_info(full_head,metadata);
     
     // 2. victim block selection
-    // 2-(1). if gc baseline, select most invalid block
-    if (gcflag == 0){
+    // 2-(1). if gc baseline OR RTGC (gcflag==8), select most invalid block.
+    //        RTGC uses the same greedy policy (paper §3.3.3) as Baseline.
+    if (gcflag == 0 || gcflag == 8){
         /*
         while(cur != NULL){
             if((metadata->invnum[cur_vic_idx] <= metadata->invnum[cur->idx]) &&

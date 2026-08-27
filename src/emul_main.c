@@ -1,15 +1,23 @@
-#include "stateaware.h"     // contains 
+#include "stateaware.h"     // contains
 #include "init.h"           // contains init function for various structure params
-#include "emul.h"           // contains request process functions for emulation 
+#include "emul.h"           // contains request process functions for emulation
 #include "findRR.h"         // contains block selection functions
 #include "IOgen.h"          // contains random workload generation functions
 #include "emul_logger.h"    // contains latency logger functions
+#include "rtgc.h"           // RTGC comparison scheme (Chang et al. 2004)
 
 // globals
 block* cur_fb = NULL;
 int rrflag = 0;
 int MINRC;                  // minimum reclaimable page, assigned by set_exec_flags in parse.c : 35
 double OP;                  // overprovisioning rate, assigned by set_exec_flags in parse.c : 0.32
+
+// RTGC (Chang/Kuo/Lo 2004) mode selection.  gcflag==8 activates the
+// comparison scheme; rtgc_lat_mode selects which latency values feed
+// the Eq.14 schedulability test (analysis-only; runtime tokens/GC/WL
+// never consult this).
+int rtgc_mode = 0;
+int rtgc_lat_mode = RTGC_LAT_NONE;
 int THRES_COLD = 35;        // a global threshold for write-cold block determination, used in find_WR_target_simple() in findRR.c
 int THRES_HOT = 300;
 int prev_erase = 0;         // a flag for interval specification of threshold update, used in find_WR_target_simple() in findRR.c
@@ -95,6 +103,22 @@ int main(int argc, char* argv[]){
                    &skewness, &sploc, &tploc, &skewnum,
                    &OPflag, &init_cyc, &OP, &MINRC);
 
+    // RTGC mode selection.  argv[12] is only consulted when gcflag==8;
+    // for all other schemes rtgc_mode stays 0 and rtgc_lat_mode is unused.
+    if (gcflag == 8) {
+        rtgc_mode = 1;
+        rtgc_lat_mode = rtgc_parse_lat_mode(argv);
+    }
+    // Optional Table IV self-test (env RTGC_SELFTEST=1); runs even for
+    // non-RTGC schemes so it can be exercised without changing argv.
+    if (getenv("RTGC_SELFTEST") != NULL){
+        int st_rc = rtgc_selftest();
+        if (getenv("RTGC_SELFTEST_EXIT") != NULL){
+            // Convenience for CI: exit after self-test.
+            return (st_rc == 0) ? 0 : 2;
+        }
+    }
+
 #ifdef EXECSTEP
     init_prof_exec(&(exec_steps));
 #endif
@@ -121,6 +145,10 @@ int main(int argc, char* argv[]){
     FILE* lat_log_w[tasknum];
     FILE* lat_log_r[tasknum];
     FILE* lat_log_gc[tasknum];
+    // RTGC-only extra logs (opened only when rtgc_mode==1).
+    FILE *rtgc_token_fp = NULL;
+    FILE *rtgc_wl_fp = NULL;
+    FILE *rtgc_admission_fp = NULL;
 
     // IO file pointer init
     w_workloads = (FILE**)malloc(sizeof(FILE*)*tasknum);
@@ -202,6 +230,11 @@ int main(int argc, char* argv[]){
     printf("[EXEC-skew] %d, %f, %f, %d\n",skewness,sploc,tploc,skewnum);
     printf("[EXEC-OP  ] %d, %f, %d\n",OPflag, OP, MINRC);
     printf("[NOB MAXPE] : %d, %d\n",NOB,MAXPE);
+    if(rtgc_mode){
+        char rtgc_prefix_dbg[64];
+        rtgc_log_prefix(rrflag, rtgc_lat_mode, rtgc_prefix_dbg, sizeof(rtgc_prefix_dbg));
+        printf("[RTGC     ] mode=1, lat=%d, prefix=%s\n", rtgc_lat_mode, rtgc_prefix_dbg);
+    }
     // sleep(1);
    
     // MINRC is now a configurable value, which can be adjusted like OP
@@ -345,6 +378,14 @@ int main(int argc, char* argv[]){
         //printf("\n");
     }
     IO_close(tasknum,w_workloads,r_workloads);
+    // The prefetch loop above accumulates cur_cp per task and resets to 0
+    // only at each task's start.  After the last task, cur_cp is left at
+    // task_{n-1}'s simulated end-time.  For non-RTGC schemes this is
+    // masked because find_next_time pulls cur_cp back to 0 in the first
+    // iteration (next_w_release[j] == 0 for all j), but RTGC's
+    // metaperiod while-loop fires spuriously many times before that
+    // correction.  Reset explicitly here.
+    cur_cp = 0;
 #endif
 
     // (deprecated) run gradient tests for write in offline, and assign offset value for WGRAD policy.
@@ -409,7 +450,23 @@ int main(int argc, char* argv[]){
         // updateorder_fp = fopen("LaWL_updateorder.csv", "w");
         fplife = fopen("LaWL_lifetime.csv","a");
         fpovhd = fopen("LaWL_overhead.csv","a");
-    }	
+    }
+    else if(gcflag == 8){                                       // RTGC (Chang et al. 2004)
+        // Prefix depends on the analysis latency model and on whether the
+        // non-real-time wear leveler is enabled (rrflag==3) or disabled
+        // (rrflag==-1 for ablation).  Must match run_simul_rtgc.sh.
+        char prefix[64];
+        char name[128];
+        rtgc_log_prefix(rrflag, rtgc_lat_mode, prefix, sizeof(prefix));
+
+        snprintf(name, sizeof(name), "%s_rrchecker.csv",  prefix); u_check           = fopen(name,"w");
+        snprintf(name, sizeof(name), "%s_updaterate.csv", prefix); updaterate_fp     = fopen(name,"w");
+        snprintf(name, sizeof(name), "%s_lifetime.csv",   prefix); fplife            = fopen(name,"a");
+        snprintf(name, sizeof(name), "%s_overhead.csv",   prefix); fpovhd            = fopen(name,"a");
+        snprintf(name, sizeof(name), "%s_token.csv",      prefix); rtgc_token_fp     = fopen(name,"w");
+        snprintf(name, sizeof(name), "%s_wl.csv",         prefix); rtgc_wl_fp        = fopen(name,"w");
+        snprintf(name, sizeof(name), "%s_admission.csv",  prefix); rtgc_admission_fp = fopen(name,"w");
+    }
 
 
     IO_open(tasknum, w_workloads, r_workloads);
@@ -498,11 +555,85 @@ int main(int argc, char* argv[]){
     }
 #endif
 
-    // updaterate_fp = fopen("updaterate.csv","w"); 
+    // ------------------------------------------------------------------
+    // RTGC initialization + admission control.  Must run AFTER the dummy
+    // write so metadata->total_fp reflects the true post-init Phi.
+    // If admission fails, log the reason, write a 0-lifetime row with
+    // exit_reason=ADMISSION_REJECT and skip the simulation loop entirely.
+    // ------------------------------------------------------------------
+    rtgc_state rtgc_st = {0};
+    int rtgc_admit_reason = RTGC_ADMIT_PASS;
+    // Sampled at every 1 ms tick so the exit path can log the exit-time
+    // utilization even when the exit is deadline miss / MAXPE / runtime end.
+    float rtgc_u_admission     = 0.0f;
+    float rtgc_u_last_selected = 0.0f;
+    float rtgc_u_last_pecmax   = 0.0f;
+    float rtgc_u_last_lawl     = 0.0f;
+    int   rtgc_exit_reason     = RTGC_EXIT_RUNTIME_END;
+    if (rtgc_mode){
+        rtgc_init(&rtgc_st, tasks, tasknum, newmeta);
+        rtgc_admit_reason = rtgc_admission_check(&rtgc_st, tasks, tasknum,
+                                                  newmeta, rtgc_lat_mode,
+                                                  rtgc_admission_fp);
+        if (rtgc_admission_fp) { fflush(rtgc_admission_fp); }
+        printf("[RTGC-INIT] pi=%d alpha=%d rho_init=%d demand-check=%s\n",
+                rtgc_st.pi, rtgc_st.alpha, rtgc_st.rho_init,
+                rtgc_admit_reason == RTGC_ADMIT_PASS ? "PASS" : "REJECT");
+        for (int i = 0; i < tasknum; i++){
+            printf("  T%d: wp=%d wn=%d rp=%d rn=%d gcp=%d  sigma=%ld pG=%ld  rho_T=%d rho_G=%d\n",
+                i, tasks[i].wp, tasks[i].wn, tasks[i].rp, tasks[i].rn, tasks[i].gcp,
+                rtgc_st.sigma[i], rtgc_st.pG[i],
+                rtgc_st.rho_T[i], rtgc_st.rho_G[i]);
+        }
+        if (rtgc_admit_reason != RTGC_ADMIT_PASS){
+            // Full RUNTIME_END-style row with lifetime=0 so downstream
+            // tooling can distinguish reject vs. runtime end by column.
+            // Exit code 0 because admission reject is an analytical
+            // outcome, not a runtime failure — the run_simul_rtgc.sh
+            // aggregator interprets non-zero as "something crashed".
+            rtgc_exit_reason = RTGC_EXIT_ADMISSION_REJECT;
+            rtgc_log_lifetime(fplife, 0, rtgc_exit_reason, rtgc_lat_mode,
+                               0.0f, 0.0f, 0.0f, 0.0f,
+                               get_blockstate_meta(newmeta, OLD),
+                               get_blockstate_meta(newmeta, YOUNG));
+            exit_code = 0;
+            goto CLEANUP;
+        }
+        if (rtgc_token_fp){
+            rtgc_log_tokens(&rtgc_st, newmeta, 0, "init", -1, rtgc_token_fp);
+            fflush(rtgc_token_fp);
+        }
+        // Latch the t=0 utilization so the exit row can report drift.
+        rtgc_u_admission = rtgc_analysis_sample(&rtgc_st, tasks, tasknum,
+                                                 newmeta, rtgc_lat_mode,
+                                                 0,
+                                                 0.0f,   // no LaWL sample yet
+                                                 get_blockstate_meta(newmeta, OLD),
+                                                 get_blockstate_meta(newmeta, YOUNG),
+                                                 NULL);   // don't write to rrchecker yet
+        rtgc_u_last_selected = rtgc_u_admission;
+    }
+
+    // Optional smoke-test / debugging override for RUNTIME.  Never
+    // set in production runs.
+    long sim_runtime = (long)RUNTIME;
+    {
+        const char* env_rt = getenv("SIM_RUNTIME_US");
+        if (env_rt != NULL){
+            char* end = NULL;
+            long v = strtol(env_rt, &end, 10);
+            if (end != env_rt && v > 0){
+                sim_runtime = v;
+                fprintf(stderr, "[SIM] RUNTIME overridden by SIM_RUNTIME_US=%ld\n", v);
+            }
+        }
+    }
+
+    // updaterate_fp = fopen("updaterate.csv","w");
     gettimeofday(&(tot_start_time),NULL);
 
     // !!! start of simulation !!!
-    while(cur_cp <= RUNTIME){
+    while(cur_cp <= sim_runtime){
 
         // 1. 한 바퀴 돌 때마다 전체 블록의 PEC를 profiling하고, lowest and highest PEC를 check
         yngest = get_blockstate_meta(newmeta,YOUNG);
@@ -511,36 +642,75 @@ int main(int argc, char* argv[]){
         // 2. flash state checker
         // 2-(1). 1000000us마다 profile 정보 저장
         if(cur_cp % 1000000L == 0){
-            total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
-            //printf("cur_u:%f\n",total_u);
+            // Always compute LaWL total_u (used by non-RTGC schemes for
+            // overflow-1 and by RTGC as the 5th column of rrchecker).
+            if (rtgc_mode){
+                // RTGC has its own 10-column rrchecker; call the LaWL
+                // computation but discard the write side effect on u_check
+                // (pass NULL) — instead, sample all four RTGC modes and
+                // route the row to u_check (which is the RTGC rrchecker).
+                float lawl_total = print_profile_timestamp(tasks, tasknum,
+                                                            newmeta, NULL,
+                                                            yngest, oldest,
+                                                            cur_cp);
+                float U_sel = rtgc_analysis_sample(&rtgc_st, tasks, tasknum,
+                                                    newmeta, rtgc_lat_mode,
+                                                    cur_cp, lawl_total,
+                                                    oldest, yngest,
+                                                    u_check);
+                rtgc_u_last_selected = U_sel;
+                rtgc_u_last_lawl     = lawl_total;
+                // Also cache the current PECMAX value for lifetime row.
+                {
+                    float trM, twM, teM;
+                    rtgc_get_latency(RTGC_LAT_PECMAX, newmeta, &trM, &twM, &teM);
+                    rtgc_u_last_pecmax = rtgc_util_eq14(tasks, tasknum, trM, twM, teM);
+                }
+                // RTGC analysis overflow gate.  START/END are constants
+                // (never re-evaluated per D-Cadence) so PECMAX / PECAVG
+                // are the only modes that can trigger this exit.
+                if ((rtgc_lat_mode == RTGC_LAT_PECMAX ||
+                     rtgc_lat_mode == RTGC_LAT_PECAVG) && U_sel > 1.0f){
+                    printf("[%ld] RTGC analysis overflow (mode=%d, U=%f)\n",
+                            cur_cp, rtgc_lat_mode, U_sel);
+                    rtgc_exit_reason = RTGC_EXIT_RTGC_ANALYSIS_OVER;
+                    goto RTGC_EXIT_LOG;
+                }
+                // NOTE: overflow-1 (LaWL utilization gate) is intentionally
+                // NOT enforced in RTGC mode; LaWL is only logged for
+                // comparison.
+            } else {
+                total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
+                //printf("cur_u:%f\n",total_u);
 
-            // utilization overflow 1 (exit code)
-            if(total_u >= 1.0){                
-                printf("[%ld]utilization overflow 1, util : %f\n",cur_cp, total_u);
-                gettimeofday(&tot_end_time,NULL);
-                tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
-                tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
-                if(write_release_num != 0){
-                    write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
-                } else {
-                    write_ovhd_avg = 0;
+                // utilization overflow 1 (exit code)
+                if(total_u >= 1.0){
+                    printf("[%ld]utilization overflow 1, util : %f\n",cur_cp, total_u);
+                    gettimeofday(&tot_end_time,NULL);
+                    tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
+                    tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0 ;
+                    if(write_release_num != 0){
+                        write_ovhd_avg = (double)write_ovhd_sum / (double)write_release_num;
+                    } else {
+                        write_ovhd_avg = 0;
+                    }
+                    if(gc_release_num != 0){
+                        gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
+                    } else {
+                        gc_ovhd_avg = 0;
+                    }
+                    if(rr_release_num != 0){
+                        rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
+                    } else {
+                        rr_ovhd_avg = 0;
+                    }
+                    fprintf(fplife,"%ld,",cur_cp);
+                    fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
+                    fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
+                    print_profile_updaterate(newmeta,updaterate_fp);
+                    exit_code = 1;
+                        goto CLEANUP;
                 }
-                if(gc_release_num != 0){
-                    gc_ovhd_avg = (double)gc_ovhd_sum / (double)gc_release_num;
-                } else {
-                    gc_ovhd_avg = 0;
-                }
-                if(rr_release_num != 0){
-                    rr_ovhd_avg = (double)rr_ovhd_sum / (double)rr_release_num;
-                } else {
-                    rr_ovhd_avg = 0;
-                }
-                fprintf(fplife,"%ld,",cur_cp);
-                fprintf(fpovhd,"%ld, %ld, %ld, ",write_release_num,gc_release_num,rr_release_num);
-                fprintf(fpovhd,"%lf, %lf ,%lf, %lf\n",write_ovhd_avg,gc_ovhd_avg,rr_ovhd_avg,tot_runtime_readable);
-                print_profile_updaterate(newmeta,updaterate_fp);
-                exit_code = 1;
-                    goto CLEANUP;
             }
         }
 
@@ -548,6 +718,11 @@ int main(int argc, char* argv[]){
         // `oldest` already scans the whole state array via get_blockstate_meta above;
         // reuse it instead of scanning NOB blocks a third time per checkpoint.
         if(oldest >= MAXPE){
+            if (rtgc_mode){
+                printf("[%ld] RTGC MAXPE reached\n", cur_cp);
+                rtgc_exit_reason = RTGC_EXIT_MAXPE;
+                goto RTGC_EXIT_LOG;
+            }
             total_u = print_profile_timestamp(tasks,tasknum,newmeta,u_check,yngest,oldest,cur_cp);
             printf("[%ld]a block reach maximum P/E, util : %d\n", cur_cp, total_u);
             fprintf(fplife,"%ld,",cur_cp);
@@ -570,9 +745,15 @@ int main(int argc, char* argv[]){
                     //                 cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
                     //                 cur_wb[cur_IO->taskidx],fblist_head,write_head,
                     //                newmeta->total_fp,cur_IO->gc_valid_count);
+                    total_u = profile(tasks,tasknum,cur_IO->taskidx,newmeta,yngest,oldest,cur_cp,
+                                    cur_IO->vic_idx,newmeta->state[cur_IO->vic_idx],
+                                    cur_wb[cur_IO->taskidx],fblist_head,write_head,
+                                   newmeta->total_fp,cur_IO->gc_valid_count);
 
-                    // utilization overflow 2 (exit code)
-                    if(total_u > 1.0){
+                    // utilization overflow 2 (exit code) — LaWL-analysis
+                    // gate, intentionally bypassed for RTGC mode because
+                    // RTGC uses its own analysis at the 1 ms tick above.
+                    if(!rtgc_mode && total_u > 1.0){
                         printf("[%ld]utilization overflow 2, util : %f\n",cur_cp, total_u);
                         gettimeofday(&tot_end_time,NULL);
                         tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
@@ -609,6 +790,12 @@ int main(int argc, char* argv[]){
 
                     // deadline miss overflow (exit code)
                     if(check_dl_violation(tasks,cur_IO,cur_cp)==1){
+                        if (rtgc_mode){
+                            printf("[%ld] RTGC deadline miss (task %d, type %d)\n",
+                                    cur_cp, cur_IO->taskidx, cur_IO->type);
+                            rtgc_exit_reason = RTGC_EXIT_DEADLINE_MISS;
+                            goto RTGC_EXIT_LOG;
+                        }
                         fprintf(fplife,"%ld,",cur_cp);
                         fflush(fplife);
                         printf("dl miss detected,");
@@ -654,9 +841,40 @@ int main(int argc, char* argv[]){
                     wr_end_bwr_flag = 1;
                 }
                 // finish request
-                finish_req(tasks, cur_IO, newmeta, 
-                           fblist_head, rsvlist_head, full_head, 
+                finish_req(tasks, cur_IO, newmeta,
+                           fblist_head, rsvlist_head, full_head,
                            &(cur_GC[cur_IO->taskidx]),&(cur_rr));
+
+                // RTGC token bookkeeping (Fig.5).  Order matters:
+                //   - WR consume happens after finish_WR updates page maps
+                //     (finish_req -> finish_WR just decremented total_fp).
+                //   - GCER post-recycle bookkeeping runs after finish_GCER
+                //     replenished total_fp, so log entries reflect the
+                //     post-erase Phi.
+                if (rtgc_mode && cur_IO != NULL){
+                    if (cur_IO->type == WR){
+                        rtgc_write_consume(&rtgc_st, cur_IO->taskidx, 1);
+                        // Do not log per-page write (too chatty); only tag
+                        // the last write of a job.
+                        if (cur_IO->last == 1 && rtgc_token_fp){
+                            rtgc_log_tokens(&rtgc_st, newmeta, cur_cp,
+                                            "write_job", cur_IO->taskidx,
+                                            rtgc_token_fp);
+                        }
+                    } else if (cur_IO->type == GCER){
+                        rtgc_gc_after_recycle(&rtgc_st, cur_IO->taskidx,
+                                              cur_IO->gc_valid_count,
+                                              cur_cp, rtgc_token_fp);
+                        // After tokens are replenished, retry any deferred
+                        // writes so they can release on the next tick.
+                        for (int a = 0; a < tasknum; a++){
+                            if (wjob_deferred[a] &&
+                                rtgc_write_can_release(&rtgc_st, a, tasks[a].wn)){
+                                wjob_deferred[a] = 0;
+                            }
+                        }
+                    }
+                }
 
                 // reset I/O pointer and IO end time tracker
                 free(cur_IO);
@@ -672,7 +890,20 @@ int main(int argc, char* argv[]){
 
             // 4-(1)-1. write job을 실행하기에 충분한 free page가 있는지 먼저 확인
             //   (free page < write request page) 이면 write job을 release하는 걸 delay
-            if(newmeta->total_fp < newmeta->reserved_write + tasks[j].wn){  // free page < write request page
+            if (rtgc_mode){
+                // Paper §4.4 guarantees Phi is always sufficient when Ti has
+                // enough tokens.  Track per-tick token availability; must
+                // RESET to 0 as soon as tokens become sufficient again
+                // (via virtual harvest or metaperiod bookkeeping) — non-RTGC
+                // schemes get this for free from GCER completion but RTGC
+                // does most of its GC as virtual harvest.
+                if (rtgc_write_can_release(&rtgc_st, j, tasks[j].wn)){
+                    wjob_deferred[j] = 0;
+                } else {
+                    if (!wjob_deferred[j]) rtgc_st.n_write_deferred_by_token++;
+                    wjob_deferred[j] = 1;
+                }
+            } else if(newmeta->total_fp < newmeta->reserved_write + tasks[j].wn){  // free page < write request page
                 printf("%d task write deferred\n",j);  // delay the write request due to the GC for reclaiming the free page
                 wjob_deferred[j] = 1;
             }
@@ -717,12 +948,26 @@ int main(int argc, char* argv[]){
             // 4-(1)-4. gc job release (cur_cp == next_gc_release[idx])
             if(cur_cp == next_gc_release[j]){
                 // 4-(1). previous gc job finish
-                if(gcjob_finished[j] == 1){          
-                    if(newmeta->total_fp <= expected_fp){
+                if(gcjob_finished[j] == 1){
+                    int do_gc = 0;
+                    if (rtgc_mode){
+                        // Paper Fig.5: (Phi - rho) >= alpha  ⇒  virtual harvest,
+                        // no I/O.  Otherwise perform a real recycle.
+                        if (tasks[j].wn > 0){
+                            do_gc = rtgc_gc_release(&rtgc_st, j, newmeta,
+                                                     cur_cp, rtgc_token_fp);
+                        } else {
+                            do_gc = 0;  // no G_i for tasks with wn==0
+                        }
+                    } else if(newmeta->total_fp <= expected_fp){
+                        do_gc = 1;
+                    }
+
+                    if(do_gc){
                         // printf("total_invalid : %d,expected_invalid : %d\n",newmeta->total_invalid,expected_invalid);
                         // printf("total_fp : %d, expected_fp : %d\n",newmeta->total_fp,expected_fp);
                         // printf("blocknum : %d, %d, %d\n",fblist_head->blocknum,full_head->blocknum,write_head->blocknum);
-                        
+
                         // GC release 시점의 시간 check
                         gettimeofday(&(algo_start_time),NULL);
                         gc_job_start_q(tasks, j, tasknum, newmeta,
@@ -744,36 +989,71 @@ int main(int argc, char* argv[]){
                 else if (gcjob_finished[j] == 0){
                     next_gc_release[j] = cur_cp + (long)tasks[j].gcp;
                 }
-            }  
+            }
+
+            // 4-(1)-5. RTGC meta-period boundary check. Runs LAST in the
+            // per-task iteration so that any tokens harvested by GC
+            // (virtual harvest path in rtgc_gc_release) or consumed by
+            // completed writes earlier this tick are reflected in ρ_T[j]
+            // before we shed the excess (paper §3.3.2, Fig.4).
+            // while() because find_next_time may skip multiple boundaries
+            // when the sim is idle across long stretches.
+            if (rtgc_mode){
+                while (cur_cp >= rtgc_st.next_sigma[j]){
+                    rtgc_task_metaperiod_boundary(&rtgc_st, j, tasks);
+                    if (rtgc_token_fp) rtgc_log_tokens(&rtgc_st, newmeta,
+                                                       cur_cp, "metaperiod",
+                                                       j, rtgc_token_fp);
+                    rtgc_st.next_sigma[j] += rtgc_st.sigma[j];
+                }
+            }
         }
 
         // 4-(2). release WL jobs
-        // 4-(2)-1. relocation start 조건 확인 (PEC variation이 큰가?)
-        if(oldest-yngest >= THRESHOLD){     // WL start signal
-            wl_init = 1;
-        }
-        // 4-(2)-2. relocation request 생성
-        if((do_rr == 1) && (rr_finished == 1) && (rr->head == NULL) && (rrflag != -1) && (wl_init == 1)){
-            if(hot_cold_list == 0){
-                build_hot_cold(newmeta,hotlist,coldlist);
-                hot_cold_list = 1;
+        if (rrflag == 3){
+            // RTGC non-real-time wear leveler (§3.4.2).  Independent of the
+            // LaWL/Hybrid do_rr/wl_init/hot-cold pipeline: gates only on
+            // (a) mandatory sleep timer, (b) empty WL queue.  rrflag == -1
+            // (SKIPRR) skips this branch entirely for the WL ablation.
+            if (rtgc_mode && rr->head == NULL && cur_cp >= rtgc_st.wl_next_copy_time){
+                gettimeofday(&(algo_start_time),NULL);
+                int enq = rtgc_wl_release(&rtgc_st, newmeta,
+                                          fblist_head, full_head,
+                                          rr, cur_cp, rtgc_wl_fp);
+                if (enq) rr_release_num++;
+                gettimeofday(&(algo_end_time),NULL);
+                rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+                if (rr->reqnum != 0) rr_finished = 0;
+                else                  rr_finished = 1;
             }
-            // rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
-            rrutil = -1.0;                  // override util so that WL always run in background mode.
-            gettimeofday(&(algo_start_time),NULL);
-            RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
-                            rr,&(cur_rr),(double)rrutil,cur_cp, skewnum);
-            rr_release_num++;
-	    gettimeofday(&(algo_end_time),NULL);
-	    rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
-	    // fprintf(fpovhd_rr, "%ld\n", algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
-            if(rr->reqnum != 0){
-                rr_finished = 0;
-            } 
-            else {
-                rr_finished = 1;
+        } else {
+            // 4-(2)-1. relocation start 조건 확인 (PEC variation이 큰가?)
+            if(oldest-yngest >= THRESHOLD){     // WL start signal
+                wl_init = 1;
             }
-            do_rr = 0;
+            // 4-(2)-2. relocation request 생성
+            if((do_rr == 1) && (rr_finished == 1) && (rr->head == NULL) && (rrflag != -1) && (wl_init == 1)){
+                if(hot_cold_list == 0){
+                    build_hot_cold(newmeta,hotlist,coldlist);
+                    hot_cold_list = 1;
+                }
+                // rrutil = 1.0 - find_worst_util(tasks,tasknum,newmeta);
+                rrutil = -1.0;                  // override util so that WL always run in background mode.
+                gettimeofday(&(algo_start_time),NULL);
+                RR_job_start_q(tasks, tasknum, newmeta, fblist_head, full_head, hotlist, coldlist,
+                                rr,&(cur_rr),(double)rrutil,cur_cp, skewnum);
+                rr_release_num++;
+    	    gettimeofday(&(algo_end_time),NULL);
+    	    rr_ovhd_sum += algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec;
+    	    // fprintf(fpovhd_rr, "%ld\n", algo_end_time.tv_sec * 1000000 + algo_end_time.tv_usec - algo_start_time.tv_sec * 1000000 - algo_start_time.tv_usec);
+                if(rr->reqnum != 0){
+                    rr_finished = 0;
+                }
+                else {
+                    rr_finished = 1;
+                }
+                do_rr = 0;
+            }
         }
         
         // 5. req pick logic
@@ -857,11 +1137,49 @@ int main(int argc, char* argv[]){
         // jump한 시점보다 더 앞에 release되어야 할 job이 있다면, 해당 시점으로 cur_cp를 jump
         cur_cp = find_next_time(tasks,tasknum,cur_IO_end,rr_check,cur_cp,
                                 next_w_release,next_r_release,next_gc_release);
+        // RTGC-only event boundaries (meta-period, WL sleep expiry).
+        // Kept as a post-hoc min() so find_next_time's signature stays
+        // unchanged for the seven existing schemes.
+        if (rtgc_mode){
+            long rtgc_next = rtgc_next_event_time(&rtgc_st, cur_cp - 1);
+            if (rtgc_next < cur_cp) cur_cp = rtgc_next;
+        }
         // printf("[fnt res]next_time : %ld\n",cur_cp);
     }
     printf("run through all!!![cur_cp : %ld]\n",cur_cp);
+    if (rtgc_mode){
+        rtgc_exit_reason = RTGC_EXIT_RUNTIME_END;
+        goto RTGC_EXIT_LOG;
+    }
     fprintf(fplife,"%ld,",cur_cp);
     fflush(fplife);
+    goto CLEANUP;
+
+RTGC_EXIT_LOG:
+    // Single terminal-row writer for all RTGC exit paths.  cur_cp,
+    // rtgc_exit_reason, rtgc_lat_mode, and the cached U samples all
+    // reflect the moment we decided to exit.
+    if (rtgc_mode){
+        rtgc_log_lifetime(fplife, cur_cp, rtgc_exit_reason, rtgc_lat_mode,
+                           rtgc_u_admission, rtgc_u_last_selected,
+                           rtgc_u_last_pecmax, rtgc_u_last_lawl,
+                           oldest, yngest);
+        // Overhead row (matches format of the other schemes).
+        gettimeofday(&tot_end_time, NULL);
+        tot_runtime = tot_end_time.tv_sec * 1000000 + tot_end_time.tv_usec
+                    - tot_start_time.tv_sec * 1000000 - tot_start_time.tv_usec;
+        tot_runtime_readable = (double)tot_runtime / 1000.0 / 1000.0 / 60.0;
+        write_ovhd_avg = write_release_num ? (double)write_ovhd_sum / (double)write_release_num : 0.0;
+        gc_ovhd_avg    = gc_release_num    ? (double)gc_ovhd_sum    / (double)gc_release_num    : 0.0;
+        rr_ovhd_avg    = rr_release_num    ? (double)rr_ovhd_sum    / (double)rr_release_num    : 0.0;
+        if (fpovhd){
+            fprintf(fpovhd, "%ld, %ld, %ld, ", write_release_num, gc_release_num, rr_release_num);
+            fprintf(fpovhd, "%lf, %lf ,%lf, %lf\n", write_ovhd_avg, gc_ovhd_avg, rr_ovhd_avg, tot_runtime_readable);
+            fflush(fpovhd);
+        }
+        if (updaterate_fp) print_profile_updaterate(newmeta, updaterate_fp);
+        exit_code = (rtgc_exit_reason == RTGC_EXIT_RUNTIME_END) ? 0 : 1;
+    }
 
     CLEANUP:
     // 1) 진행 중 I/O 있으면 정리
@@ -910,6 +1228,14 @@ int main(int argc, char* argv[]){
     // 7) metadata free (destroy 함수가 있으면 그걸 호출)
     // if (newmeta) destroy_metadata(newmeta);
     if (newmeta) { free(newmeta); newmeta = NULL; }
+
+    // 8) RTGC state free (safe on zero-init if rtgc_mode==0)
+    if (rtgc_mode) {
+        rtgc_free(&rtgc_st);
+        if (rtgc_token_fp)      { fclose(rtgc_token_fp);      rtgc_token_fp      = NULL; }
+        if (rtgc_wl_fp)         { fclose(rtgc_wl_fp);         rtgc_wl_fp         = NULL; }
+        if (rtgc_admission_fp)  { fclose(rtgc_admission_fp);  rtgc_admission_fp  = NULL; }
+    }
 
     return exit_code;
 }

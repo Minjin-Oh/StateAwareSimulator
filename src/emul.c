@@ -1,5 +1,6 @@
 #include "stateaware.h"
 #include "emul.h"
+#include "rtgc.h"
 
 extern long cur_cp;
 
@@ -268,6 +269,9 @@ void finish_req(rttask* task, IO* cur_IO, meta* metadata,
     else if(cur_IO->type==BWR){
         finish_BWR(task,cur_IO,metadata,full_head);
         printf("finish BWR, timing : %ld, exec : %ld\n",cur_cp,cur_IO->exec);
+    }
+    else if(cur_IO->type==RTWL_COPY){
+        rtgc_finish_wl_copy(cur_IO, metadata);
     }
 }
 

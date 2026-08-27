@@ -331,6 +331,7 @@ float calc_weightedgc(rttask* tasks, meta* metadata, block* tar, int taskidx, in
     //return weighted gc latency
     return (gc_prob * exp_gc_latency);
 }
+
 float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FILE* fp, 
                    int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead*write_head, int getfp, int gcvalidcount){
     //init params
@@ -394,6 +395,61 @@ float print_profile(rttask* tasks, int tasknum, int taskidx, meta* metadata, FIL
         total_w,total_r,total_gc,
         state_avg, state_var);
     }
+    return total_u;
+}
+
+float profile(rttask* tasks, int tasknum, int taskidx, meta* metadata,
+                   int yng, int old,long cur_cp,int cur_gc_idx,int cur_gc_state, block* cur_wb, bhead* fblist_head, bhead*write_head, int getfp, int gcvalidcount){
+    //init params
+    int cur_read_worst[tasknum];
+    int state_tot = 0;
+    double state_avg = 0.0;
+    double state_var = 0.0;
+    float total_u = 0.0;
+    float total_r = 0.0;
+    float total_w = 0.0;
+    float total_gc = 0.0;
+    float total_u_noblock = 0.0;
+    //find worst case util w.r.t system-wise worst block
+    float worst_util = find_worst_util(tasks,tasknum,metadata);
+    //find worst block for each task
+    
+    for(int k=0;k<tasknum;k++){
+        cur_read_worst[k] = 0;
+        for(int i=0;i<NOP;i++){
+            if(metadata->vmap_task[i] == k){
+                int cur_b = i/PPB;
+                if(metadata->state[cur_b] >= cur_read_worst[k]){
+                    cur_read_worst[k] = metadata->state[cur_b];
+                }
+            }
+        }
+        //printf("\n[%d]cur_read_worst : %d\n",k,cur_read_worst[k]);
+    }
+    //printf("system worst : %d\n",old);
+    //find current util w.r.t actual blocks
+    
+    for(int j=0;j<tasknum;j++){//0 = write, 2 = GC
+        total_u += metadata->runutils[0][j];
+        total_w += metadata->runutils[0][j];
+        total_u += metadata->runutils[1][j];
+        total_r += metadata->runutils[1][j];
+        total_u += metadata->runutils[2][j];
+        total_gc += metadata->runutils[2][j];
+        //printf("%f, %f, %f, cur : %f\n",metadata->runutils[0][j],metadata->runutils[1][j],metadata->runutils[2][j],total_u);
+    }
+    for(int i=0;i<NOB;i++){
+        state_tot += metadata->state[i];
+    }
+    state_avg = (double)state_tot / (double)NOB;
+    for(int i=0;i<NOB;i++){
+        state_var += pow((double)metadata->state[i] - (double)state_avg ,2.0);
+    }
+    state_var = state_var / NOB;
+    state_var = sqrt(state_var);
+    total_u_noblock = total_u;
+    total_u += (float)e_exec(old) / (float)_find_min_period(tasks,tasknum);
+
     return total_u;
 }
 
@@ -743,8 +799,12 @@ float print_profile_timestamp(rttask* tasks, int tasknum, meta* metadata, FILE* 
     state_var = state_var / NOB;
     state_var = sqrt(state_var);
     //print all infos (rrchecker.csv)
-    fprintf(fp,"%ld,%f,%d,%d,%lf,%lf\n",
-    cur_cp,total_u,old,yng,state_avg,state_var); 
+    //NULL fp is allowed so RTGC mode can reuse this helper purely for the
+    //total_u computation without touching its own rrchecker file.
+    if (fp){
+        fprintf(fp,"%ld,%f,%d,%d,%lf,%lf\n",
+        cur_cp,total_u,old,yng,state_avg,state_var);
+    }
     return total_u;
 }
 

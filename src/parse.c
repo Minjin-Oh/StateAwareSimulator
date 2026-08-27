@@ -1,14 +1,17 @@
 #include "stateaware.h"
 
 // Handled scheme flags (only those the current shell scripts actually pass):
-//   gcflag: NO(0), UTILGC(6)
+//   gcflag: NO(0), UTILGC(6), RTGC(8)
 //   wflag : NO(0), MOTIVALLY(11), INVW(14)
-//   rrflag: SKIPRR(-1), BASE005(rrflag=0, rrcond=1), RR005(rrflag=1, rrcond=1)
+//   rrflag: SKIPRR(-1), BASE005(rrflag=0, rrcond=1), RR005(rrflag=1, rrcond=1),
+//           NRTWL(rrflag=3, rrcond=0)  -- RTGC non-real-time wear leveler
 void set_scheme_flags(char* argv[],
                       int *gcflag, int *wflag, int *rrflag, int *rrcond){
     // gcflag
     if(strcmp(argv[1],"UTILGC")==0){
         *gcflag = 6;
+    } else if(strcmp(argv[1],"RTGC")==0){
+        *gcflag = 8;
     } else {
         *gcflag = 0;
     }
@@ -31,6 +34,12 @@ void set_scheme_flags(char* argv[],
     } else if(strcmp(argv[3],"BASE005")==0){
         *rrflag = 0;
         *rrcond = 1;
+    } else if(strcmp(argv[3],"NRTWL")==0){
+        // RTGC non-real-time wear leveler (Chang et al. 2004, §3.4.2).
+        // rrcond=0 keeps the LaWL do_rr/rr_finished/RR_job_start_q pipeline dormant;
+        // rrflag==3 is handled explicitly by the RTGC-only WL path in emul_main.c.
+        *rrflag = 3;
+        *rrcond = 0;
     }
 }
 

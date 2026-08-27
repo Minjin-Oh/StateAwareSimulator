@@ -7,6 +7,18 @@
 #define RRWR 7
 #define RRER 8
 #define BWR 9
+#define RTWL_COPY 10 // RTGC (Chang et al. 2004) non-real-time wear leveler: single-page live copy, no erase
+
+// RTGC schedulability-analysis latency model (argv[12] when gcflag == 8).
+// Selects which latency values feed Eq.14; the RTGC runtime mechanism
+// (tokens, GC, WL) never consults these — analysis only.
+enum {
+    RTGC_LAT_NONE   = 0,
+    RTGC_LAT_START,     // fixed low-PEC (STARTR/W/E)   -> optimistic
+    RTGC_LAT_END,       // fixed max-PEC (ENDR/W/E)     -> pessimistic
+    RTGC_LAT_PECMAX,    // *_exec(current worst block)  -> PEC-aware worst-case
+    RTGC_LAT_PECAVG     // *_exec(current avg block)    -> PEC-aware, not sound
+};
 
 // differentiate GCTHRESNOB and NOB
 // normally, GCTHRESNOB == NOB
