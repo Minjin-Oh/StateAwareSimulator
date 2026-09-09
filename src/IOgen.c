@@ -1,4 +1,5 @@
 #include "IOgen.h"
+#include "rtgc.h"
 #include <unistd.h>
 
 extern long* lpa_update_timing[NOP];
@@ -417,108 +418,28 @@ void IO_timing_update(meta* metadata, int lpa, int wcount,long offset){
     //printf("%d next_update_time : %ld, offset : %ld\n",lpa,metadata->next_update[lpa],offset);
 }
 
-void lat_open(int gcflag, int wflag, int rrflag, int tasknum, FILE** wlpp, FILE** rlpp, FILE** gclpp){
-    if(wflag == 0 && gcflag == 0 && rrflag == -1){          // Baseline
-        for(int i=0;i<tasknum;i++){
-            char name[20];
-            sprintf(name,"Baseline_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name2[20];
-            sprintf(name2,"Baseline_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name3[20];
-            sprintf(name3,"Baseline_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
-        }
-    }
-    else if(wflag == 11 && gcflag == 0 && rrflag ==  0){    // Hybrid WL
-        for(int i=0;i<tasknum;i++){
-            char name[20];
-            sprintf(name,"Hyb_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name2[20];
-            sprintf(name2,"Hyb_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name3[20];
-            sprintf(name3,"Hyb_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
-        }
-    }
-    // else if(wflag == 14 && gcflag == 0 && rrflag == -1){    // LaWL-D (write only)
-    //     for(int i=0;i<tasknum;i++){
-    //         char name[20];
-    //         sprintf(name,"wonly_lat_w%d.csv",i);
-    //         wlpp[i] = fopen(name,"w");
-    //     }
-    //     for(int i=0;i<tasknum;i++){
-    //         char name2[20];
-    //         sprintf(name2,"wonly_lat_r%d.csv",i);
-    //         rlpp[i] = fopen(name2,"w");
-    //     }
-    //     for(int i=0;i<tasknum;i++){
-    //         char name3[20];
-    //         sprintf(name3,"wonly_lat_gc%d.csv",i);
-    //         gclpp[i] = fopen(name3,"w");
-    //     }
-    // }
-    else if(wflag == 14 && gcflag == 6 && rrflag == -1){       // LaWL-D
-        for(int i=0;i<tasknum;i++){
-            char name[20];
-            sprintf(name,"LaWL_D_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name2[20];
-            sprintf(name2,"LaWL_D_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name3[20];
-            sprintf(name3,"LaWL_D_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
-        }
-    }
-    else if(wflag == 14 && gcflag == 6 && rrflag ==  1){       // LaWL
-        for(int i=0;i<tasknum;i++){
-            char name[20];
-            sprintf(name,"LaWL_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name2[20];
-            sprintf(name2,"LaWL_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name3[20];
-            sprintf(name3,"LaWL_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
-        }
-    }
-    else {                                                     // Dynamic WL
-        for(int i=0;i<tasknum;i++){
-            char name[20];
-            sprintf(name,"Dyn_lat_w%d.csv",i);
-            wlpp[i] = fopen(name,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name2[20];
-            sprintf(name2,"Dyn_lat_r%d.csv",i);
-            rlpp[i] = fopen(name2,"w");
-        }
-        for(int i=0;i<tasknum;i++){
-            char name3[20];
-            sprintf(name3,"Dyn_lat_gc%d.csv",i);
-            gclpp[i] = fopen(name3,"w");
-        }
+// Prefix table matches the file-open blocks in emul_main.c so every log
+// family (lifetime / overhead / rrchecker / lat) shares the same scheme
+// tag.  RTGC delegates to rtgc_log_prefix so the noWL / lat_mode suffix
+// stays in one place.
+void lat_open(int gcflag, int wflag, int rrflag, int lat_mode, int tasknum,
+              FILE** wlpp, FILE** rlpp, FILE** gclpp){
+    char prefix[64];
+    if      (wflag == 0  && gcflag == 0 && rrflag == -1) snprintf(prefix, sizeof(prefix), "Baseline");
+    else if (wflag == 11 && gcflag == 0 && rrflag == -1) snprintf(prefix, sizeof(prefix), "Dynamic");
+    else if (wflag == 0  && gcflag == 0 && rrflag ==  0) snprintf(prefix, sizeof(prefix), "Static");
+    else if (wflag == 11 && gcflag == 0 && rrflag ==  0) snprintf(prefix, sizeof(prefix), "Hyb");
+    else if (wflag == 14 && gcflag == 0 && rrflag == -1) snprintf(prefix, sizeof(prefix), "wonly");
+    else if (wflag == 14 && gcflag == 6 && rrflag == -1) snprintf(prefix, sizeof(prefix), "LaWL_D");
+    else if (wflag == 14 && gcflag == 6 && rrflag ==  1) snprintf(prefix, sizeof(prefix), "LaWL");
+    else if (gcflag == 8)                                rtgc_log_prefix(rrflag, lat_mode, prefix, sizeof(prefix));
+    else                                                 snprintf(prefix, sizeof(prefix), "unknown");
+
+    char name[128];
+    for(int i=0;i<tasknum;i++){
+        snprintf(name, sizeof(name), "%s_lat_w%d.csv",  prefix, i); wlpp[i]  = fopen(name,"w");
+        snprintf(name, sizeof(name), "%s_lat_r%d.csv",  prefix, i); rlpp[i]  = fopen(name,"w");
+        snprintf(name, sizeof(name), "%s_lat_gc%d.csv", prefix, i); gclpp[i] = fopen(name,"w");
     }
 }
 

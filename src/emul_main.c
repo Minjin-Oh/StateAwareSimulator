@@ -470,7 +470,7 @@ int main(int argc, char* argv[]){
 
 
     IO_open(tasknum, w_workloads, r_workloads);
-    // lat_open(gcflag, wflag, rrflag, tasknum, lat_log_w, lat_log_r, lat_log_gc);
+    lat_open(gcflag, wflag, rrflag, rtgc_lat_mode, tasknum, lat_log_w, lat_log_r, lat_log_gc);
     // for(int i=0;i<tasknum;i++){
     //     fprintf(fps[i],"%s\n","timestamp, taskidx, WU, new_WU, noblock, w_util, r_util, g_util, old, yng, bidx, state, vp, w_idx, w_state, fb, w");
     // }
@@ -786,7 +786,7 @@ int main(int argc, char* argv[]){
                 if(cur_IO->last == 1){
 
                     // check I/O latency
-                    //check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
+                    check_latency(lat_log_w,lat_log_r,lat_log_gc,cur_IO,cur_cp);
 
                     // deadline miss overflow (exit code)
                     if(check_dl_violation(tasks,cur_IO,cur_cp)==1){

@@ -87,10 +87,16 @@ if [ ${#CORES[@]} -ne "$NUM_SCHEMES" ]; then
     echo "error: CORE_LIST must contain exactly $NUM_SCHEMES core ids (got ${#CORES[@]})" >&2
     exit 1
 fi
-NCPU=$(nproc)
+# Probe with taskset directly instead of comparing to nproc: inside a
+# Docker container with --cpuset-cpus=44-52, nproc returns 9 but the
+# usable core IDs are 44..52, so a numeric upper bound would reject them.
 for core in "${CORES[@]}"; do
-    if ! [[ "$core" =~ ^[0-9]+$ ]] || [ "$core" -ge "$NCPU" ]; then
-        echo "error: invalid core id '$core' (nproc=$NCPU)" >&2
+    if ! [[ "$core" =~ ^[0-9]+$ ]]; then
+        echo "error: core id '$core' is not a non-negative integer" >&2
+        exit 1
+    fi
+    if ! taskset -c "$core" true 2>/dev/null; then
+        echo "error: core id '$core' is not available to this process (cpuset?)" >&2
         exit 1
     fi
 done
